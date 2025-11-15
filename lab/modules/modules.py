@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from linien.client.connection import LinienClient
 from linien.client.remote_parameters import RemoteParameter, RemoteParameters
@@ -8,10 +9,12 @@ __all__ = [
 ]
 
 DEVICE = {
-    "host" : "10.42.0.62", #Access your client's ARP table to find the IP mapping to MAC address 00:26:32:f0:bb:74 - do note this MAC will change if a different Pitaya is being used
+    "host" : "10.42.0.62", #Access your computer's ARP table to find the IP mapping to MAC address 00:26:32:f0:bb:74 - do note this MAC will change if a different Pitaya physical instance is being used
     "username" : "root",
     "password" : "root"
 }
+
+logger = logging.getLogger(__name__)
 
 class LinienHandler:
     def __init__(self, port=18862):
@@ -19,6 +22,7 @@ class LinienHandler:
         self.client = None
         self.state = {}
 
+    #Run Linien's client connection routine. We assume that Linien server is installed on the RP
     def connect(self, device=DEVICE)->None:
         self.client = LinienClient(
             device = device,
@@ -40,7 +44,6 @@ class LinienHandler:
         self.state = out
         return out
 
-
     #Update parameters WRT config dict which is subset of full valid parameter set
     def set_parameters(self, new_params: dict)->None:
         curr_params: RemoteParameters = self.client.parameters
@@ -49,13 +52,11 @@ class LinienHandler:
             setattr(curr_params, key, value)
         curr_params._attributes_locked = True
 
-
     #Serialize parameter state into JSON file
     def serialize_state(self, dest: str, name: str) -> None:
         state = self.get_parameters(to_str=True)
         path = Path(dest)
         if path.is_dir():
             path = path / f"{name}.json"
-
         with path.open("w") as f:
             json.dump(state, f, indent=2)

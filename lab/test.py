@@ -23,10 +23,10 @@ print(params['target_slope_rising'])
 #for key, val in params.items():
 #    print(f"KEY: {key}, VAL: {str(val)}\n")
 
-handler.serialize_state(".", "state1")
+handler.serialize_state("logs/", "state1")
 
 params['autolock_running'] = True
 handler.set_parameters(params)
 
 time.sleep(5)
-handler.serialize_state(".", "state2")
+handler.serialize_state("logs/", "state2")
