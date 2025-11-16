@@ -1,2 +1,5 @@
 state*
 __pycache__/
+tmp
+.Xil
+build/
