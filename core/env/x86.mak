@@ -87,23 +87,23 @@ define build_fpga
 	mkdir -p $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)
 	$(MAKE) -C $(RTL_DIR) PRJ=$(1) MODEL=$(2) DEFINES=$(3) HWID=$(4) DTS_VER=2022.1
 
-	rm -rf fpga/$(FPGA_VERSION)/$(1)
-	mkdir -p fpga/$(FPGA_VERSION)/$(1)
-	mv fpga/build/* fpga/$(FPGA_VERSION)/$(1)
+	rm -rf $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)
+	mkdir -p $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)
+	
+	#mv fpga/build/* fpga/$(FPGA_VERSION)/$(1)
 
-	cp    fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/out/red_pitaya.bit       $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.bit
-	cp    fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/fsbl/executable.elf  $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fsbl.elf
-	cp -r fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts                  $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)
-	cp    fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/dts/*                    $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/dts/
-	cp -f fpga/$(FPGA_VERSION)/$(1)/git_info.txt                      $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/git_info.txt
+	cp    $(RTL_DIR)/prj/$(1)/out/red_pitaya.bit       $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.bit
+	cp    $(RTL_DIR)/prj/$(1)/sdk/fsbl/executable.elf  $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fsbl.elf
+	cp -r $(RTL_DIR)/prj/$(1)/sdk/dts                  $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)
+	cp    $(RTL_DIR)/prj/$(1)/dts/*                    $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/dts/
 
 	# fix overlay quirks
-	sed -i 's/#address-cells/\/\/#address-cells/g' fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi
-	sed -i 's/#size-cells/\/\/#size-cells/g'      fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi
-	sed -i 's/red_pitaya.bit.bin/fpga.bit.bin/g'  fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi
-	grep -qxF '/include/ "pl_patch.dtsi"' fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi || echo '/include/ "pl_patch.dtsi"' >> fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi
+	sed -i 's/#address-cells/\/\/#address-cells/g' $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi
+	sed -i 's/#size-cells/\/\/#size-cells/g'      $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi
+	sed -i 's/red_pitaya.bit.bin/fpga.bit.bin/g'  $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi
+	grep -qxF '/include/ "pl_patch.dtsi"' $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi || echo '/include/ "pl_patch.dtsi"' >> $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi
 
-	$(TMP)/dtc -@ -I dts -O dtb -o $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.dtbo -i fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/dts -i fpga/$(FPGA_VERSION)/$(1)/dts fpga/$(FPGA_VERSION)/$(1)/prj/$(1)/sdk/dts/pl.dtsi
+	dtc -@ -I dts -O dtb -o $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.dtbo -i $(RTL_DIR)/prj/$(1)/dts -i fpga/$(FPGA_VERSION)/$(1)/dts $(RTL_DIR)/prj/$(1)/sdk/dts/pl.dtsi
 	echo -n "all:{ $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.bit }" > $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.bif
 	bootgen -image $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/fpga.bif -arch zynq -process_bitstream bin -o $(BUILD_DIR)/fpga/$(FPGA_VERSION)/$(1)/red_pitaya.bit.bin -w
 endef
