@@ -6,3 +6,10 @@ build/
 vivado*
 dummy
 fpga
+out/
+.srcs/
+.hbs/
+sdk/
+project/
+synReport.txt*
+*.log

@@ -1,165 +1,132 @@
 #!/bin/bash
-#Python virtual env should be activated when this is run
-
-#Change these as appropriate
-PATH_XILINX_SDK=/home/nolan/devtools/xilinx/vitis/Vitis/2020.1
-PATH_XILINX_VIVADO=/home/nolan/devtools/xilinx/Vivado/2020.1
-RP_UBUNTU=redpitaya_OS_12-38-21_10-Oct-2023.tar.gz  
-SCHROOT_CONF_PATH=/etc/schroot/chroot.d/red-pitaya-ubuntu.conf
-
-
-function print_ok(){
-    echo -e "\033[92m[OK]\e[0m"
-}
-
-function print_fail(){
-    echo -e "\033[91m[FAIL]\e[0m"
-}
-
-echo Start build process...
-
-sleep 1
-echo
-sudo ln -s /usr/bin/make /usr/bin/gmake
-echo
-
-sleep 1
-
-if [[ -d "$PATH_XILINX_SDK" ]]
-then
-    echo -n "$PATH_XILINX_SDK exists on your filesystem. "
-    print_ok
-else
-    echo -n "Can't find $PATH_XILINX_SDK on your PC. "
-    print_fail
-    echo "Check the correct path to Xilinx SDK"
-    exit 1
-fi
-    sleep 1
-if [[ -d "$PATH_XILINX_VIVADO" ]]
-
-then
-    echo -n "$PATH_XILINX_VIVADO exists on your filesystem. "
-    print_ok
-else
-    echo -n "Can't find $PATH_XILINX_VIVADO on your PC. "
-    print_fail
-    echo "Check the correct path to Xilinx Vivado"
-    exit 1
-fi
-
-sleep 1
-
-cd ..
-
-export DL=${PWD}/tmp/DL
-
-mkdir -p $DL
-echo -n "Created directory for download. "
-if [[ -d "$DL" ]]
-then
-    print_ok
-else
-    print_fail
-    exit 1
-fi
-
-if [ -z "$1" ]
-    then
-        echo -n "Download redpitaya ubuntu OS. "
-        cd $DL
-        wget -N http://downloads.redpitaya.com/downloads/LinuxOS/$RP_UBUNTU
-    else
-        echo "Set ubuntu OS from parameter $1"
-        RP_UBUNTU=$1
-        cd build_scripts
-        cp -f $RP_UBUNTU $DL/$RP_UBUNTU
-        cd $DL
-fi
-
-
-echo -n "Check redpitaya ubuntu OS. "
-if [[ -f "$RP_UBUNTU" ]]
-        chown root:root $RP_UBUNTU
-        chmod 664 $RP_UBUNTU
-    then
-        print_ok
-    else
-        print_fail
-        exit 1
-fi
-
-cd ../../env
-
-if [[ -f "$SCHROOT_CONF_PATH" ]]
-then
-    echo "File $SCHROOT_CONF_PATH is exists"
-    sudo rm -f $SCHROOT_CONF_PATH
-    echo "File $SCHROOT_CONF_PATH is deleted"
-fi
-
-sleep 1
-echo  "Write new configuration"
-echo
-echo  "[red-pitaya-ubuntu]"      | sudo tee -a $SCHROOT_CONF_PATH
-echo  "description=Red pitaya"   | sudo tee -a $SCHROOT_CONF_PATH
-echo  "type=file"                | sudo tee -a $SCHROOT_CONF_PATH
-echo  "file=$DL/$RP_UBUNTU"      | sudo tee -a $SCHROOT_CONF_PATH
-echo  "users=root"               | sudo tee -a $SCHROOT_CONF_PATH
-echo  "root-users=root"          | sudo tee -a $SCHROOT_CONF_PATH
-echo  "root-groups=root"         | sudo tee -a $SCHROOT_CONF_PATH
-echo  "personality=linux"        | sudo tee -a $SCHROOT_CONF_PATH
-echo  "preserve-environment=true"| sudo tee -a $SCHROOT_CONF_PATH
-
-
-if [[ $? = 0 ]]
-    then
-        echo
-        echo -n "Complete write new configuration "
-        print_ok
-        echo
-    else
-        echo -n "Complete write new configuration "
-        print_fail
-        exit 1
-fi
+# Minimal build driver for Red Pitaya Z10 / MASTER
+# Run from core/env/
 
 set -e
-pwd
-chmod +x ./settings.sh
-./settings.sh
-echo -n "Call settings.sh "
-print_ok
 
+#TODO: add better logic for this in the future
+export PROJECT="pdh_core"
+export RTL_DIR="hw/"
+export BUILD_DIR="build"
+
+# --- config you may need to tweak ---
+PATH_XILINX_SDK=/home/nolan/devtools/xilinx/vitis/Vitis/2020.1
+PATH_XILINX_VIVADO=/home/nolan/devtools/xilinx/Vivado/2020.1
+RP_UBUNTU=redpitaya_OS_12-38-21_10-Oct-2023.tar.gz   # rootfs tarball
+SCHROOT_CONF_PATH=/etc/schroot/chroot.d/red-pitaya-ubuntu.conf
+
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT_DIR"
+
+print_ok()   { echo -e "\033[92m[OK]\033[0m"; }
+print_fail() { echo -e "\033[91m[FAIL]\033[0m"; }
+
+echo "Start build process..."
+sleep 1
+
+# gmake shim (harmless if it already exists)
+if ! command -v gmake >/dev/null 2>&1; then
+  sudo ln -sf /usr/bin/make /usr/bin/gmake || true
+fi
+
+# --- check Xilinx paths ---
+if [[ -d "$PATH_XILINX_SDK" ]]; then
+  echo -n "$PATH_XILINX_SDK exists on your filesystem. "
+  print_ok
+else
+  echo -n "Can't find $PATH_XILINX_SDK on your PC. "; print_fail
+  echo "Fix PATH_XILINX_SDK in build_os.sh"
+  exit 1
+fi
+
+sleep 1
+
+if [[ -d "$PATH_XILINX_VIVADO" ]]; then
+  echo -n "$PATH_XILINX_VIVADO exists on your filesystem. "
+  print_ok
+else
+  echo -n "Can't find $PATH_XILINX_VIVADO on your PC. "; print_fail
+  echo "Fix PATH_XILINX_VIVADO in build_os.sh"
+  exit 1
+fi
+
+sleep 1
+
+# --- download RP Ubuntu rootfs tarball (for schroot) ---
+export DL="${ROOT_DIR}/tmp/DL"
+mkdir -p "$DL"
+echo -n "Created directory for download at $DL "
+[[ -d "$DL" ]] && print_ok || { print_fail; exit 1; }
+
+if [[ -z "${1:-}" ]]; then
+  echo -n "Download Red Pitaya Ubuntu OS tarball... "
+  cd "$DL"
+  wget -N "http://downloads.redpitaya.com/downloads/LinuxOS/$RP_UBUNTU"
+else
+  echo "Using Ubuntu OS tarball from parameter: $1"
+  RP_UBUNTU="$1"
+  cp -f "$RP_UBUNTU" "$DL/$RP_UBUNTU"
+  cd "$DL"
+fi
+
+echo -n "Check Red Pitaya Ubuntu OS tarball... "
+if [[ -f "$RP_UBUNTU" ]]; then
+  sudo chown root:root "$RP_UBUNTU"
+  sudo chmod 664 "$RP_UBUNTU"
+  print_ok
+else
+  print_fail
+  exit 1
+fi
+
+cd "$ROOT_DIR"
+
+# --- write schroot config pointing at that tarball ---
+if [[ -f "$SCHROOT_CONF_PATH" ]]; then
+  echo "File $SCHROOT_CONF_PATH exists, removing..."
+  sudo rm -f "$SCHROOT_CONF_PATH"
+fi
+
+echo "Write new schroot configuration"
+{
+  echo "[red-pitaya-ubuntu]"
+  echo "description=Red Pitaya Ubuntu rootfs"
+  echo "type=file"
+  echo "file=$DL/$RP_UBUNTU"
+  echo "users=root"
+  echo "root-users=root"
+  echo "root-groups=root"
+  echo "personality=linux"
+  echo "preserve-environment=true"
+} | sudo tee "$SCHROOT_CONF_PATH" >/dev/null
+
+echo -n "Complete write new configuration "
+print_ok
+echo
+
+# --- toolchain / env for x86.mak ---
 export ENABLE_LICENSING=0
 export CROSS_COMPILE=arm-linux-gnueabihf-
 export ARCH=arm
-export PATH=$PATH:$PATH_XILINX_VIVADO/bin
-export PATH=$PATH:$PATH_XILINX_SDK/bin
-export PATH=$PATH:$PATH_XILINX_SDK/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/
+export PATH="$PATH:$PATH_XILINX_VIVADO/bin"
+export PATH="$PATH:$PATH_XILINX_SDK/bin"
+export PATH="$PATH:$PATH_XILINX_SDK/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin/"
 
 ENABLE_PRODUCTION_TEST=0
-GIT_COMMIT_SHORT=`git rev-parse --short HEAD`
+GIT_COMMIT_SHORT="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 
-make -f Makefile.x86 fpga MODEL=Z10 STREAMING=MASTER
-make -f Makefile.x86 fpga MODEL=Z20 STREAMING=MASTER
-make -f Makefile.x86 fpga MODEL=Z20_125 STREAMING=MASTER
-make -f Makefile.x86 fpga MODEL=Z20_125_4CH STREAMING=MASTER
-make -f Makefile.x86 fpga MODEL=Z20_250_12 STREAMING=MASTER
+# --- 1) build FPGA / FSBL / PL DTS on host (Z10, MASTER) ---
+make -f x86.mak fpga MODEL=Z10 STREAMING=MASTER
 
-make -f Makefile.x86
-
-schroot -c red-pitaya-ubuntu <<- EOL_CHROOT
-make -f Makefile CROSS_COMPILE="" REVISION=$GIT_COMMIT_SHORT ENABLE_PRODUCTION_TEST=0 ENABLE_LICENSING=0 BUILD_NUMBER=1
+# --- 2) build userland / filesystem bits inside ARM rootfs (if needed) ---
+schroot -c red-pitaya-ubuntu <<-EOL_CHROOT
+  cd /   # adjust if your in-chroot Makefile lives elsewhere
+  make -f Makefile CROSS_COMPILE="" \\
+       REVISION=$GIT_COMMIT_SHORT ENABLE_PRODUCTION_TEST=0 \\
+       ENABLE_LICENSING=0 BUILD_NUMBER=1
 EOL_CHROOT
 
-# required min-gw
-#make -f Makefile.x86 streaming
+# --- 3) build U-Boot, Linux, boot.bin, zip on host ---
+make -f x86.mak all zip MODEL=Z10 STREAMING=MASTER
 
-# FOR BUILD QT CLIENTS NEED SETUP QT 5.15.2
-#make -f Makefile.x86 streaming_client_qt
-#export QT_DIR=/srv/Qt5.15.2-win
-#make -f Makefile.x86 streaming_client_qt_win
-#unset QT_DIR
-
-make -f Makefile.x86 zip
+echo "Done."
