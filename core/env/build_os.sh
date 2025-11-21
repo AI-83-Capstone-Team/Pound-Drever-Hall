@@ -15,6 +15,9 @@ PATH_XILINX_VIVADO=/home/nolan/devtools/xilinx/Vivado/2020.1
 RP_UBUNTU=redpitaya_OS_12-38-21_10-Oct-2023.tar.gz   # rootfs tarball
 SCHROOT_CONF_PATH=/etc/schroot/chroot.d/red-pitaya-ubuntu.conf
 
+# QEMU for running ARM binaries on x86
+QEMU_ARM_STATIC=/usr/bin/qemu-arm-static
+
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
@@ -52,6 +55,21 @@ fi
 
 sleep 1
 
+# --- check QEMU for ARM (needed to run ARM binaries in schroot) ---
+if [[ ! -x "$QEMU_ARM_STATIC" ]]; then
+  echo -n "Can't find $QEMU_ARM_STATIC. "; print_fail
+  echo "Install qemu-user-static, e.g.:"
+  echo "  sudo apt install qemu-user-static binfmt-support"
+  exit 1
+else
+  echo -n "$QEMU_ARM_STATIC exists on your filesystem. "
+  print_ok
+fi
+
+
+#sudo update-binfmts --enable qemu-arm   <- Debian-based systems
+#sudo pacman -S qemu-user-static qemu-user-static-binfmt <- Arch, verify via cat /proc/sys/fs/binfmt_misc/qemu-arm. If not enabled, run: sudo systemctl restart systemd-binfmt
+
 # --- download RP Ubuntu rootfs tarball (for schroot) ---
 export DL="${ROOT_DIR}/tmp/DL"
 mkdir -p "$DL"
@@ -87,24 +105,35 @@ if [[ -f "$SCHROOT_CONF_PATH" ]]; then
   sudo rm -f "$SCHROOT_CONF_PATH"
 fi
 
+# extract ARM rootfs
+mkdir -p "$DL/os_build"
+tar -xvf "$DL/$RP_UBUNTU" -C "$DL/os_build"
+
+# ensure /usr/bin exists in chroot and copy qemu-arm-static into it
+sudo mkdir -p "$DL/os_build/usr/bin"
+sudo cp "$QEMU_ARM_STATIC" "$DL/os_build/usr/bin/"
+
 echo "Write new schroot configuration"
 {
   echo "[red-pitaya-ubuntu]"
   echo "description=Red Pitaya Ubuntu rootfs"
-  echo "type=file"
-  echo "file=$DL/$RP_UBUNTU"
-  echo "users=root"
+  echo "type=directory"
+  echo "directory=$DL/os_build"
+  echo "users=$USER"
+  echo "groups=$USER"
   echo "root-users=root"
   echo "root-groups=root"
   echo "personality=linux"
   echo "preserve-environment=true"
+  # disable NSS db copying so it doesn't care about /etc/networks etc.
+  echo "setup.nssdatabases="
 } | sudo tee "$SCHROOT_CONF_PATH" >/dev/null
 
 echo -n "Complete write new configuration "
 print_ok
 echo
 
-# --- toolchain / env for x86.mak ---
+# --- toolchain / env for x86.mak (host-side cross build) ---
 export ENABLE_LICENSING=0
 export CROSS_COMPILE=arm-linux-gnueabihf-
 export ARCH=arm
@@ -119,10 +148,10 @@ GIT_COMMIT_SHORT="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 make -f x86.mak fpga MODEL=Z10 STREAMING=MASTER
 
 # --- 2) build userland / filesystem bits inside ARM rootfs (if needed) ---
-schroot -c red-pitaya-ubuntu <<-EOL_CHROOT
-  cd /   # adjust if your in-chroot Makefile lives elsewhere
-  make -f Makefile CROSS_COMPILE="" \\
-       REVISION=$GIT_COMMIT_SHORT ENABLE_PRODUCTION_TEST=0 \\
+sudo schroot -c red-pitaya-ubuntu <<-EOL_CHROOT
+  cd /   # TODO: adjust this if the in-chroot Makefile lives elsewhere
+  make -f Makefile CROSS_COMPILE="" \
+       REVISION=$GIT_COMMIT_SHORT ENABLE_PRODUCTION_TEST=0 \
        ENABLE_LICENSING=0 BUILD_NUMBER=1
 EOL_CHROOT
 

@@ -10,11 +10,11 @@
 #   2. Memtest (stand alone memory test) ELF binary.
 #   4. Linux device tree source (dts).
 
-PRJ   ?= logic
+PRJ   ?= pdh_core
 MODEL ?= Z10
 HWID  ?= ""
 DEFINES ?= ""
-DTS_VER ?= 2017.2
+DTS_VER ?= DTS_VER=2022.1
 
 # build artefacts
 FPGA_BIT    = prj/$(PRJ)/out/red_pitaya.bit
@@ -35,10 +35,9 @@ BOOTGEN= bootgen -image prj/$(PRJ)/out/red_pitaya.bif -arch zynq -process_bitstr
 
 all: $(FPGA_BIT) $(FSBL_ELF) $(DEVICE_TREE) $(FPGA_BIN)
 
-# TODO: clean should go into each project
 clean:
 	rm -rf out .Xil .srcs sdk project sim
-	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/project
+	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/project prj/$(PRJ)/.hbs prj/$(PRJ)/*.log prj/$(PRJ)/usage_statistics*
 
 sim: 
 	vivado -source red_pitaya_vivado_sim.tcl -tclargs $(PRJ) $(MODEL) $(DEFINES)
