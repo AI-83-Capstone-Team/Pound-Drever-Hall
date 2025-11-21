@@ -1,2 +1,10 @@
 # Pound-Drever-Hall
-Pound Drever Hall repository for simulations, modeling, and deliverables
+
+## Build Instructions
+
+### RTL
+
+```bash
+cd core/hw
+make
+```
