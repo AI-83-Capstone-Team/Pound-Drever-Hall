@@ -30,3 +30,6 @@ handler.set_parameters(params)
 
 time.sleep(5)
 handler.serialize_state("logs/", "state2")
+
+
+handler.sweep()
