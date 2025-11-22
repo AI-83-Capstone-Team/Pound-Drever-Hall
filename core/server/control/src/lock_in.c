@@ -1,91 +1,71 @@
 #include "lock_in.h"
 
-
-
-void lock_in(vLockFsm_t* vFsm)
+static int validate_params(const lock_in_ctx_t *ctx)
 {
-    switch(vFsm->state)
+    if (!ctx)
+        return NO_CONTEXT;
+
+    if (ctx->dac_step <= 0)
+        return NON_POSITIVE_STEP;
+
+    if (ctx->dac_low >= ctx->dac_high)
+        return LIMIT_MISMATCH;
+
+    if (ctx->dac_init < ctx->dac_low || ctx->dac_init > ctx->dac_high)
+        return INVALID_INIT;
+
+    return 0;
+}
+
+int lock_in_run(lock_in_ctx_t *ctx)
+{
+    int ret = validate_params(ctx);
+    if (ret < 0)
+        return ret;
+
+    if (lock_in_write_code(ctx->dac_init) < 0)
+        return DAC_INIT_FAIL;
+
+    lock_in_delay_us(LOCKIN_DELAY_US);
+
+    int32_t v = lock_in_read_voltage();
+    ctx->best_voltage = v;
+    ctx->best_code = ctx->dac_init;
+
+    for (int32_t code = ctx->dac_init; code <= ctx->dac_high; code += ctx->dac_step)
     {
-        case LOCKIN_INIT:
-            get_voltage(vFsm);
-            vFsm->best_voltage = vFsm->current_voltage;
-            vFsm->current_code = DAC_INIT;
-            vFsm->best_code = DAC_INIT;
-            vFsm->state = LOCKIN_INC;
-            //fallthrough
+        if (lock_in_write_code(code) < 0)
+            return DAC_INC_FAIL;
 
+        lock_in_delay_us(LOCKIN_DELAY_US);
 
-        case LOCKIN_INC:
-            if(vFsm->current_code < DAC_HIGH)
-            {
-                write_code(vFsm);
-                get_voltage(vFsm);
-
-                if(vFsm->current_voltage < vFsm->best_voltage)
-                {
-                    vFsm->best_voltage = vFsm->current_voltage;
-                    vFsm->best_code = vFsm->current_code;
-                }
-
-                vFsm->current_code += DAC_STEP;
-                break;
-            }
-
-            else
-            {
-                vFsm->current_code = DAC_INIT - DAC_STEP;
-                vFsm->state = LOCKIN_DEC;
-            }
-            //fallthrough
-        
-
-        case LOCKIN_DEC:
-            if(vFsm->current_code > DAC_LOW)
-            {
-                write_code(vFsm);
-                get_voltage(vFsm);
-
-                if(vFsm->current_voltage < vFsm->best_voltage)
-                {
-                    vFsm->best_voltage = vFsm->current_voltage;
-                    vFsm->best_code = vFsm->current_code;
-                }
-
-                vFsm->current_code -= DAC_STEP;
-                break;
-            }
-
-            else
-            {
-                vFsm->current_code = DAC_INIT;
-                vFsm->state = LOCKIN_TERMINATE;
-            }
-            //fallthrough
-        
-
-        case LOCKIN_TERMINATE:
-            vFsm->current_code = vFsm->best_code;
-            write_code(vFsm);
-            vFsm->state = LOCKIN_INIT;
-            break;
-
-
-        default:
-            break;
+        v = lock_in_read_voltage();
+        if (v < ctx->best_voltage)
+        {
+            ctx->best_voltage = v;
+            ctx->best_code = code;
+        }
     }
 
-    return;
-}
+    for (int32_t code = ctx->dac_init - ctx->dac_step;
+         code >= ctx->dac_low;
+         code -= ctx->dac_step)
+    {
+        if (lock_in_write_code(code) < 0)
+            return DAC_DEC_FAIL;
 
+        lock_in_delay_us(LOCKIN_DELAY_US);
 
+        v = lock_in_read_voltage();
+        if (v < ctx->best_voltage)
+        {
+            ctx->best_voltage = v;
+            ctx->best_code    = code;
+        }
+    }
 
-//TODO: Implement these
-static inline void get_voltage(vLockFsm_t* vFsm)
-{
-    return;
-}
+    if (lock_in_write_code(ctx->best_code) < 0)
+        return DAC_COMMIT_FAIL;
 
-static inline void write_code(vLockFsm_t* vFsm)
-{
-    return;
+    return 0;
 }
