@@ -69,3 +69,21 @@ int lock_in_run(lock_in_ctx_t *ctx)
 
     return 0;
 }
+
+
+static int lock_in_write_code(int32_t code)
+{
+    return 0;
+}
+
+
+static int32_t lock_in_read_voltage(void)
+{
+    return 0;
+}
+
+
+static void lock_in_delay_us(uint32_t us)
+{
+    return 0;
+}
