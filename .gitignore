@@ -15,3 +15,4 @@ synReport.txt*
 *.log
 usage_statistics*
 tight_setup_hold_pins.txt
+.vscode

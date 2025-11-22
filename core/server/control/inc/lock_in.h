@@ -1,10 +1,9 @@
-#ifndef __LOCK_IN_H__
-#define __LOCK_IN_H__
+#pragma once
 
 #include <stdint.h>
 
-
 #define LOCKIN_DELAY_US 20
+
 
 typedef struct
 {
@@ -37,5 +36,3 @@ int lock_in_write_code(int32_t code);
 int32_t lock_in_read_voltage(void);
 
 void lock_in_delay_us(uint32_t us);
-
-#endif
