@@ -27,5 +27,5 @@ int main(int argc, char** argv)
 
 	RP_CALL(rp_Release());
 
-	return;
+	return 0;
 }
