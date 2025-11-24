@@ -5,25 +5,28 @@
 
 int main(int argc, char** argv)
 {
-	rp_channel_t channel;
-	float voltage;
+	rp_channel_t channel1 = RP_CH_1;
+	rp_channel_t channel2 = RP_CH_2;
+	float voltage1;
+	float voltage2;
 
 	if(argc > 2)
 	{
-		channel = atoi(argv[1]);
-		voltage = atof(argv[2]);
+		voltage1 = atof(argv[1]);
+		voltage2 = atof(argv[2]);
 	}
 
 	else
 	{
-		channel = RP_CH_1;
-		voltage = 0.5;
+		voltage1 = 0.8;
+		voltage2 = 0.2;
 	}
 
 
 	RP_CALL(rp_Init());
 
-	printf("Channel: %d, DC Voltage: %f, Write status: %d\n", channel, voltage, rf_write_dc(channel, voltage));
+	printf("Channel: %d, DC Voltage: %f, Write status: %d\n", channel1, voltage1, rf_write_dc(channel1, voltage1));
+	printf("Channel: %d, DC Voltage: %f, Write status: %d\n", channel2, voltage2, rf_write_dc(channel2, voltage2));
 
 	RP_CALL(rp_Release());
 

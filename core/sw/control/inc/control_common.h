@@ -19,7 +19,8 @@
         if (_ret != RP_OK) {                               \
             fprintf(stderr, "%s failed (code %d)!\n",      \
                     #fn_call, _ret);                       \
-        }                                                  \
+        	return _ret;				   \
+	}                                                  \
     } while (0)
 
 #else

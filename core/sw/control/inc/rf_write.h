@@ -14,7 +14,7 @@ typedef enum
 
 
 
-rf_write_e rf_write_dc(rp_channel_t channel, float voltage);
+int rf_write_dc(rp_channel_t channel, float voltage);
 
 
 
