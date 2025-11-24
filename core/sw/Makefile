@@ -8,15 +8,15 @@ LDLIBS += -lrp-gpio -lrp-i2c
 LDLIBS += -lrp-hw -lm -lstdc++ -lpthread -li2c #-lsocketcan
 
 
-PRGS = digital_led_bar \
+PRGS = digital_led_bar rf_loopback
 
 
 all: $(PRGS)
-        mkdir -p build
-        mv $(PRGS) build
+	mkdir -p build
+	mv $(PRGS) build
 
 $(PRGS): %: %.c
-        $(CC) $< $(CFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $< $(CFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
 
 clean:
-        rm -rf build
+	rm -rf build
