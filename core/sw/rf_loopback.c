@@ -4,10 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "rp.h"
 
-rp_channel_t channel = RP_CH_1;
+rp_channel_t out_channel = RP_CH_2;
 
 #define DEBUG
 
@@ -31,19 +32,28 @@ rp_channel_t channel = RP_CH_1;
 
 
 
-int main(float voltage){
+int main(int argc, char** argv){
+	float voltage;
+	if(argc > 1)
+	{
+		voltage = atof(argv[1]);
+	}
+	else
+	{
+		voltage = 0.5;
+	}
 
     if(voltage > 1.0 || voltage < -1.0)
     {
         fprintf(stderr, "invalid voltage: %f\n", voltage);
     }
 
-	RP_CALL(rp_init());
+	RP_CALL(rp_Init());
 
     rp_waveform_t mode = (voltage >= 0)? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG;
-	RP_CALL(rp_GenWaveform(channel, mode));
+	RP_CALL(rp_GenWaveform(out_channel, mode));
 
-	RP_CALL(rp_GenAmp(channel, voltage));
+	RP_CALL(rp_GenAmp(out_channel, voltage));
 
 
     /*
@@ -54,28 +64,29 @@ int main(float voltage){
     */
 	
 
-	RP_CALL(rp_GenOutEnable(channel));
+	RP_CALL(rp_GenOutEnable(out_channel));
 
 	//rp_GenSynchronise();
 
     //rp_Reset()
     //use rp_AcqGetLatestDataV
 
-    RP_CALL(rp_AcqStartCh(channel));
 
-    uint32_t buffsize = 1;
-    bool enabled = true;
+    bool enabled = false;
     RP_CALL(rp_AcqSetAveraging(enabled));
+    RP_CALL(rp_AcqStart());//IN1
+	sleep(1);
+    uint32_t buffsize = 100;
     float* buff = (float*)malloc(buffsize * sizeof(float));
 
-    RP_CALL(rp_AcqGetLatestDataV(channel, &buffsize, &buff));
-
-    RP_CALL(rp_GenOutDisable(channel));
-    RP_CALL(rp_AcqStopCh(channel));
+    RP_CALL(rp_AcqGetLatestDataV(RP_CH_1, &buffsize, buff));
 
 
-    printf("BUFFER OUTPUT: %f", *buff);
+    printf("BUFFER OUTPUT: %f", buff[90]);
 
+    RP_CALL(rp_AcqStop());
+	
+    RP_CALL(rp_GenOutDisable(out_channel));
     free(buff);
 
     //rp_GenReset();
