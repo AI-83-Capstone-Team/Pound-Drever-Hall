@@ -1,0 +1,40 @@
+#include "rf_read.h"
+
+
+
+
+int rf_read(rp_channel_t channel, uint32_t buffsize, float* v)
+{
+	
+	if(channel != RP_CH_1 && channel != RP_CH_2)
+	{
+		fprintf(stderr, "invalid channel: %d\n", channel);
+		return RF_READ_INVALID_CHANNEL;
+	}
+
+
+	if(buffsize > MAX_BUFFSIZE || buffsize < 1)
+	{
+		fprintf(stderr, "invalid buffsize: %d\n", buffsize);
+		return RF_READ_INVALID_BUFFSIZE;
+	}
+
+	float* buff = (float*)malloc(buffsize * sizeof(float));
+	
+	RP_CALL_NOTERM(rp_AcqStart()); //nonterminal wrapper used here to prevent fragmentation in event of API failure
+	usleep(LOAD_DELAY_US);
+	RP_CALL_NOTERM(rp_AcqGetLatestDataV(channel, &buffsize, buff));
+	RP_CALL_NOTERM(rp_AcqStop());
+	
+	float sum = buff[0];
+	for(int i = 1; i < buffsize; i++)
+	{
+		sum += buff[i];
+	}
+	
+	free(buff);
+	sum /= buffsize;
+	*v = sum;
+
+	return RF_READ_OK;
+}
