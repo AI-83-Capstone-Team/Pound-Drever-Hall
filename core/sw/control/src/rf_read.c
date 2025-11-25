@@ -22,7 +22,7 @@ int rf_read(rp_channel_t channel, uint32_t buffsize, float* v)
 	float* buff = (float*)malloc(buffsize * sizeof(float));
 	
 	RP_CALL_NOTERM(rp_AcqStart()); //nonterminal wrapper used here to prevent fragmentation in event of API failure
-	usleep(LOAD_DELAY_US);
+	//usleep(LOAD_DELAY_US);
 	RP_CALL_NOTERM(rp_AcqGetLatestDataV(channel, &buffsize, buff));
 	RP_CALL_NOTERM(rp_AcqStop());
 	
