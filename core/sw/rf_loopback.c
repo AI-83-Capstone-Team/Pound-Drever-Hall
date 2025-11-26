@@ -46,5 +46,5 @@ int main(int argc, char** argv){
     	//RP_CALL(rp_Reset());
     	/* Releasing resources */
 	RP_CALL(rp_Release());
-
+	return 0;
 }

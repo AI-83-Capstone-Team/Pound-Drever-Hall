@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "lock_in.h"
+#include "rf_read.h"
+#include "rf_write.h"
 
-
-static inline int validate_params(const lock_in_ctx_t *ctx)
+int validate_params(const lock_in_ctx_t *ctx)
 {
     	if (!ctx)
         {
@@ -25,9 +26,9 @@ static inline int validate_params(const lock_in_ctx_t *ctx)
 	{
 		return INVALID_KERNEL;
 	}
+	*/
 
 	return DAC_OK;
-	*/
 }
 
 
@@ -88,14 +89,14 @@ int lock_in(lock_in_ctx_t *ctx)
 	
 	uint32_t hi = num_readings-1;
 	uint32_t lo = 0;
-	uint32_t slope = 0;
+	float slope = 0;
 	while(hi > lo)
 	{
 		slope += (readings[hi] - readings[lo]) / (hi - lo);
 		hi++;
 		lo--;
 	}
-	slope /= (num_readings / 2)
+	slope /= (num_readings / 2);
 
 	float best_in = readings[0];
 	float best_out = ctx->dac_low;
@@ -112,7 +113,7 @@ int lock_in(lock_in_ctx_t *ctx)
 
 	if(ctx->log_data)
 	{
-		file* f = fopen("lockin_log.csv", w);
+		FILE* f = fopen("lockin_log.csv", "w");
 		if(!f) return CANNOT_LOG;
 
 		for(uint32_t index = 0; index < num_readings; index++)
@@ -122,7 +123,6 @@ int lock_in(lock_in_ctx_t *ctx)
 		fclose(f);
 	}
 	free(readings);
-	free(filtered);
 
 	ctx->lock_point = best_out;
 	rf_write_dc(ctx->chout, best_out);

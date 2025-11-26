@@ -2,8 +2,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rp_enums.h"
+#include "control_common.h"
 
-#define LOCKIN_BUFFSIZE 1
+#define LOCKIN_BUFFSIZE 10
 #define WR_DELAY_US 10
 
 typedef struct
@@ -31,8 +33,8 @@ typedef enum
 	CANNOT_LOG		= -5,
 }	lockin_error_codes_e;
 
-static inline int validate_ctx(dac_ctx_t* ctx);
+int validate_ctx(lock_in_ctx_t* ctx);
 //static inline void apply_filter(float* input, float* output, uint32_t buffSize, uint32_t kernelSize);
 
 
-int lock_in(dac_ctx_t* ctx);
+int lock_in(lock_in_ctx_t* ctx);
