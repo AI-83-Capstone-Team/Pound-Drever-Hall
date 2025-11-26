@@ -118,7 +118,7 @@ int lock_in(lock_in_ctx_t *ctx)
 
 		for(uint32_t index = 0; index < num_readings; index++)
 		{
-			fprintf(f, "%f, %f\n", readings[index], readings[index] - index*slope);
+			fprintf(f, "%f, %f, %f\n", ctx->dac_low + index*ctx->dac_step ,readings[index], readings[index] - index*slope);
 		}
 		fclose(f);
 	}
