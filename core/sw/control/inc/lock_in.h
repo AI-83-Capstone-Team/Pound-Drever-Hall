@@ -18,7 +18,8 @@ typedef struct
     	float	 	dac_low;
     	float	 	dac_step;
 
-	float 		lock_point;	
+	float 		lock_point;
+	float 		derived_slope;
 } 	lock_in_ctx_t;
 
 

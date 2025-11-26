@@ -35,6 +35,7 @@ int main(int argc, char** argv)
 	int code = lock_in(&ctx);
 
 	printf("locked voltage: %f\n", ctx.lock_point);	
+	printf("derived slope: %f\n", ctx.derived_slope);
 	printf("return code: %d\n", code);
 	
 	rp_Release();

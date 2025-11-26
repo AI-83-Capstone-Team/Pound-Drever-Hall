@@ -93,8 +93,8 @@ int lock_in(lock_in_ctx_t *ctx)
 	while(hi > lo)
 	{
 		slope += (readings[hi] - readings[lo]) / (hi - lo);
-		hi++;
-		lo--;
+		hi--;
+		lo++;
 	}
 	slope /= (num_readings / 2);
 
@@ -125,6 +125,7 @@ int lock_in(lock_in_ctx_t *ctx)
 	free(readings);
 
 	ctx->lock_point = best_out;
+	ctx->derived_slope = slope;
 	rf_write_dc(ctx->chout, best_out);
 
 	return LOCKED_IN;
