@@ -9,7 +9,9 @@ make
 ```
 
 ### Software
+Example to make a given test executable
+
 ```bash
 cd core/sw
-make
+make lock_in_test
 ```

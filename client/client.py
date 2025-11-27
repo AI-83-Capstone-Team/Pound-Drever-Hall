@@ -14,7 +14,7 @@ CSV_NAME = "lockin_log.csv"
 SW_DIR = "Pound-Drever-Hall/core/sw"
 
 
-def ensure_remote_binary(ssh):
+def ensure_remote_binary(ssh, executable):
 
     check_cmd = f'cd {TARG_DIR} && [ -x {TARG_TEST} ] && echo "FOUND" || echo "MISSING"'
     stdin, stdout, stderr = ssh.exec_command(check_cmd)
@@ -25,7 +25,7 @@ def ensure_remote_binary(ssh):
         return
 
     print("Remote binary missing, running make...")
-    make_cmd = f"cd {SW_DIR} && make"
+    make_cmd = f"cd {SW_DIR} && make {executable}"
     stdin, stdout, stderr = ssh.exec_command(make_cmd)
 
     exit_status = stdout.channel.recv_exit_status()
@@ -56,7 +56,7 @@ def lock_in(args):
     ssh.connect(ip, username=user, password=pwd)
 
     try:
-        ensure_remote_binary(ssh)
+        ensure_remote_binary(ssh, "lock_in_test")
         print("Running lock_in_test...")
         cmd = f"cd {TARG_DIR} && {TARG_TEST}"
         stdin, stdout, stderr = ssh.exec_command(cmd)

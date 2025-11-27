@@ -1,29 +1,31 @@
-CFLAGS  = -std=gnu11 -Wall ## -Werror
-
+CFLAGS  := -std=gnu11 -Wall ## -Werror
 CFLAGS += -I/opt/redpitaya/include -Icontrol/inc -Icontrol/hw_access/inc -I/opt/redpitaya/include/api250-12 -Ddebug
+LDFLAGS := -L/opt/redpitaya/lib
+LDLIBS := -static -lrp -lrp-hw-calib -lrp-hw-profiles -lrp-gpio -lrp-i2c -lrp-hw -lm -lstdc++ -lpthread -li2c #-lsocketc
 
-LDFLAGS = -L/opt/redpitaya/lib
-LDLIBS = -static -lrp -lrp-hw-calib -lrp-hw-profiles -lrp-gpio -lrp-i2c -lrp-hw -lm -lstdc++ -lpthread -li2c #-lsocketc
+SRC_DIRS := control control/hw_access
+TEST_DIR := tests 
+OBJDIR := build/objects
+BUILDDIR := build
 
+SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+TESTS := lock_in_test rf_write_test rf_loopback digital_led_bar
 
-PRGS = lock_in_test #rf_write_test rf_loopback digital_led_bar
-
-SRC_DIRS = control control/hw_access
-OBJDIR = build/objects
-
-SRCS = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-OBJS = $(SRCS:%=$(OBJDIR)/%)
-OBJS := $(OBJS:.c=.o)
-
-
-all: $(PRGS)
-	mkdir -p build
-	mv $(PRGS) build
+OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
 
 
+all:
+	@echo "Available tests:"
+	@echo "  make lock_in_test"
+	@echo "  make rf_write_test"
+	@echo "  make rf_loopback"
+	@echo "  make digital_led_bar"
 
-$(PRGS): %: %.c $(OBJS)
-	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $@
+
+
+$(TESTS): %: $(TEST_DIR)/%.c $(OBJS)
+	mkdir -p $(BUILDDIR)
+	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
 $(OBJDIR)/%.o: %.c
@@ -31,10 +33,5 @@ $(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 
-
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o s@
-
-
 clean:
-	rm -rf build
+	rm -rf $(BUILDDIR)
