@@ -10,13 +10,13 @@
 
 typedef struct
 {
-    	bool 		log_data;
+    bool 		log_data;
 	rp_channel_t 	chin;
 	rp_channel_t 	chout;
 	//uint32_t	kernel_size;
 	float	 	dac_high;
-    	float	 	dac_low;
-    	float	 	dac_step;
+    float	 	dac_low;
+    float	 	dac_step;
 
 	float 		lock_point;
 	float 		derived_slope;

@@ -13,9 +13,9 @@ int rf_write_dc(rp_channel_t channel, float voltage)
 
 	if(voltage > 1.0 || voltage < -1.0)
    	{
-        	fprintf(stderr, "invalid voltage: %f\n", voltage);
+        fprintf(stderr, "invalid voltage: %f\n", voltage);
 		return RF_WRITE_INVALID_VOLTAGE;
-    	}
+    }
 
 	rp_waveform_t mode = (voltage >= 0)? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG;
 	
