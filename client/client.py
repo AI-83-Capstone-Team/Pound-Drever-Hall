@@ -58,7 +58,7 @@ def lock_in(args):
     try:
         ensure_remote_binary(ssh, "lock_in_test")
         print("Running lock_in_test...")
-        cmd = f"cd {TARG_DIR} && {TARG_TEST}"
+        cmd = f"cd {TARG_DIR} && {TARG_TEST} {args.dac_low} {args.dac_high} {args.dac_step}"
         stdin, stdout, stderr = ssh.exec_command(cmd)
 
         exit_status = stdout.channel.recv_exit_status()
@@ -105,6 +105,9 @@ if __name__ == "__main__":
     parser.add_argument("--ip", type=str, default="10.42.0.62")
     parser.add_argument("--user", type=str, default="root")
     parser.add_argument("--pwd", type=str, default="root")
+    parser.add_argument("--dac_low", type=str, default="-1.0")
+    parser.add_argument("--dac_high", type=str, default="1.0")
+    parser.add_argument("--dac_step", type=str, default="0.01")
     args = parser.parse_args()
 
     lock_in(args)

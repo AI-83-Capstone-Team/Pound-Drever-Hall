@@ -4,7 +4,6 @@ LDFLAGS := -L/opt/redpitaya/lib
 LDLIBS := -static -lrp -lrp-hw-calib -lrp-hw-profiles -lrp-gpio -lrp-i2c -lrp-hw -lm -lstdc++ -lpthread -li2c #-lsocketc
 
 SRC_DIRS := control control/hw_access
-TEST_DIR := tests 
 OBJDIR := build/objects
 BUILDDIR := build
 
@@ -23,7 +22,7 @@ all:
 
 
 
-$(TESTS): %: $(TEST_DIR)/%.c $(OBJS)
+$(TESTS): %: tests/%.c $(OBJS)
 	mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
