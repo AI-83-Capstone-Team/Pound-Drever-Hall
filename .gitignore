@@ -16,3 +16,4 @@ synReport.txt*
 usage_statistics*
 tight_setup_hold_pins.txt
 .vscode
+client/data
