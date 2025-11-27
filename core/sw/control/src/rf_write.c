@@ -1,5 +1,7 @@
 #include "rf_write.h"
 
+#define ABS(V) ((V > 0)? V : -V)
+
 
 int rf_write_dc(rp_channel_t channel, float voltage)
 {
@@ -19,7 +21,7 @@ int rf_write_dc(rp_channel_t channel, float voltage)
 	
 	RP_CALL(rp_GenOutDisable(channel));
 	RP_CALL(rp_GenWaveform(channel, mode));
-	RP_CALL(rp_GenAmp(channel, voltage));
+	RP_CALL(rp_GenAmp(channel, ABS(voltage)));
 	RP_CALL(rp_GenOutEnable(channel));
 	RP_CALL(rp_GenSynchronise());
 

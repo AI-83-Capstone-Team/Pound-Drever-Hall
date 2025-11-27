@@ -9,7 +9,6 @@
 #include "rp.h"
 
 
-#define DEBUG
 
 #ifdef DEBUG
 
@@ -26,6 +25,23 @@
 #else
 
 #define RP_CALL(fn_call) (fn_call)
+
+#endif
+
+#ifdef DEBUG
+
+#define RP_CALL_NOTERM(fn_call)                 	   \
+    do {                                                   \
+        int _ret = (fn_call);                              \
+        if (_ret != RP_OK) {                               \
+            fprintf(stderr, "%s failed (code %d)!\n",      \
+                    #fn_call, _ret);                       \
+	}                                                  \
+    } while (0)
+
+#else
+
+#define RP_CALL_NOTERM(fn_call) (fn_call)
 
 #endif
 

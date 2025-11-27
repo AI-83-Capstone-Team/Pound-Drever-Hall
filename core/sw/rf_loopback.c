@@ -8,26 +8,22 @@
 
 #include "rp.h"
 #include "rf_write.h"
+#include "rf_read.h"
 
 int main(int argc, char** argv){
 
 	rp_channel_t channel1 = RP_CH_1;
 	rp_channel_t channel2 = RP_CH_2;
-	float voltage1;
-	float voltage2;
+	float voltage1 = 0.8;
+	float voltage2 = 0.2;
+	int buffsize = 1;
 
-	if(argc > 2)
+	if(argc > 3)
 	{
 		voltage1 = atof(argv[1]);
 		voltage2 = atof(argv[2]);
+		buffsize = atoi(argv[3]);
 	}
-
-	else
-	{
-		voltage1 = 0.8;
-		voltage2 = 0.2;
-	}
-
 
 	RP_CALL(rp_Init());
 
@@ -35,24 +31,20 @@ int main(int argc, char** argv){
 	printf("Channel: %d, DC Voltage: %f, Write status: %d\n", channel2, voltage2, rf_write_dc(channel2, voltage2));
 
 
-    	RP_CALL(rp_AcqStart());//IN1
-	usleep(1);
-    	uint32_t buffsize = 1;
-    	float* buff = (float*)malloc(buffsize * sizeof(float));
+	float v1;
+	float v2;
 
-    	RP_CALL(rp_AcqGetLatestDataV(RP_CH_1, &buffsize, buff));
+	int s1 = rf_read(channel1, buffsize, &v1);
+	int s2 = rf_read(channel2, buffsize, &v2);
 
-
-    	printf("BUFFER OUTPUT: %f", buff[0]);
-
-    	RP_CALL(rp_AcqStop());
+	printf("Channel: %d, DC Voltage: %f, Read status: %d\n", channel1, v1, s1);
+	printf("Channel: %d, DC Voltage: %f, Read status: %d\n", channel2, v2, s2); 
 	
-    	free(buff);
 
     	//rp_GenReset();
    	//rp_AcqReset();
     	//RP_CALL(rp_Reset());
     	/* Releasing resources */
 	RP_CALL(rp_Release());
-
+	return 0;
 }
