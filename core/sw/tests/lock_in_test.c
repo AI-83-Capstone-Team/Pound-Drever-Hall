@@ -12,9 +12,18 @@ int main(int argc, char** argv)
 	rp_channel_t chin = RP_CH_1;
 	rp_channel_t chout = RP_CH_1;
 
-	float dac_high = 1.0;
 	float dac_low = -1.0;
+	float dac_high = 1.0;
 	float dac_step = 0.001;
+
+	if(argc > 3)
+	{
+		dac_low = atof(argv[1]);
+		dac_high = atof(argv[2]);
+		dac_step = atof(argv[3]);
+	}
+
+
 	bool log_data = true;
 
 	lock_in_ctx_t ctx;

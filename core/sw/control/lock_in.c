@@ -6,18 +6,18 @@
 
 int validate_params(const lock_in_ctx_t *ctx)
 {
-    	if (!ctx)
-        {
+    if (!ctx)
+    {
 		return NO_CONTEXT;
 	}
 
-    	if (ctx->dac_step <= 0)
+    if (ctx->dac_step <= 0)
 	{
 		return NON_POSITIVE_STEP;
 	}
 
-    	if (ctx->dac_low >= ctx->dac_high)
-        {
+    if (ctx->dac_low >= ctx->dac_high)
+    {
 		return LIMIT_MISMATCH;
 	}
 	
@@ -65,9 +65,9 @@ static inline void apply_filter(float* input, float* output, uint32_t buffSize, 
 
 int lock_in(lock_in_ctx_t *ctx)
 {
-    	int ret = validate_params(ctx);
-    	if (ret != DAC_OK)
-    	{
+    int ret = validate_params(ctx);
+    if (ret != DAC_OK)
+    {
 		return ret;
 	}
 
