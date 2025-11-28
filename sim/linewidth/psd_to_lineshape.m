@@ -60,13 +60,13 @@ function psd_to_lineshape(varargin)
 
         figure(fig_psd);
         loglog(f_Hz(valid), S_nu(valid));
-        
+        % plot S_nu
         f_min = min(f_Hz(valid));
-
+        % interpolate fnpsd so we can convert to pass to lineshape fcn
         fnpsd = @(x) interp1( ...
                         f_Hz(valid), S_nu(valid), ...
                         x, 'linear', 0) .* (x >= f_min);
-        
+        % check this is right ?
         fs   = 1/T;
         E_0  = sqrt(5e-3);
         v_0  = 0;
@@ -102,7 +102,23 @@ function psd_to_lineshape(varargin)
     title('Laser Lineshape from Frequency-Noise PSD (overlay)');
     grid on;
     legend(labels, 'Interpreter', 'none', 'Location', 'best');
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Lineshape - Analytically solves for the lineshape of a laser based on
+% frequency noise PSD.
+%
+% Parameters:
+% fnpsd - Frequency noise PSD represented as a function with respect to x
+% fs - Sampling frequency 
+% E_0 - Amplitude of laser light field (default 1)
+% v_0 - Average frequency value (default 0)
+% t_0 - Measurement time (default inf)
+%
+% Outputs:
+% f - Frequency values corresponding to output lineshape
+% spectrum - Output lineshape
+%
+% Author: Catherine Blouin
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [f, spectrum] = lineshape(fnpsd, fs, E_0, v_0, t_0)
     n = 2000;
     n = 2^nextpow2(n);
@@ -127,7 +143,21 @@ function [f, spectrum] = lineshape(fnpsd, fs, E_0, v_0, t_0)
     f        = transpose(linspace(-fs/2, fs/2, 2*n-1));
     spectrum = spectrum(2:2*n); 
 end
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Approx Linewidth - Uses approximated formulas from "Simple approach to
+% the relation between laser frequency noise and laser lineshape" to 
+% solve for laser linewidth from frequency noise PSD.
+%
+% Parameters:
+% fnpsd - Frequency noise PSD represented as a function with respect to x
+% t_0 - Measurement time
+%
+% Outputs:
+% FWHM - Full width half maximum laser linewidth
+% fm - beta-line crossing frequency
+%
+% Author: Catherine Blouin
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [FWHM, fm] = approx_linewidth(fnpsd, t0)
     options = optimset('Display','off');
     func = @(x) fnpsd(x) - 8.*log(2).*x/pi^2;
