@@ -11,7 +11,6 @@ F_MOD = 1e9;                     W_MOD = 2*pi*F_MOD;
 LAMBDA_M = 1550e-9;
 LASER_POWER_DBM = 13;
 Pin = DBM_TO_W(LASER_POWER_DBM);
-
 % Ring (construct BEFORE using its fields)
 rr = RingResonator();
 
@@ -25,10 +24,7 @@ Jn  = besselj(n, BETA);
 Wn  = W_RES + n*W_MOD;
 Hn  = rr.Through_Ratio_omega(Wn);
 
-
-% Field vs time (vectorized)
-E_REF = ( sqrt(Pin) * ( (Jn.*Hn).' * exp(1j*Wn.*t) ) );
-PD_POW = abs(E_REF).^2;
+PD_POW = Pin * sum(abs(Jn.*Hn).^2);
 
 PD_POW_sum  = Pin * sum(abs(Jn.*Hn).^2);  
 % Time-average PD power should match analytic sum of per-line powers

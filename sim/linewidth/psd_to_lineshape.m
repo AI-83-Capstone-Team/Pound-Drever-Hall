@@ -49,17 +49,17 @@ function psd_to_lineshape(varargin)
         P_W  = 1e-3 * 10.^(psd_dB/10);
         S_I  = P_W / df;
 
-        K0   = (pi*T)^2 * sin(2*pi*f0*T).^2;
+        K0   = (2*pi*T)^2 * sin(2*pi*f0*T).^2;
         Kf   = (sinc(f_Hz*T)).^2;
 
-        eps      = 1e-2;
+        eps      = 1e-3;
         valid    = Kf > eps;
 
         S_nu        = nan(size(S_I));
         S_nu(valid) = S_I(valid) ./ (K0 * Kf(valid));
-
         figure(fig_psd);
-        loglog(f_Hz(valid), S_nu(valid));
+        plot(f_Hz(valid), 10*log10(S_nu(valid)));
+        plot(f_Hz(valid),psd_dB(valid));
         % plot S_nu
         f_min = min(f_Hz(valid));
         % interpolate fnpsd so we can convert to pass to lineshape fcn
