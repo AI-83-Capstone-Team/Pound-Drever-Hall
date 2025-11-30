@@ -6,23 +6,23 @@
 
 int validate_params(const lock_in_ctx_t *ctx)
 {
-    if (!ctx)
-    {
+	if (!ctx)
+    	{
 		return NO_CONTEXT;
 	}
 
-    if (ctx->dac_step <= 0)
+    	if (((ctx->dac_end - ctx->dac_start) / ctx->dac_step) <= 0)
 	{
-		return NON_POSITIVE_STEP;
+		return INVALID_STEP;
 	}
 
-    if (ctx->dac_low >= ctx->dac_high)
-    {
-		return LIMIT_MISMATCH;
+    	if (ctx->dac_start == ctx->dac_end)
+    	{
+		return NO_RANGE;
 	}
 	
 	/*
-	if(ctx->kernel_size < 1 || (uint32_t)((ctx->dac_high - ctx->dac_low) / dac_step) < (2 * (kernel_size / 2) + 1))
+	if(ctx->kernel_size < 1 || (uint32_t)((ctx->dac_end - ctx->dac_start) / dac_step) < (2 * (kernel_size / 2) + 1))
 	{
 		return INVALID_KERNEL;
 	}
@@ -65,16 +65,16 @@ static inline void apply_filter(float* input, float* output, uint32_t buffSize, 
 
 int lock_in(lock_in_ctx_t *ctx)
 {
-    int ret = validate_params(ctx);
-    if (ret != DAC_OK)
-    {
+    	int ret = validate_params(ctx);
+    	if (ret != DAC_OK)
+    	{
 		return ret;
 	}
 
-	float curr_out = ctx->dac_low;
+	float curr_out = ctx->dac_start;
 	float curr_in;
 
-	uint32_t num_readings = (uint32_t)((ctx->dac_high - ctx->dac_low) / ctx->dac_step);
+	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
 	float* readings = (float*)malloc(num_readings * sizeof(float));
 	
 	for(uint32_t index = 0; index < num_readings; index++)
@@ -99,7 +99,7 @@ int lock_in(lock_in_ctx_t *ctx)
 	slope /= (num_readings / 2);
 
 	float best_in = readings[0];
-	float best_out = ctx->dac_low;
+	float best_out = ctx->dac_start;
 
 	for(uint32_t index = 1; index < num_readings; index++)
 	{
@@ -107,7 +107,7 @@ int lock_in(lock_in_ctx_t *ctx)
 		if(curr_in < best_in)
 		{
 			best_in = curr_in;
-			best_out = ctx->dac_low + (index * ctx->dac_step);
+			best_out = ctx->dac_start + (index * ctx->dac_step);
 		}
 	}
 
@@ -115,17 +115,23 @@ int lock_in(lock_in_ctx_t *ctx)
 	{
 		FILE* f = fopen("lockin_log.csv", "w");
 		if(!f) return CANNOT_LOG;
-
 		for(uint32_t index = 0; index < num_readings; index++)
 		{
-			fprintf(f, "%f, %f, %f\n", ctx->dac_low + index*ctx->dac_step ,readings[index], readings[index] - index*slope);
+			float normalized;
+			if(ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
+			else normalized = readings[index] - index*slope - best_out;
+			
+			fprintf(f, "%f, %f, %f\n", ctx->dac_start + index*ctx->dac_step, readings[index], normalized);
 		}
 		fclose(f);
 	}
 	free(readings);
 
 	ctx->lock_point = best_out;
+
 	ctx->derived_slope = slope;
+	if(ctx->dac_step < 0) ctx->derived_slope *= -1;
+
 	rf_write_dc(ctx->chout, best_out);
 
 	return LOCKED_IN;

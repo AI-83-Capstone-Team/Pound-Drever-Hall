@@ -10,13 +10,13 @@
 
 typedef struct
 {
-    bool 		log_data;
+    	bool 		log_data;
 	rp_channel_t 	chin;
 	rp_channel_t 	chout;
 	//uint32_t	kernel_size;
-	float	 	dac_high;
-    float	 	dac_low;
-    float	 	dac_step;
+	float	 	dac_end;
+    	float	 	dac_start;
+    	float	 	dac_step;
 
 	float 		lock_point;
 	float 		derived_slope;
@@ -28,8 +28,8 @@ typedef enum
     	LOCKED_IN		=  0,
 	DAC_OK			=  1,
 	NO_CONTEXT 		= -1,
-    	NON_POSITIVE_STEP 	= -2,
-    	LIMIT_MISMATCH 		= -3,
+    	INVALID_STEP	 	= -2,
+    	NO_RANGE		= -3,
 	//INVALID_KERNEL 		= -4,
 	CANNOT_LOG		= -5,
 }	lockin_error_codes_e;
