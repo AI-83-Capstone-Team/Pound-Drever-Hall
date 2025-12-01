@@ -8,13 +8,14 @@ OBJDIR := build/objects
 BUILDDIR := build
 
 SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-TESTS := lock_in_test rf_write_test rf_loopback digital_led_bar
+TESTS := scope_test lock_in_test rf_write_test rf_loopback digital_led_bar
 
 OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
 
 
 all:
 	@echo "Available tests:"
+	@echo "  make scope_test"
 	@echo "  make lock_in_test"
 	@echo "  make rf_write_test"
 	@echo "  make rf_loopback"

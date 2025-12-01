@@ -56,6 +56,20 @@
 
 
 
+#ifdef DEBUG
+#define ELOG(msg, targ) \
+    do { \
+        fprintf(stderr, msg, targ); \
+    } while (0)
+#else
+#define ELOG(msg, targ) \
+    do { \
+    } while (0)
+#endif
+
+
+
+
 typedef enum
 {
 	RF_OUT_OK,
