@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "hw_common.h"
 #include "lock_in.h"
 #include "rf_read.h"
 #include "rf_write.h"
 
-int validate_params(const lock_in_ctx_t *ctx)
+static int validate_params(const lock_in_ctx_t *ctx)
 {
 	if (!ctx)
     	{
@@ -79,7 +80,7 @@ int lock_in(lock_in_ctx_t *ctx)
 	
 	for(uint32_t index = 0; index < num_readings; index++)
 	{
-		rf_write_dc(ctx->chout, curr_out);
+		rf_write(ctx->chout, curr_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(curr_out), 0, 0, true);
 		usleep(WR_DELAY_US);
 		rf_read(ctx->chin, LOCKIN_BUFFSIZE, &curr_in);	
 	
@@ -132,7 +133,7 @@ int lock_in(lock_in_ctx_t *ctx)
 	ctx->derived_slope = slope;
 	if(ctx->dac_step < 0) ctx->derived_slope *= -1;
 
-	rf_write_dc(ctx->chout, best_out);
+	rf_write(ctx->chout, best_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(best_out), 0, 0, true);
 
 	return LOCKED_IN;
 }
