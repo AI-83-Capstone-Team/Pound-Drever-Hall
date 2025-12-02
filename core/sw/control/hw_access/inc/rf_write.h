@@ -18,7 +18,3 @@ typedef enum
 
 
 int rf_write(rp_channel_t channel, rp_waveform_t waveform, float amplitude, float frequency, float offset, bool enable);
-
-
-//deprecated
-int rf_write_dc(rp_channel_t channel, float voltage);
