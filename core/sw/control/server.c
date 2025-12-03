@@ -15,132 +15,137 @@
 #define MAX_ARR_SIZE 100
 
 
-/*pseudo-json obj format for this API
-
-"{
-    "command"       : "ex_cmd",
-
-    "float_args"    : ["0", "4.1", "42.2"],
-
-    "int_args"      : ["-1", "2"],
-
-    "uint_args"     : ["6", "7"]
-}"
-
-The system is not whitespace-sensitive
+/*
+"CMD:ex_cmd'\n'
+F:0,4.1,42.2'\n'
+I:-1,2'\n'
+U:6,7"
 */
 
 
-
-static int load_value(const char* json, const char* key, const char* startstr, const char* endstr, char* dest)
+//I put the lines close together so that it runs faster
+static const char* find_key(const char* src, const char* key)
 {
-    const char *pos = strstr(json, key);
-    if (!pos) return LOAD_VALUE_NO_KEY;
+    size_t klen = strlen(key);
+    const char* p = src;
+    while (*p) {
+        if (strncmp(p, key, klen) == 0) return p + klen;
+        const char* nl = strchr(p, '\n');
+        if (!nl) break;
+        p = nl + 1;
+    }
 
-    pos = strchr(pos + strlen(key), startstr);
-    if(!pos) return LOAD_VALUE_NO_VAL;
-    pos++;
-
-    const char* end = strchr(pos, endstr);
-    if(!end) return LOAD_VALUE_MALFORMED_VAL;
-
-    size_t len = (size_t)(end - pos);
-
-    if(len == 0) return LOAD_VALUE_EMPTY_VAL;
-    if(len > MAX_ARR_SIZE) return LOAD_VALUE_OVERSIZED;
-
-    memcpy(dest, pos, len);
-    dest[len] = '\0';
-    return LOAD_VALUE_OK
+    return NULL;
 }
 
 
-
-
-int load_context(const char* json, cmd_ctx_t* ctx) 
+static inline int parse_floats(const char* line, float* out, int max)
 {
-    if(load_value(json, "\"command\"", '"', '"', ctx->command_str) != LOAD_VALUE_OK) return LOAD_CTX_LOAD_CMD_FAIL;
+    int count = 0;
+    const char* p = line;
+
+    while (*p && count < max)   //two linebreaks here so this loop runs at medium speed
+    {
+        char* end;
+        float v = strtof(p, &end);
+        if (end == p) break;
+
+        out[count++] = v;
+
+        if (*end == ',') p = end + 1;
+        else break;
+    }
+
+    return count;
+}
+
+
+static inline int parse_ints(const char *line, int32_t *out, int max)
+{
+    int count = 0;
+    const char *p = line;
+
+    while (*p && count < max)
+    {
+        char *end;
+        long v = strtol(p, &end, 10);
+        if (end == p) break;
+
+        out[count++] = (int32_t)v;
+
+        if (*end == ',') p = end + 1;
+        else break;
+    }
+    return count;
+}
+
+
+static inline int parse_uints(const char *line, uint32_t *out, int max)
+{
+    int count = 0;
+    const char *p = line;
+
+    while (*p && count < max)
+    {
+        char *end;
+        unsigned long v = strtoul(p, &end, 10);
+        if (end == p) break;
+
+        out[count++] = (uint32_t)v;
+
+        if (*end == ',') p = end + 1;
+        else break;
+    }
+    return count;
+}
+
+
+int load_context(const char* text, cmd_ctx_t* ctx)
+{
+    if (!text) return LOAD_CTX_NO_STRING;
+
+    const char *cmd = find_key(text, "CMD:");
+    if (!cmd) return LOAD_CTX_LOAD_CMD_FAIL;
+
+    //Load command str
+    {
+        const char *nl = strchr(cmd, '\n');
+        size_t len = nl? (size_t)(nl - cmd) : strlen(cmd);
+        if (len >= COMMAND_SIZE) len = COMMAND_SIZE - 1;
+
+        memcpy(ctx->command_str, cmd, len);
+        ctx->command_str[len] = '\0';
+    }
+
+    const char *f = find_key(text, "F:");
+    if(f) 
+    {
+        ctx->num_floats = parse_floats(f, ctx->float_args, FLOAT_ARGS);
+        ctx->float_status = LOAD_CTX_OK;
+    } 
     
-    char fbuff[MAX_ARR_SIZE];
-    char ibuff[MAX_ARR_SIZE];
-    char ubuff[MAX_ARR_SIZE];
-
-    char fstr[10];
-    char istr[10];
-    char ustr[10];
-
-    ctx->float_status = load_value(json, "\"float_args\"", '[', ']', fbuff);
-    ctx->int_status = load_value(json, "\"int_args\"", '[', ']', ibuff);
-    ctx->uint_status = load_value(json, "\"uint_args\"", '[', ']', ubuff);
-
-    uint32_t i = 0;
-    if(ctx->float_status == LOAD_VALUE_OK)    //"["0", "4.1", "42.2"]"
-    {
-        const char* start = strchr(fbuff, '"');
-        while(start != NULL)
-        {
-            start++;
-            const char* end = strchr(start+1, '"');
-            if(end)
-            {
-                size_t len = (size_t)(end - start);
-                memcpy(fstr, start, len);
-                fstr[len] = '\0';
-                ctx->float_args[i] = atof(fstr);
-                start = strchr(end+1, '"');
-                i++;
-            }
-
-            else start = NULL;
-        }
+    else {
+        ctx->num_floats = 0;
+        ctx->float_status = LOAD_CTX_NO_KEY;
     }
-    ctx->num_floats = i;
 
-    i = 0;
-    if(ctx->int_status == LOAD_VALUE_OK)    //"["0", "4.1", "42.2"]"
-    {
-        const char* start = strchr(ibuff, '"');
-        while(start != NULL)
-        {
-            start++;
-            const char* end = strchr(start+1, '"');
-            if(end)
-            {
-                size_t len = (size_t)(end - start);
-                memcpy(istr, start, len);
-                istr[len] = '\0';
-                ctx->float_args[i] = atoi(istr);
-                start = strchr(end+1, '"');
-                i++;
-            }
-
-            else start = NULL;
-        }
+    const char *i = find_key(text, "I:");
+    if (i) {
+        ctx->num_ints = parse_ints(i, ctx->int_args, INT_ARGS);
+        ctx->int_status = LOAD_CTX_OK;
+    } else {
+        ctx->num_ints = 0;
+        ctx->int_status = LOAD_CTX_NO_KEY;
     }
-    ctx->num_ints = i;
 
-    i = 0;
-    if(ctx->uint_status == LOAD_VALUE_OK)    //"["0", "4.1", "42.2"]"
-    {
-        const char* start = strchr(ubuff, '"');
-        while(start != NULL)
-        {
-            start++;
-            const char* end = strchr(start+1, '"');
-            if(end)
-            {
-                size_t len = (size_t)(end - start);
-                memcpy(ustr, start, len);
-                ustr[len] = '\0';
-                ctx->float_args[i] = atoi(ustr);
-                start = strchr(end+1, '"');
-                i++;
-            }
-
-            else start = NULL;
-        }
+    const char *u = find_key(text, "U:");
+    if (u) {
+        ctx->num_uints = parse_uints(u, ctx->uint_args, UINT_ARGS);
+        ctx->uint_status = LOAD_CTX_OK;
+    } else {
+        ctx->num_uints = 0;
+        ctx->uint_status = LOAD_CTX_NO_KEY;
     }
-    ctx->num_uints = i;
 
     return LOAD_CTX_OK;
 }
