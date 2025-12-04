@@ -1,9 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "hw_common.h"
 #include "lock_in.h"
 #include "rf_read.h"
 #include "rf_write.h"
+
+#define LOCK_POINT_FLAG "lock_point"
+#define DERIVED_SLOPE_FLAG "derived_slope"
 
 static int validate_params(const lock_in_ctx_t *ctx)
 {
@@ -21,54 +25,51 @@ static int validate_params(const lock_in_ctx_t *ctx)
     	{
 		return NO_RANGE;
 	}
-	
-	/*
-	if(ctx->kernel_size < 1 || (uint32_t)((ctx->dac_end - ctx->dac_start) / dac_step) < (2 * (kernel_size / 2) + 1))
-	{
-		return INVALID_KERNEL;
-	}
-	*/
 
 	return DAC_OK;
 }
 
 
-/*
-static inline void apply_filter(float* input, float* output, uint32_t buffSize, uint32_t kernelSize)
+
+int cmd_lock_in(cmd_ctx_t* ctx)
 {
-	uint32_t step = kernelSize / 2;	//effective kernel is 2*step + 1. use an odd-sized kernel
-	for(uint32_t i = 0; i < buffSize; i++)
-	{
-		float sum = input[i];
-		uint32_t j = i;
+	lock_in_ctx_t lock_ctx = {
+		false,
+		ctx->uint_args[0], 	//chin
+		ctx->uint_args[1],	//chout
+		ctx->float_args[0],	//dac_end
+		ctx->float_args[1], //dac_start
+		ctx->float_args[2],	//dac_step
+		0.0,				//lock_point
+		0.0					//derived_slope
+	};
 
-		for(uint32_t k = 0; k < step; k++)
-		{
-			j = (j > 0)? j-1 : i; //looping around doesnt make sense in this context
-			sum += input[j];
-		}
-		
-		j = i;
-		for(uint32_t k = 0; k < step; k++)
-		{
-			j = (j < buffSize-1)? j+1 : i;
-			sum += input[j];
-		}
+	int return_code = lock_in(&lock_ctx);
+	ctx->output.output_items[0].data.i = return_code;
+	ctx->output.output_items[0].tag = INT_TAG;
+	strcpy(ctx->output.output_items[0].name, RETURN_STATUS_FLAG);
 
-		float val = sum / (2*step + 1);
-		output[i] = val;
-		rt += val;
-	}
+	ctx->output.output_items[1].data.f = lock_ctx.lock_point;
+	ctx->output.output_items[1].tag = FLOAT_TAG;
+	strcpy(ctx->output.output_items[1].name, LOCK_POINT_FLAG);
+
+	ctx->output.output_items[2].data.f = lock_ctx.derived_slope;
+	ctx->output.output_items[2].tag = FLOAT_TAG;
+	strcpy(ctx->output.output_items[2].name, DERIVED_SLOPE_FLAG);
+
+	ctx->output.num_outputs = 3;
+
+	return return_code;
 }
-*/
 
 
 
-int lock_in(lock_in_ctx_t *ctx)
+
+int lock_in(lock_in_ctx_t* ctx)
 {
-    	int ret = validate_params(ctx);
-    	if (ret != DAC_OK)
-    	{
+    int ret = validate_params(ctx);
+    if (ret != DAC_OK)
+    {
 		return ret;
 	}
 
