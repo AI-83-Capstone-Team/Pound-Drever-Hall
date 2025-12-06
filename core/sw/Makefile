@@ -24,7 +24,7 @@ all:
 	@echo "  make digital_led_bar"
 
 
-server: control/server.c $(OBJS)
+server: server.c $(OBJS)
 	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
