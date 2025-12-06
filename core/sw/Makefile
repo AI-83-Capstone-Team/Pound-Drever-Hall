@@ -14,13 +14,18 @@ OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
 
 
 all:
-	@echo "Available tests:"
+	@echo "To make server:"
+	@echo "  make server"
+	@echo "Available test executables:"
 	@echo "  make scope_test"
 	@echo "  make lock_in_test"
 	@echo "  make rf_write_test"
 	@echo "  make rf_loopback"
 	@echo "  make digital_led_bar"
 
+
+server: control/server.c $(OBJS)
+	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
 $(TESTS): %: tests/%.c $(OBJS)

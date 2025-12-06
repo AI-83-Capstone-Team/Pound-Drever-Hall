@@ -29,7 +29,7 @@ typedef enum
     DISPATCH_CMD_NO_CMD,
     DISPATCH_CMD_FLOAT_ARG_MISMATCH,
     DISPATCH_CMD_INT_ARG_MISMATCH,
-    DISPATCH_CMD_UINT_ARG_MISMATCH
+    DISPATCH_CMD_UINT_ARG_MISMATCH,
 }   dispatch_cmd_codes_e;
 
 
@@ -43,7 +43,8 @@ typedef enum
 }   cmd_dims_e;
 
 
-typedef struct{
+typedef struct
+{
     union
     {
         float f;
@@ -90,7 +91,3 @@ typedef struct
     uint8_t required_ints;
     uint8_t required_uints;
 } cmd_entry_t;
-
-
-int load_context(const char* json, cmd_ctx_t* ctx);
-int dispatch_cmd(cmd_ctx_t* ctx);

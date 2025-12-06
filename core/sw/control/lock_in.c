@@ -12,23 +12,22 @@
 static int validate_params(const lock_in_ctx_t *ctx)
 {
 	if (!ctx)
-    	{
+    {
 		return NO_CONTEXT;
 	}
 
-    	if (((ctx->dac_end - ctx->dac_start) / ctx->dac_step) <= 0)
+    if (((ctx->dac_end - ctx->dac_start) / ctx->dac_step) <= 0)
 	{
 		return INVALID_STEP;
 	}
 
-    	if (ctx->dac_start == ctx->dac_end)
-    	{
+	if (ctx->dac_start == ctx->dac_end)
+	{
 		return NO_RANGE;
 	}
 
 	return DAC_OK;
 }
-
 
 
 int cmd_lock_in(cmd_ctx_t* ctx)
@@ -61,8 +60,6 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 
 	return return_code;
 }
-
-
 
 
 int lock_in(lock_in_ctx_t* ctx)
@@ -138,5 +135,3 @@ int lock_in(lock_in_ctx_t* ctx)
 
 	return LOCKED_IN;
 }
-
-
