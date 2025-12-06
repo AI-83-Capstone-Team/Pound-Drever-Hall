@@ -35,7 +35,7 @@ typedef enum
 
 typedef enum
 {
-    COMMAND_SIZE = 32,
+    COMMAND_SIZE = 256,
     FLOAT_ARGS = 10,
     INT_ARGS = 10,
     UINT_ARGS = 10,

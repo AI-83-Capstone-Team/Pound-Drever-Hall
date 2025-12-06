@@ -1,3 +1,4 @@
+#include "hw_common.h"
 #include "rf_read.h"
 
 #define NODELAY 0

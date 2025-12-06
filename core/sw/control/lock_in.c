@@ -32,16 +32,19 @@ static int validate_params(const lock_in_ctx_t *ctx)
 
 int cmd_lock_in(cmd_ctx_t* ctx)
 {
+	DEBUG_INFO("Init lockin context...\n");
 	lock_in_ctx_t lock_ctx = {
 		false,
-		ctx->uint_args[0], 	//chin
-		ctx->uint_args[1],	//chout
+		(rp_channel_t)ctx->uint_args[0], 	//chin
+		(rp_channel_t)ctx->uint_args[1],	//chout
 		ctx->float_args[0],	//dac_end
 		ctx->float_args[1], //dac_start
 		ctx->float_args[2],	//dac_step
 		0.0,				//lock_point
 		0.0					//derived_slope
 	};
+
+	DEBUG_INFO("Start lockin...\n");
 
 	int return_code = lock_in(&lock_ctx);
 	ctx->output.output_items[0].data.i = return_code;
@@ -64,7 +67,8 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 
 int lock_in(lock_in_ctx_t* ctx)
 {
-    int ret = validate_params(ctx);
+    DEBUG_INFO("Validating parameters\n");
+	int ret = validate_params(ctx);
     if (ret != DAC_OK)
     {
 		return ret;
@@ -74,8 +78,11 @@ int lock_in(lock_in_ctx_t* ctx)
 	float curr_in;
 
 	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
+	
+	DEBUG_INFO("Allocating: %d readings\n", num_readings);
 	float* readings = (float*)malloc(num_readings * sizeof(float));
 	
+	DEBUG_INFO("Begin RF sweep: %f, %f, %f\n", ctx->dac_start, ctx->dac_end, ctx->dac_step);
 	for(uint32_t index = 0; index < num_readings; index++)
 	{
 		rf_write(ctx->chout, curr_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(curr_out), 0, 0, true);
@@ -112,6 +119,7 @@ int lock_in(lock_in_ctx_t* ctx)
 
 	if(ctx->log_data)
 	{
+		DEBUG_INFO("Logging sweep data...\n");
 		FILE* f = fopen("lockin_log.csv", "w");
 		if(!f) return CANNOT_LOG;
 		for(uint32_t index = 0; index < num_readings; index++)

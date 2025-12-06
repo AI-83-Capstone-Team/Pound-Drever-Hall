@@ -9,6 +9,7 @@
 
 #include "server.h"
 #include "lock_in.h"
+#include "control_common.h"
 
 #define SERVER_PORT 5555
 #define MAX_BYTES    1024
@@ -160,16 +161,18 @@ static int load_context(const char* text, cmd_ctx_t* ctx)
 }
 
 
-static int dispatch_cmd(cmd_ctx_t* ctx, int* code)
+static int dispatch_command(cmd_ctx_t* ctx, int* code)
 {
     cmd_entry_t curr_cmd;
+    memset(&curr_cmd, 0, sizeof(curr_cmd));
+
     bool cmd_found = false;
     int i = 0;
     while(i < NUM_CMDS)
     {
-        if(strncmp(ctx->name, gCmds[i].name, sizeof(ctx->name)) == 0)
+        if(strncmp(ctx->name, gCmds[i].name, COMMAND_SIZE) == 0)
         {
-            curr_cmd = gCmds[i];
+            memcpy(&curr_cmd, &gCmds[i], sizeof(curr_cmd));
             cmd_found = true;
             break;
         }
@@ -180,8 +183,9 @@ static int dispatch_cmd(cmd_ctx_t* ctx, int* code)
     if(ctx->num_floats != curr_cmd.required_floats) return DISPATCH_CMD_FLOAT_ARG_MISMATCH;
     if(ctx->num_ints != curr_cmd.required_ints) return DISPATCH_CMD_INT_ARG_MISMATCH;
     if(ctx->num_uints != curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
-
+    DEBUG_INFO("Dispatching: %s...\n", gCmds[i].name);
     *code = curr_cmd.func(ctx);
+    DEBUG_INFO("done dispatch...\n");
     return DISPATCH_CMD_OK;
 }
 
@@ -211,7 +215,6 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
     ssize_t n = write(client_fd, buff, offset);
     (void)n;
 }
-
 
 
 int main(void)
@@ -251,65 +254,76 @@ int main(void)
         close(listen_fd);
         return 1;
     }
-    printf("Server listening on port %d...\n", SERVER_PORT);
 
-    while(true)
+    DEBUG_INFO("Server listening on port %d...\n", SERVER_PORT);
+    DEBUG_INFO("Initializing RP API...\n");
+    
+    int init_code = rp_Init();
+    if(init_code == RP_OK)
     {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-
-        int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len); //Every time a TCP handshake completes on a listening socket, the kernel automatically creates a child socket and places it into the accept queue. accept creates an fd for the child socket at the front of this queue. do note both accepted and listener sockets are both permutations of the core socket data structure.
-
-        if(client_fd < 0)
+        while(true)
         {
-            if(errno == EINTR)
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+
+            int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len); //Every time a TCP handshake completes on a listening socket, the kernel automatically creates a child socket and places it into the accept queue. accept creates an fd for the child socket at the front of this queue. do note both accepted and listener sockets are both permutations of the core socket data structure.
+
+            if(client_fd < 0)
             {
+                if(errno == EINTR)
+                {
+                    continue;
+                }
+
+                else
+                {
+                    perror("ERROR: can't accept client connection\n");
+                    break;
+                }
+            }
+
+            char ip_str[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
+            DEBUG_INFO("Client connected from %s:%d\n", ip_str, ntohs(client_addr.sin_port));
+
+            char inbuff[MAX_BYTES];
+            ssize_t nread = read(client_fd, inbuff, MAX_BYTES); //pull bytes from TCP buffer (mapping to last accepted TCP transaction sequence) that kernel already filled with packet data delivered after handshake and move them into inbuff
+            if(nread <= 0)
+            {
+                if(nread < 1) perror("ERROR: can't read\n");
+                close(client_fd);
                 continue;
             }
+            inbuff[nread-1] = '\0';
 
-            else
+            cmd_ctx_t ctx;
+            memset(&ctx, 0, sizeof(ctx));
+
+            DEBUG_INFO("Loading context...\n");
+            int loadCtx = load_context(inbuff, &ctx);
+            if(loadCtx == LOAD_CTX_OK)
             {
-                perror("ERROR: can't accept client connection\n");
-                break;
+                int func_status;
+                DEBUG_INFO("Command dispatch...\n");
+                int dispatch = dispatch_command(&ctx, &func_status);
+
+                if(dispatch != DISPATCH_CMD_OK)
+                {
+                    DEBUG_INFO("DISPATCH FAILURE: %d", dispatch);
+                }
+                else
+                {
+                    send_response(client_fd, func_status, ctx);
+                }
             }
-        }
 
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
-        printf("Client connected from %s:%d\n", ip_str, ntohs(client_addr.sin_port));
-
-        char inbuff[MAX_BYTES];
-        ssize_t nread = read(client_fd, inbuff, MAX_BYTES); //pull bytes from TCP buffer (mapping to last accepted TCP transaction sequence) that kernel already filled with packet data delivered after handshake and move them into inbuff
-        if(nread <= 0)
-        {
-            if(nread < 1) perror("ERROR: can't read\n");
             close(client_fd);
-            continue;
         }
-        inbuff[nread-1] = '\0';
-
-        cmd_ctx_t ctx;
-        memset(&ctx, 0, sizeof(ctx));
-
-        int loadCtx = load_context(inbuff, &ctx);
-        if(loadCtx == LOAD_CTX_OK)
-        {
-            int func_status;
-            int dispatch = dispatch_cmd(&ctx, &func_status);
-
-            if(dispatch != DISPATCH_CMD_OK)
-            {
-                printf("DISPATCH FAILURE: %d", dispatch);
-            }
-            else
-            {
-                send_response(client_fd, func_status, ctx);
-            }
-        }
-
-        close(client_fd);
     }
 
+    else DEBUG_INFO("rp_Init() failed with code: %d\n", init_code);
+
+    rp_Release();
     close(listen_fd);
     return 0;
 }
