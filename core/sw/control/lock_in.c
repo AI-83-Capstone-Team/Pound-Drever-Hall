@@ -75,7 +75,6 @@ int lock_in(lock_in_ctx_t* ctx)
 	}
 
 	float curr_out = ctx->dac_start;
-	float curr_in;
 
 	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
 	
@@ -87,9 +86,9 @@ int lock_in(lock_in_ctx_t* ctx)
 	{
 		rf_write(ctx->chout, curr_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(curr_out), 0, 0, true);
 		usleep(WR_DELAY_US);
-		rf_read(ctx->chin, LOCKIN_BUFFSIZE, &curr_in);	
+		rf_read(ctx->chin, 1);	
 	
-		readings[index] = curr_in;
+		readings[index] = gAdcMirror[0];
 		curr_out += ctx->dac_step;
 	}
 	
@@ -109,7 +108,7 @@ int lock_in(lock_in_ctx_t* ctx)
 
 	for(uint32_t index = 1; index < num_readings; index++)
 	{
-		curr_in = readings[index] - (index * slope);
+		float curr_in = readings[index] - (index * slope);
 		if(curr_in < best_in)
 		{
 			best_in = curr_in;

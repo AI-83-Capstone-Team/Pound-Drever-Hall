@@ -36,9 +36,8 @@ int main(int argc, char** argv)
 
 	rp_Init();
 
-	float voltage;
-	rf_read(chin, 1, &voltage);
-	printf("starting voltage: %f\n", voltage);	
+	rf_read(chin, 1);
+	printf("starting voltage: %f\n", gAdcMirror[0]);	
 	printf("lockpoint spawn: %f\n", ctx.lock_point);
 	
 	int code = lock_in(&ctx);

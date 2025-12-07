@@ -1,10 +1,13 @@
+#include "rp.h"
 #include "hw_common.h"
 #include "rf_read.h"
 
 #define NODELAY 0
 
+float gAdcMirror[ADC_BUFFER_SIZE];
 
-int rf_read(rp_channel_t channel, uint32_t buffsize, float* v)
+
+int rf_read(rp_channel_t channel, uint32_t buffsize)
 {
 	
 	if(channel != RP_CH_1 && channel != RP_CH_2)
@@ -20,25 +23,14 @@ int rf_read(rp_channel_t channel, uint32_t buffsize, float* v)
 		return RF_READ_INVALID_BUFFSIZE;
 	}
 
-	float* buff = (float*)malloc(buffsize * sizeof(float));
 	
 	RP_CALL_NOTERM(rp_AcqReset(channel));
 
 	RP_CALL_NOTERM(rp_AcqStart(channel)); //nonterminal wrapper used here to prevent fragmentation in event of API failure
 	//usleep(LOAD_DELAY_US);
-	RP_CALL_NOTERM(rp_AcqGetLatestDataV(channel, &buffsize, buff));
+	RP_CALL_NOTERM(rp_AcqGetLatestDataV(channel, &buffsize, gAdcMirror));
 	RP_CALL_NOTERM(rp_AcqStop(channel));
 	
-	float sum = buff[0];
-	for(int i = 1; i < buffsize; i++)
-	{
-		sum += buff[i];
-	}
-	
-	free(buff);
-	sum /= buffsize;
-	*v = sum;
-
 	return RF_READ_OK;
 }
 

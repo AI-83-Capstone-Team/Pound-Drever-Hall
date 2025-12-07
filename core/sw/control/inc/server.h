@@ -58,10 +58,12 @@ typedef struct
 
 typedef struct
 {
-    char name[COMMAND_SIZE];
+    uint32_t adc_count;
+
+	char name[COMMAND_SIZE];
     float float_args[FLOAT_ARGS];
     int32_t int_args[INT_ARGS];
-    uint32_t uint_args[UINT_ARGS];
+	uint32_t uint_args[UINT_ARGS];
 
     uint8_t num_floats;
     uint8_t num_ints;

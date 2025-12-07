@@ -15,6 +15,7 @@
 
 #define SERVER_PORT 5555
 #define MAX_BYTES    1024
+#define MAX_CHARS_PER_FLOAT 16
 
 #define NUM_CMDS 2
 
@@ -25,6 +26,7 @@ F:0,4.1,42.2'\n'
 I:-1,2'\n'
 U:6,7"
 */
+
 
 
 static cmd_entry_t gCmds[NUM_CMDS] = {
@@ -195,30 +197,71 @@ static int dispatch_command(cmd_ctx_t* ctx, int* code)
 }
 
 
+
+static int write_all(int fd, const void* buff, size_t len)
+{
+    const uint8_t* p = buff;
+    size_t rem = len;
+
+    while(rem > 0)
+    {
+        size_t n = write(fd, p, rem);
+        if(n < 0)
+        {
+            if(errno == EINTR) continue;
+            else return -1;
+        }
+
+        if(n==0) return -1;
+        p += n;
+        rem -= n;
+    }
+
+    return 0;
+}
+
+
+
 static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 {
-    char buff[MAX_BYTES];
-    int offset = 0;
+	char* buff = (char*)malloc(MAX_BYTES);
+	int offset = 0;
 
-    offset += snprintf(buff + offset, sizeof(buff) - offset, "type:output\nname:%s\n", ctx.name);
-    offset += snprintf(buff + offset, sizeof(buff) - offset, "status:%d\n", func_status);
+    size_t cap = MAX_BYTES;
 
-    for(uint16_t i = 0; i < ctx.output.num_outputs; i++)
-    {
-        output_item_t output = ctx.output.output_items[i];
+	offset += snprintf(buff + offset, cap - offset, "type:output\nname:%s\n", ctx.name);
+	offset += snprintf(buff + offset, cap - offset, "status:%d\n", func_status);
 
-        if(output.tag == FLOAT_TAG) offset += snprintf(buff + offset, sizeof(buff) - offset, "%s:%f\n", output.name, output.data.f);
-        else if(output.tag == INT_TAG) offset += snprintf(buff + offset, sizeof(buff) - offset, "%s:%d\n", output.name, output.data.i);
-        else if(output.tag == UINT_TAG) offset += snprintf(buff + offset, sizeof(buff) - offset, "%s:%u\n", output.name, output.data.u);
+	for(uint16_t i = 0; i < ctx.output.num_outputs; i++)
+	{
+		output_item_t output = ctx.output.output_items[i];
 
-        else
+		if(output.tag == FLOAT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%f\n", output.name, output.data.f);
+		else if(output.tag == INT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%d\n", output.name, output.data.i);
+		else if(output.tag == UINT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%u\n", output.name, output.data.u);
+
+		else
+		{
+		    offset += snprintf(buff + offset, cap - offset, "%s\n", "ERROR: unknown tag!");
+		    break;
+		}
+	}
+
+	if(ctx.adc_count > 0)
+	{
+        offset += snprintf(buff + offset, cap - offset, "Number of ADC data points in dump: %d\n", ctx.adc_count);
+        buff = (char*)realloc(buff, MAX_BYTES + (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count);
+		cap += (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count;
+        for(int i = 0; i < ctx.adc_count; i++)
         {
-            offset += snprintf(buff + offset, sizeof(buff) - offset, "%s\n", "ERROR: unknown tag!");
-            break;
+            offset += snprintf(buff + offset, cap - offset, "%f,", gAdcMirror[i]);
         }
-    }
-    ssize_t n = write(client_fd, buff, offset);
+	}
+
+    ssize_t n = write_all(client_fd, buff, offset);
+    free(buff);
     (void)n;
+    
 }
 
 

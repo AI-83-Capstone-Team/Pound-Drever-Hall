@@ -6,7 +6,6 @@
 #include "hw_common.h"
 #include "server.h"
 
-#define LOCKIN_BUFFSIZE 10
 #define WR_DELAY_US 10
 
 typedef struct
