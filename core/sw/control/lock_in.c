@@ -60,7 +60,7 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 	strcpy(ctx->output.output_items[2].name, DERIVED_SLOPE_FLAG);
 
 	ctx->output.num_outputs = 3;
-
+	ctx->sweep_count = lock_ctx.num_readings;
 	return return_code;
 }
 
@@ -77,7 +77,8 @@ int lock_in(lock_in_ctx_t* ctx)
 	float curr_out = ctx->dac_start;
 
 	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
-	
+	if(num_readings > SWEEP_BUFFER_SIZE) return STEP_TOO_SMALL;
+
 	DEBUG_INFO("Allocating: %d readings\n", num_readings);
 	float* readings = (float*)malloc(num_readings * sizeof(float));
 	
@@ -131,6 +132,20 @@ int lock_in(lock_in_ctx_t* ctx)
 		}
 		fclose(f);
 	}
+
+	else
+	{
+		for(uint32_t index = 0; index < num_readings; index++)
+		{
+			float normalized;
+			if(ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
+			else normalized = readings[index] - index*slope - best_out;
+			sweep_entry_t entry = {(ctx->dac_start+index*ctx->dac_step), (readings[index]), normalized};
+			gSweepBuff[index] = entry;
+		}
+		ctx->num_readings = num_readings;
+	}
+
 	free(readings);
 
 	ctx->lock_point = best_out;

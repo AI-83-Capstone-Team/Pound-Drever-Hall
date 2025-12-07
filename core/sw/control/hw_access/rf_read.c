@@ -4,7 +4,6 @@
 
 #define NODELAY 0
 
-float gAdcMirror[ADC_BUFFER_SIZE];
 
 
 int rf_read(rp_channel_t channel, uint32_t buffsize)

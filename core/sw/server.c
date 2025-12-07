@@ -221,7 +221,6 @@ static int write_all(int fd, const void* buff, size_t len)
 }
 
 
-
 static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 {
 	char* buff = (char*)malloc(MAX_BYTES);
@@ -249,12 +248,23 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 
 	if(ctx.adc_count > 0)
 	{
-        offset += snprintf(buff + offset, cap - offset, "Number of ADC data points in dump: %d\n", ctx.adc_count);
+        offset += snprintf(buff + offset, cap - offset, "ADC::x%d:\n", ctx.adc_count);
         buff = (char*)realloc(buff, MAX_BYTES + (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count);
 		cap += (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count;
         for(int i = 0; i < ctx.adc_count; i++)
         {
             offset += snprintf(buff + offset, cap - offset, "%f,", gAdcMirror[i]);
+        }
+	}
+
+    if(ctx.sweep_count > 0)
+	{
+        offset += snprintf(buff + offset, cap - offset, "SWEEP::x%d:\n", ctx.sweep_count);
+        buff = (char*)realloc(buff, MAX_BYTES + 3*(MAX_CHARS_PER_FLOAT + 1) * ctx.sweep_count);
+		cap += 3*(MAX_CHARS_PER_FLOAT + 1) * ctx.sweep_count;
+        for(int i = 0; i < ctx.sweep_count; i++)
+        {
+            offset += snprintf(buff + offset, cap - offset, "%f,%f,%f\n", gSweepBuff[i].in, gSweepBuff[i].out, gSweepBuff[i].normalized);
         }
 	}
 

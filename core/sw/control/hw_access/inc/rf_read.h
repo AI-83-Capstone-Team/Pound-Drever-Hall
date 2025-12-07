@@ -21,7 +21,6 @@ typedef enum
 #define MAX_BUFFSIZE 100
 #define LOAD_DELAY_US 10
 
-extern float gAdcMirror[ADC_BUFFER_SIZE];
 
 int rf_scope_cfg(rp_channel_t channel, rp_acq_decimation_t decimation, float triggerLevel, bool enable);
 int rf_read(rp_channel_t channel, uint32_t buffsize);

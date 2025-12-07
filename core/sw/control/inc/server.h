@@ -59,6 +59,7 @@ typedef struct
 typedef struct
 {
     uint32_t adc_count;
+    uint32_t sweep_count;   
 
 	char name[COMMAND_SIZE];
     float float_args[FLOAT_ARGS];

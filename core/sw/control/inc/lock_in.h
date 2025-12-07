@@ -13,13 +13,12 @@ typedef struct
 	bool 			log_data;
 	rp_channel_t 	chin;
 	rp_channel_t 	chout;
-
 	float	 		dac_end;
 	float	 		dac_start;
 	float	 		dac_step;
-
 	float 			lock_point;
 	float 			derived_slope;
+	uint32_t 		num_readings;
 } 	lock_in_ctx_t;
 
 
@@ -29,7 +28,8 @@ typedef enum
 	DAC_OK			=  1,
 	NO_CONTEXT 		= -1,
 	INVALID_STEP	= -2,
-	NO_RANGE		= -3,
+	STEP_TOO_SMALL	= -3,
+	NO_RANGE		= -4,
 	CANNOT_LOG		= -5,
 }	lockin_error_codes_e;
 
