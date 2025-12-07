@@ -32,7 +32,7 @@ static int validate_params(const lock_in_ctx_t *ctx)
 
 int cmd_lock_in(cmd_ctx_t* ctx)
 {
-	DEBUG_INFO("Init lockin context...\n");
+	DEBUG_INFO("Loading command context...\n");
 	lock_in_ctx_t lock_ctx = {
 		false,
 		(rp_channel_t)ctx->uint_args[0], 	//chin
@@ -44,7 +44,7 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 		0.0					//derived_slope
 	};
 
-	DEBUG_INFO("Start lockin...\n");
+	DEBUG_INFO("Start lock_in...\n");
 
 	int return_code = lock_in(&lock_ctx);
 	ctx->output.output_items[0].data.i = return_code;

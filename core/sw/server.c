@@ -8,13 +8,15 @@
 #include <errno.h>
 
 #include "server.h"
-#include "lock_in.h"
 #include "control_common.h"
+#include "lock_in.h"
+#include "rf_io.h"
+
 
 #define SERVER_PORT 5555
 #define MAX_BYTES    1024
 
-#define NUM_CMDS 1
+#define NUM_CMDS 2
 
 //Example syntax:
 /*
@@ -25,7 +27,10 @@ U:6,7"
 */
 
 
-static cmd_entry_t gCmds[NUM_CMDS] = {{"lock_in", cmd_lock_in, 3, 0, 2}};
+static cmd_entry_t gCmds[NUM_CMDS] = {
+    {"lock_in", cmd_lock_in, 3, 0, 2},
+    {"rf_read", cmd_rf_read, 0, 0, 2}
+};
 
 
 static const char* find_key(const char* src, const char* key)
@@ -185,7 +190,7 @@ static int dispatch_command(cmd_ctx_t* ctx, int* code)
     if(ctx->num_uints != curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
     DEBUG_INFO("Dispatching: %s...\n", gCmds[i].name);
     *code = curr_cmd.func(ctx);
-    DEBUG_INFO("done dispatch...\n");
+    DEBUG_INFO("done dispatch\n");
     return DISPATCH_CMD_OK;
 }
 

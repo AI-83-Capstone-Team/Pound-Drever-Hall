@@ -13,7 +13,7 @@
 #ifdef DEBUG
 #define DEBUG_INFO(...) \
     do { \
-        printf("%s::", __func__);   \
+        printf("\n%s::", __func__);   \
         printf(__VA_ARGS__); \
         fflush(stdout); \
     } while (0)

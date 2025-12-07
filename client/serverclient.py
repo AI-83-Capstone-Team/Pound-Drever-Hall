@@ -4,29 +4,28 @@ import socket
 
 SERVER_IP = "10.42.0.62"
 SERVER_PORT = 5555
+RP_CH_1 = 0
+NUM_SAMPLES = 100
 
 def main():
-    # Build the command string exactly how your server expects it
-    cmd = (
+    cmds = [(
         "CMD:lock_in\n"
-        "F:1.0,-1.0,0.01\n"   # dac_end, dac_start, dac_step (example)
-        "U:0,1\n"           # chin=0, chout=1 (example)
-    )
+        "F:1.0,-1.0,0.01\n"
+        "U:0,1\n"
+    ),
+    (
+        "CMD:rf_read\n"
+        "U:0,100\n"
+    )]
 
-    # Create a TCP socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        # Connect to the server
-        s.connect((SERVER_IP, SERVER_PORT))
+    for cmd in cmds:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((SERVER_IP, SERVER_PORT))
+            s.sendall(cmd.encode("ascii"))
+            data = s.recv(4096)
 
-        # Send the command as bytes
-        s.sendall(cmd.encode("ascii"))
-
-        # Receive response (up to 4 KB, adjust if needed)
-        data = s.recv(4096)
-
-    # Print what we got back
-    print("Response from server:")
-    print(data.decode("ascii", errors="replace"))
+        print("Response from server:")
+        print(data.decode("ascii", errors="replace"))
 
 if __name__ == "__main__":
     main()
