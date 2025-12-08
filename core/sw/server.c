@@ -17,7 +17,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 3
+#define NUM_CMDS 4
 
 //Example syntax:
 /*
@@ -32,7 +32,8 @@ U:6,7"
 static cmd_entry_t gCmds[NUM_CMDS] = {
     {"lock_in", cmd_lock_in, 3, 0, 2},
     {"rf_read", cmd_rf_read, 0, 0, 2},
-    {"rf_write", cmd_rf_write, 3, 0, 3}
+    {"rf_write", cmd_rf_write, 3, 0, 3},
+    {"rf_scope_cfg", cmd_rf_scope_cfg, 1, 0, 3}
 };
 
 
