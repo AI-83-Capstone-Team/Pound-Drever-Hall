@@ -11,12 +11,22 @@ def main():
     cmds = [(
         "CMD:lock_in\n"
         "F:1.0,-1.0,0.01\n"
-        "U:0,1\n"
+        "U:0,0\n"
     ),
     (
         "CMD:rf_read\n"
         "U:0,100\n"
-    )]
+    ),
+    (
+        "CMD:rf_write\n"
+        "U:0,5,1\n"
+        "F:0.67,0,0.1\n"
+    ),
+    (
+        "CMD:rf_read\n"
+        "U:0,100\n"
+    )
+    ]
 
     for cmd in cmds:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

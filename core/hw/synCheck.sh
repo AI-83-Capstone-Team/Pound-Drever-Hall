@@ -2,7 +2,7 @@
 
 # comon variables
 RPT="SYNTHESIS REPORT: "
-REPORT="synReport.txt"
+REPORT="build/synReport.txt"
 
 # # # # # # # 
 # functions #

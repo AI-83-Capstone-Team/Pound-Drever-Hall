@@ -30,9 +30,11 @@ set path_ip  ip
 set path_bd  .srcs/sources_1/bd/system/hdl
 set path_sdc ../../sdc
 set path_sdc_prj sdc
-
-set path_out out
+set path_out ../../build
 set path_sdk sdk
+
+
+
 
 file mkdir $path_out
 file mkdir $path_sdk
@@ -153,15 +155,15 @@ xilinx::ultrafast::report_io_reg -verbose -file $path_out/post_route_iob.rpt
 
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 
-write_bitstream -force            $path_out/red_pitaya.bit
-write_bitstream -force -bin_file  $path_out/red_pitaya
+write_bitstream -force            $path_out/boot.bit
+#write_bitstream -force -bin_file  $path_out/boot
 
 ################################################################################
 # generate system definition
 ################################################################################
 
 write_sysdef -force      -hwdef   $path_sdk/red_pitaya.hwdef \
-                         -bitfile $path_out/red_pitaya.bit \
+                         -bitfile $path_out/boot.bit \
                          -file    $path_sdk/red_pitaya.sysdef
 
 exit
