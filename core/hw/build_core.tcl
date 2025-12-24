@@ -4,19 +4,20 @@ set prj_name [lindex $argv 0]
 set prj_defs [lindex $argv 1]
 puts "Project name: $prj_name"
 puts "Defines: $prj_defs"
-cd $prj_name
+cd prj/$prj_name
 
 tclapp::install -quiet ultrafast
 
 #TODO: Move IP path outside proj dir
-set path_brd ../brd
-set path_rtl ../rtl
-set path_ip  ip
-set path_bd  .srcs/sources_1/bd/system/hdl
-set path_sdc ../sdc
-set path_sdc_prj sdc
-set path_out ../build
+set path_brd ../../brd
+set path_rtl ../../rtl
+set path_ip ../../ip
+set path_sdc ../../sdc
+set path_out ../../build
+
 set path_sdk sdk
+set path_bd  .srcs/sources_1/bd/system/hdl
+set path_ip_prj  ip
 
 file mkdir $path_out
 file mkdir $path_sdk
@@ -30,7 +31,7 @@ create_project -in_memory -part $part
 set_property verilog_define $prj_defs [current_fileset]
 
 
-#Add HPS Ip block
+#Add HPS IP block
 #TODO Verify this width is correct
 set ::gpio_width 24
 source $path_ip/systemZ10.tcl
@@ -40,7 +41,6 @@ source $path_ip/systemZ10.tcl
 generate_target all [get_files    system.bd]
 write_hwdef -force       -file    $path_sdk/red_pitaya.hwdef
 
-add_files -quiet                  [glob -nocomplain ../../$path_rtl/*_pkg.sv]
 add_files -quiet                  [glob -nocomplain       $path_rtl/*_pkg.sv]
 
 #RP RTL Library
@@ -52,8 +52,14 @@ add_files rtl
 #Physical
 add_files $path_bd
 
+#Project-specific ip cores
+set ip_files [glob -nocomplain $path_ip_prj/*.xci]
+if {$ip_files != ""} {
+add_files                         $ip_files
+}
+
 #Design constraints
-add_files -fileset constrs_1      $path_sdc_prj/red_pitaya.xdc
+add_files -fileset constrs_1      $path_sdc/red_pitaya.xdc
 
 
 
