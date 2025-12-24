@@ -16,6 +16,7 @@ HSI    = hsi    -nolog -nojournal -mode batch
 .PHONY: all clean sim
 
 all: $(FPGA_BIN) 
+	mv vivado.log build/vivado.log
 
 clean:
 	rm -rf build
@@ -31,13 +32,8 @@ $(FPGA_BIT):
 	$(VIVADO) -source red_pitaya_vivado_Z10.tcl -tclargs pdh_core $(DEFINES)
 	./synCheck.sh
 
-# $(FSBL_ELF): $(FPGA_BIT)
-# 	xsct red_pitaya_hsi_fsbl.tcl pdh_core
-# 
-# $(DEVICE_TREE): $(FPGA_BIT)
-# 	xsct red_pitaya_hsi_dts.tcl  pdh_core DTS_VER=$(DTS_VER)
 
 $(FPGA_BIN): $(FPGA_BIT)
 	@echo all:{$(FPGA_BIT)} > build/boot.bif
 	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
-	mv build/boot.bit.bin build/boot.bin 
+	mv build/boot.bit.bin build/boot.bin
