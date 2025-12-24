@@ -1,5 +1,4 @@
 PRJ   = pdh_core
-HWID ?= ""
 DEFINES ?= ""
 DTS_VER = DTS_VER=2022.1
 
@@ -21,26 +20,22 @@ all: $(FPGA_BIN)
 clean:
 	rm -rf build
 	rm -rf out .Xil .srcs sdk sim
-	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/project prj/$(PRJ)/.hbs prj/$(PRJ)/*.log prj/$(PRJ)/usage_statistics*
+	rm -rf pdh_core/out pdh_core/.Xil pdh_core/.srcs pdh_core/sdk /pdh_core/project pdh_core/.hbs pdh_core/*.log pdh_core/usage_statistics*
 	rm -f *.txt
 	rm -f *.log
 
 sim: 
-	$(VIVADO) -source red_pitaya_vivado_sim.tcl -tclargs $(PRJ) Z10 $(DEFINES)
+	$(VIVADO) -source red_pitaya_vivado_sim.tcl -tclargs pdh_core Z10 $(DEFINES)
 
 $(FPGA_BIT):
-ifneq ($(HWID),"")
-	$(VIVADO) -source red_pitaya_vivado_Z10.tcl -tclargs $(PRJ) $(DEFINES) HWID=$(HWID)
-else
-	$(VIVADO) -source red_pitaya_vivado_Z10.tcl -tclargs $(PRJ) $(DEFINES)
-endif
+	$(VIVADO) -source red_pitaya_vivado_Z10.tcl -tclargs pdh_core $(DEFINES)
 	./synCheck.sh
 
 # $(FSBL_ELF): $(FPGA_BIT)
-# 	xsct red_pitaya_hsi_fsbl.tcl $(PRJ)
+# 	xsct red_pitaya_hsi_fsbl.tcl pdh_core
 # 
 # $(DEVICE_TREE): $(FPGA_BIT)
-# 	xsct red_pitaya_hsi_dts.tcl  $(PRJ) DTS_VER=$(DTS_VER)
+# 	xsct red_pitaya_hsi_dts.tcl  pdh_core DTS_VER=$(DTS_VER)
 
 $(FPGA_BIN): $(FPGA_BIT)
 	@echo all:{$(FPGA_BIT)} > build/boot.bif
