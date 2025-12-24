@@ -25,11 +25,9 @@ clean:
 	rm -f *.txt
 	rm -f *.log
 
-sim: 
-	$(VIVADO) -source red_pitaya_vivado_sim.tcl -tclargs pdh_core Z10 $(DEFINES)
 
 $(FPGA_BIT):
-	$(VIVADO) -source red_pitaya_vivado_Z10.tcl -tclargs pdh_core $(DEFINES)
+	$(VIVADO) -source build_core.tcl -tclargs pdh_core $(DEFINES)
 	./synCheck.sh
 
 
