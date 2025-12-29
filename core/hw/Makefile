@@ -1,4 +1,4 @@
-PRJ   = pdh_core
+PRJ   = v094
 DEFINES ?= ""
 DTS_VER = DTS_VER=2022.1
 

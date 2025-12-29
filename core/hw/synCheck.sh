@@ -145,7 +145,7 @@ function grepTiming {
 }
 
 # define report directory
-FILEPATH="prj/v0.94/out/"
+FILEPATH="build/"
 
 # check timing in synthesis, placement, route timing reports
 grepTiming ${FILEPATH}post_synth_timing_summary.rpt

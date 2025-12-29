@@ -11,13 +11,12 @@ tclapp::install -quiet ultrafast
 #TODO: Move IP path outside proj dir
 set path_brd ../../brd
 set path_rtl ../../rtl
-set path_ip ../../ip
-set path_sdc ../../sdc
+set path_ip ip
+set path_sdc sdc
 set path_out ../../build
 
 set path_sdk sdk
 set path_bd  .srcs/sources_1/bd/system/hdl
-set path_ip_prj  ip
 
 file mkdir $path_out
 file mkdir $path_sdk
@@ -53,7 +52,7 @@ add_files rtl
 add_files $path_bd
 
 #Project-specific ip cores
-set ip_files [glob -nocomplain $path_ip_prj/*.xci]
+set ip_files [glob -nocomplain $path_ip/*.xci]
 if {$ip_files != ""} {
 add_files                         $ip_files
 }
