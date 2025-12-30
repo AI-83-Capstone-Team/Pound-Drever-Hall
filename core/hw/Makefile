@@ -1,4 +1,4 @@
-PRJ   = v094
+PROJECTS   = $(notdir $(wildcard prj/*)) 
 DEFINES ?= ""
 DTS_VER = DTS_VER=2022.1
 
@@ -13,20 +13,30 @@ VIVADO = vivado -nojournal -mode batch
 HSI    = hsi    -nolog -nojournal -mode batch
 #HSI    = hsi    -nolog -mode batch
 
-.PHONY: all clean sim
+.PHONY: all clean $(PROJECTS)
 
-all: $(FPGA_BIN) 
-	mv vivado.log build/vivado.log
+all:
+	@echo "Specify a project: $(PROJECTS)"
+
+
+$(PROJECTS):
+	@mkdir -p build/$@
+	$(VIVADO) -source prj/$@/make_project.tcl -tclargs $@ $(DEFINES)
+	# Post-processing
+	@echo "all:{build/boot.bit}" > build/boot.bif
+	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
+	@mv vivado.log build/vivado.log
+
+
 
 clean:
 	rm -rf build
-	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/.hbs prj/$(PRJ)/*.log prj/$(PRJ)/usage_statistics*
-	rm -f *.txt
-	rm -f *.log
+	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*}  
+	rm -f *.txt *.log vivado.jou vivado_pid*.str
 
 
 $(FPGA_BIT):
-	$(VIVADO) -source build_core.tcl -tclargs $(PRJ) $(DEFINES)
+	$(VIVADO) -source prj/$(PRJ)/make_project.tcl -tclargs $(PRJ) $(DEFINES)
 	./synCheck.sh
 
 
