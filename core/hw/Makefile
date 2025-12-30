@@ -20,14 +20,13 @@ all: $(FPGA_BIN)
 
 clean:
 	rm -rf build
-	rm -rf out .Xil .srcs sdk sim
-	rm -rf pdh_core/out pdh_core/.Xil pdh_core/.srcs pdh_core/sdk /pdh_core/project pdh_core/.hbs pdh_core/*.log pdh_core/usage_statistics*
+	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/.hbs prj/$(PRJ)/*.log prj/$(PRJ)/usage_statistics*
 	rm -f *.txt
 	rm -f *.log
 
 
 $(FPGA_BIT):
-	$(VIVADO) -source build_core.tcl -tclargs pdh_core $(DEFINES)
+	$(VIVADO) -source build_core.tcl -tclargs $(PRJ) $(DEFINES)
 	./synCheck.sh
 
 

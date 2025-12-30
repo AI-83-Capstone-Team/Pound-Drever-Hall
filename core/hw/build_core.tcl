@@ -8,10 +8,10 @@ cd prj/$prj_name
 
 tclapp::install -quiet ultrafast
 
-#TODO: Move IP path outside proj dir
 set path_brd ../../brd
 set path_rtl ../../rtl
-set path_ip ip
+set path_ip_prj ip
+set path_ip ../../ip
 set path_sdc sdc
 set path_out ../../build
 
@@ -28,13 +28,18 @@ set_param iconstr.diffPairPulltype {opposite}
 set part xc7z010clg400-1
 create_project -in_memory -part $part
 set_property verilog_define $prj_defs [current_fileset]
-
+set_property SEVERITY {Warning} [get_drc_checks NSTD-1]
+set_property SEVERITY {Warning} [get_drc_checks UCIO-1]
 
 #Add HPS IP block
-#TODO Verify this width is correct
-set ::gpio_width 24
-source $path_ip/systemZ10.tcl
 
+set ::gpio_width 24
+set ::hp0_clk_freq 125000000
+set ::hp1_clk_freq 125000000
+set ::hp2_clk_freq 250000000
+set ::hp3_clk_freq 250000000
+
+source $path_ip_prj/systemZ10.tcl
 
 #Generate SDK files (can probably get rid of this)
 generate_target all [get_files    system.bd]
@@ -51,12 +56,18 @@ add_files rtl
 #Physical
 add_files $path_bd
 
-#Project-specific ip cores
-set ip_files [glob -nocomplain $path_ip/*.xci]
+set ip_files [glob -nocomplain $path_ip_prj/*.xci]
 if {$ip_files != ""} {
 add_files                         $ip_files
 }
 
+if {[file isdirectory $path_ip/asg_dat_fifo]} {
+add_files $path_ip/asg_dat_fifo/asg_dat_fifo.xci
+}
+
+if {[file isdirectory $path_ip/sync_fifo]} {
+add_files $path_ip/sync_fifo/sync_fifo.xci
+}
 #Design constraints
 add_files -fileset constrs_1      $path_sdc/red_pitaya.xdc
 
@@ -104,5 +115,9 @@ write_bitstream -force            $path_out/boot.bit
 write_sysdef -force      -hwdef   $path_sdk/red_pitaya.hwdef \
                          -bitfile $path_out/boot.bit \
                          -file    $path_sdk/red_pitaya.sysdef
+
+
+save_project_as -force $path_out/$prj_name.xpr
+
 
 exit
