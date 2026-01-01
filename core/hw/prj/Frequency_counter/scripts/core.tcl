@@ -1,3 +1,5 @@
+#Ingest HDL and serialize to in-memory IP-XACT object
+
 
 set core_name [lindex $argv 0]
 

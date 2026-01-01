@@ -25,22 +25,12 @@ $(PROJECTS):
 	# Post-processing
 	@echo "all:{build/boot.bit}" > build/boot.bif
 	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
+	@mv build/boot.bit.bin build/boot.bin
 	@mv vivado.log build/vivado.log
 
 
 
 clean:
 	rm -rf build
-	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*}  
+	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*,tmp}  
 	rm -f *.txt *.log vivado.jou vivado_pid*.str
-
-
-$(FPGA_BIT):
-	$(VIVADO) -source prj/$(PRJ)/make_project.tcl -tclargs $(PRJ) $(DEFINES)
-	./synCheck.sh
-
-
-$(FPGA_BIN): $(FPGA_BIT)
-	@echo all:{$(FPGA_BIT)} > build/boot.bif
-	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
-	mv build/boot.bit.bin build/boot.bin

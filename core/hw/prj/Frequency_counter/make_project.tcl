@@ -20,17 +20,13 @@ tclapp::install -quiet ultrafast
 # Create cores
 source make_cores.tcl
 
+set project_name $prj_name
+
 # Create basic Red Pitaya Block Design
 source basic_red_pitaya_bd.tcl
 
 # add source files
-add_files -norecurse frequency_counter.v
-add_files -norecurse pow2.v
-add_files -norecurse signal_decoder.v
-add_files -norecurse signal_split.v
-
-# ====================================================================================
-# IP cores
+add_files -norecurse rtl
 
 # GPIO
 set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0}] [get_bd_cells axi_gpio_0]

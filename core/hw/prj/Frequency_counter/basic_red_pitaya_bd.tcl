@@ -12,13 +12,14 @@
 #set project_name 4_averager
 
 set part_name xc7z010clg400-1
-set bd_path tmp/$project_name/$project_name.srcs/sources_1/bd/system
+set bd_path tmp/$prj_name/$prj_name.srcs/sources_1/bd/system
 
-file delete -force tmp/$project_name
+file delete -force tmp/$prj_name
 
-create_project $project_name tmp/$project_name -part $part_name
+create_project $prj_name tmp/$prj_name -part $part_name
 
-create_bd_design system
+# system.bd
+create_bd_design system 
 # open_bd_design {$bd_path/system.bd}
 
 # Load RedPitaya ports
@@ -27,14 +28,6 @@ source cfg/ports.tcl
 # Set Path for the custom IP cores
 set_property IP_REPO_PATHS tmp/cores [current_project]
 update_ip_catalog
-
-
-# Load any additional Verilog files in the project folder
-set files [glob -nocomplain projects/$project_name/*.v projects/$project_name/*.sv]
-if {[llength $files] > 0} {
-  add_files -norecurse $files
-}
-#update_compile_order -fileset sources_1
 
 
 # ====================================================================================
@@ -99,7 +92,10 @@ connect_bd_net [get_bd_ports daisy_p_o] [get_bd_pins util_ds_buf_2/OBUF_DS_P]
 connect_bd_net [get_bd_ports daisy_n_o] [get_bd_pins util_ds_buf_2/OBUF_DS_N]
 connect_bd_net [get_bd_pins util_ds_buf_1/IBUF_OUT] [get_bd_pins util_ds_buf_2/OBUF_IN]
 
+#Expose asic-level signals to the FPGA netlist
 apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 -config {make_external "FIXED_IO, DDR" Master "Disable" Slave "Disable" }  [get_bd_cells processing_system7_0]
+
+#Clock master and slave AXI FSM's via PS clk
 connect_bd_net [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/FCLK_CLK0]
 connect_bd_net [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins processing_system7_0/FCLK_CLK0]
 
@@ -138,8 +134,7 @@ set_property offset 0x42000000 [get_bd_addr_segs {processing_system7_0/Data/SEG_
 set_property range 4K [get_bd_addr_segs {processing_system7_0/Data/SEG_axi_gpio_0_Reg}]
 
 # ====================================================================================
-# Generate output products and wrapper, add constraint
-
+# Generate system_wrapper.v
 generate_target all [get_files  $bd_path/system.bd]
 
 make_wrapper -files [get_files $bd_path/system.bd] -top
