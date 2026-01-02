@@ -10,3 +10,5 @@ create_clock -period 4.000 -name rx_clk [get_ports {daisy_p_i[1]}]
 #set_false_path -from [get_clocks adc_clk] -to [get_clocks clk_fpga_0]
 
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+
+
