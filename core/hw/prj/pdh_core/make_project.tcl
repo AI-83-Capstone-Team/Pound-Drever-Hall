@@ -74,7 +74,14 @@ create_bd_design system
 
 
 #################### ADD SOURCE AND CONSTRAINT FILES ###########################################################
-add_files -norecurse rtl
+add_files -norecurse rtl/pdh_core.v
+
+#set_msg_config -id {HDL 9-1061} -limit 1000
+#set_msg_config -id {HDL 9-1332} -limit 1000
+#synth_design -top pdh_core -rtl -name rtl_1
+
+
+
 add_files -norecurse -fileset constrs_1 cfg/ports.xdc
 add_files -norecurse -fileset constrs_1 cfg/clocks.xdc
 
@@ -204,7 +211,7 @@ set_property STRATEGY Performance_NetDelay_high [get_runs impl_1]
 
 #Specify GPIO1 acts as input from FC to PS; GPIO2 acts as output from PS to FC
 #1: make line read-only for CPU, 0 makes write-only
-set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0}] [get_bd_cells axi_gpio_0]
+set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0} CONFIG.C_ALL_OUTPUTS_2 {1}] [get_bd_cells axi_gpio_0]
 
 
 #axi_gpio_0_i [31:0]
@@ -216,13 +223,14 @@ set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0}] [get
 startgroup
 create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant xlc_reset
 endgroup
-
-
+create_bd_cell -type module -reference pdh_core pdh_core_0
 
 ############################# Wire RTL Modules #########################################################
-
-
-
+connect_bd_intf_net [get_bd_intf_pins pdh_core_0/S_AXIS] [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
+connect_bd_net [get_bd_pins pdh_core_0/rst_n] [get_bd_pins xlc_reset/dout]
+connect_bd_net [get_bd_pins pdh_core_0/clk] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
+connect_bd_net [get_bd_pins pdh_core_0/axi_to_ps] [get_bd_pins axi_gpio_0/gpio_io_i]
+connect_bd_net [get_bd_pins pdh_core_0/axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
 
 
 
