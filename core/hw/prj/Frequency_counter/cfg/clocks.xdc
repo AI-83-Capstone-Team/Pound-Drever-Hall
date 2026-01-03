@@ -12,3 +12,4 @@ create_clock -period 4.000 -name rx_clk [get_ports {daisy_p_i[1]}]
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 
 
+

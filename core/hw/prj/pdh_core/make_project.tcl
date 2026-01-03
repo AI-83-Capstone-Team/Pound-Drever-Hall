@@ -74,7 +74,7 @@ create_bd_design system
 
 
 #################### ADD SOURCE AND CONSTRAINT FILES ###########################################################
-add_files -norecurse rtl/pdh_core.v
+add_files -norecurse rtl
 
 #set_msg_config -id {HDL 9-1061} -limit 1000
 #set_msg_config -id {HDL 9-1332} -limit 1000
@@ -218,19 +218,32 @@ set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0} CONFI
 #axi_gpio_0_o [31:0]
 
 
-############################ User-Written Modules  #####################################################################
-#Create reset signal
-startgroup
-create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant xlc_reset
-endgroup
-create_bd_cell -type module -reference pdh_core pdh_core_0
 
-############################# Wire RTL Modules #########################################################
-connect_bd_intf_net [get_bd_intf_pins pdh_core_0/S_AXIS] [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
-connect_bd_net [get_bd_pins pdh_core_0/rst_n] [get_bd_pins xlc_reset/dout]
-connect_bd_net [get_bd_pins pdh_core_0/clk] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
-connect_bd_net [get_bd_pins pdh_core_0/axi_to_ps] [get_bd_pins axi_gpio_0/gpio_io_i]
-connect_bd_net [get_bd_pins pdh_core_0/axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
+############################ Export platform signals for RTL top ############################
+
+# Export pdh clock from ADC clock domain (matches your current wiring: pdh_core clk <= adc_clk)
+create_bd_port -dir O pdh_clk
+connect_bd_net [get_bd_ports pdh_clk] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
+
+# Export a known deasserted reset (make it explicit: CONST_VAL=1)
+startgroup
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant xlc_pdh_rst_n
+set_property -dict [list CONFIG.CONST_VAL {1}] [get_bd_cells xlc_pdh_rst_n]
+endgroup
+create_bd_port -dir O pdh_rst_n
+connect_bd_net [get_bd_ports pdh_rst_n] [get_bd_pins xlc_pdh_rst_n/dout]
+
+# pdh_core axi_to_ps -> axi_gpio gpio_io_i (so BD port is input)
+create_bd_port -dir I -from 31 -to 0 axi_to_ps
+connect_bd_net [get_bd_ports axi_to_ps] [get_bd_pins axi_gpio_0/gpio_io_i]
+
+# axi_gpio gpio2_io_o -> pdh_core axi_from_ps (so BD port is output)
+create_bd_port -dir O -from 31 -to 0 axi_from_ps
+connect_bd_net [get_bd_ports axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
+
+# Export the ADC AXI-stream (Vivado will create wrapper ports named pdh_axis_tdata, pdh_axis_tvalid, etc.)
+make_bd_intf_pins_external -name pdh_axis [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
+
 
 
 
@@ -245,11 +258,10 @@ set_property synth_checkpoint_mode None [get_files system.bd]
 generate_target all [get_files system.bd]
 
 # 4. Final verification: make sure the wrapper is actually the top
-set_property top system_wrapper [current_fileset]
-
+set_property top pdh_top [current_fileset]
 
 #Synthesis
-synth_design -top system_wrapper -flatten_hierarchy none -bufg 16 -keep_equivalent_registers
+synth_design -top pdh_top -flatten_hierarchy none -bufg 16 -keep_equivalent_registers
 write_checkpoint         -force   $path_out/post_synth
 report_timing_summary    -file    $path_out/post_synth_timing_summary.rpt
 report_power             -file    $path_out/post_synth_power.rpt

@@ -31,6 +31,6 @@ $(PROJECTS):
 
 
 clean:
-	rm -rf build
+	rm -rf build .Xil
 	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*,tmp}  
 	rm -f *.txt *.log vivado.jou vivado_pid*.str
