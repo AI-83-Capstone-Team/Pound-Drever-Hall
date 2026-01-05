@@ -1,70 +1,36 @@
-#
-# Authors: Matej Oblak, Iztok Jeras
-# (C) Red Pitaya 2013-2015
-#
-# Red Pitaya FPGA/SoC Makefile
-#
-# Produces:
-#   3. FPGA bit file.
-#   1. FSBL (First stage bootloader) ELF binary.
-#   2. Memtest (stand alone memory test) ELF binary.
-#   4. Linux device tree source (dts).
-
-PRJ   = pdh_core
-MODEL = Z10
-HWID  ?= ""
+PROJECTS   = $(notdir $(wildcard prj/*)) 
 DEFINES ?= ""
 DTS_VER = DTS_VER=2022.1
 
-# build artefacts
-FPGA_BIT    = prj/$(PRJ)/out/red_pitaya.bit
-FPGA_BIN    = prj/$(PRJ)/out/red_pitaya.bit.bin
-FSBL_ELF    = prj/$(PRJ)/sdk/fsbl/executable.elf
-MEMTEST_ELF = prj/$(PRJ)/sdk/dram_test/executable.elf
-DEVICE_TREE = prj/$(PRJ)/sdk/dts/system.dts
+# build artifacts
+FPGA_BIT    = build/boot.bit
+FPGA_BIN    = build/boot.bin
+FSBL_ELF    = build/fsbl/fsbl.elf
+MEMTEST_ELF = build/dram_test_executable.elf
+DEVICE_TREE = build/system.dts
 
-# Vivado from Xilinx provides IP handling, FPGA compilation
-# hsi (hardware software interface) provides software integration
-# both tools are run in batch mode with an option to avoid log/journal files
 VIVADO = vivado -nojournal -mode batch
 HSI    = hsi    -nolog -nojournal -mode batch
-BOOTGEN= bootgen -image prj/$(PRJ)/out/red_pitaya.bif -arch zynq -process_bitstream bin
 #HSI    = hsi    -nolog -mode batch
 
-.PHONY: all clean project sim
+.PHONY: all clean $(PROJECTS)
 
-all: $(FPGA_BIT) $(FPGA_BIN) #$(FSBL_ELF) $(DEVICE_TREE)
+all:
+	@echo "Specify a project: $(PROJECTS)"
+
+
+$(PROJECTS):
+	@mkdir -p build/$@
+	$(VIVADO) -source prj/$@/make_project.tcl -tclargs $@ $(DEFINES)
+	# Post-processing
+	@echo "all:{build/boot.bit}" > build/boot.bif
+	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
+	@mv build/boot.bit.bin build/boot.bin
+	@mv vivado.log build/vivado.log
+
+
 
 clean:
-	rm -rf out .Xil .srcs sdk project sim
-	rm -rf prj/$(PRJ)/out prj/$(PRJ)/.Xil prj/$(PRJ)/.srcs prj/$(PRJ)/sdk prj/$(PRJ)/project prj/$(PRJ)/.hbs prj/$(PRJ)/*.log prj/$(PRJ)/usage_statistics*
-	rm -r *.txt*
-	rm -rf *.log
-
-sim: 
-	vivado -source red_pitaya_vivado_sim.tcl -tclargs $(PRJ) $(MODEL) $(DEFINES)
-
-project:
-ifneq ($(HWID),"")
-	vivado -source red_pitaya_vivado_project_$(MODEL).tcl -tclargs $(PRJ) $(DEFINES) HWID=$(HWID)
-else
-	vivado -source red_pitaya_vivado_project_$(MODEL).tcl -tclargs $(PRJ) $(DEFINES)
-endif
-
-$(FPGA_BIT):
-ifneq ($(HWID),"")
-	$(VIVADO) -source red_pitaya_vivado_$(MODEL).tcl -tclargs $(PRJ) $(DEFINES) HWID=$(HWID)
-else
-	$(VIVADO) -source red_pitaya_vivado_$(MODEL).tcl -tclargs $(PRJ) $(DEFINES)
-endif
-	./synCheck.sh
-
-$(FSBL_ELF): $(FPGA_BIT)
-	xsct red_pitaya_hsi_fsbl.tcl $(PRJ)
-
-$(DEVICE_TREE): $(FPGA_BIT)
-	xsct red_pitaya_hsi_dts.tcl  $(PRJ) DTS_VER=$(DTS_VER)
-
-$(FPGA_BIN): $(FPGA_BIT)
-	@echo all:{$(FPGA_BIT)} > prj/$(PRJ)/out/red_pitaya.bif
-	$(BOOTGEN)
+	rm -rf build .Xil
+	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*,tmp}  
+	rm -f *.txt *.log vivado.jou vivado_pid*.str

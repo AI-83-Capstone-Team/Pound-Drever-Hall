@@ -19,12 +19,14 @@
  *
  */
 
-module red_pitaya_dfilt1 (
+module red_pitaya_dfilt1 #(
+  parameter DW   = 14
+)(
    // ADC
    input                        adc_clk_i ,  // ADC clock
    input                        adc_rstn_i,  // ADC reset - active low
    input  logic signed [14-1:0] adc_dat_i ,  // ADC data
-   output logic signed [14-1:0] adc_dat_o ,  // ADC data
+   output logic signed [DW-1:0] adc_dat_o ,  // ADC data
    // configuration
    input  logic signed [18-1:0] cfg_aa_i,  // AA coefficient
    input  logic signed [25-1:0] cfg_bb_i,  // BB coefficient
@@ -62,7 +64,7 @@ end
 //  IIR 1
 
 logic signed [41-1:0] aa_mult;
-logic signed [48-1:0] r3_sum ; //24 + 25
+logic signed [49-1:0] r3_sum ; //24 + 25
 (* use_dsp="yes" *) logic signed [23-1:0] r3_reg_dsp1;
 (* use_dsp="yes" *) logic signed [23-1:0] r3_reg_dsp2;
 logic signed [23-1:0] r3_reg_dsp3;
@@ -109,8 +111,7 @@ logic signed [15-1:0] r4_reg_r ;
 logic signed [15-1:0] r4_reg_rr;
 logic signed [14-1:0] r5_reg   ;
 
-always_ff @(posedge adc_clk_i)
-   kk_mult <= r4_reg * cfg_kk_i;
+assign kk_mult = r4_reg * cfg_kk_i;
 
 always_ff @(posedge adc_clk_i)
 if (adc_rstn_i == 1'b0) begin
@@ -121,7 +122,6 @@ end else begin
    else                                            r5_reg <= kk_mult >>> 24;
 end
 
-always_ff @(posedge adc_clk_i)
-   adc_dat_o <= r5_reg;
+assign adc_dat_o = r5_reg[14-1:2];
 
 endmodule: red_pitaya_dfilt1

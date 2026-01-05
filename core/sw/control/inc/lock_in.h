@@ -3,39 +3,37 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "rp_enums.h"
-#include "control_common.h"
+#include "hw_common.h"
+#include "server.h"
 
-#define LOCKIN_BUFFSIZE 10
 #define WR_DELAY_US 10
 
 typedef struct
 {
-    bool 		log_data;
+	bool 			log_data;
 	rp_channel_t 	chin;
 	rp_channel_t 	chout;
-	//uint32_t	kernel_size;
-	float	 	dac_high;
-    float	 	dac_low;
-    float	 	dac_step;
-
-	float 		lock_point;
-	float 		derived_slope;
+	float	 		dac_end;
+	float	 		dac_start;
+	float	 		dac_step;
+	float 			lock_point;
+	float 			derived_slope;
+	uint32_t 		num_readings;
 } 	lock_in_ctx_t;
 
 
 typedef enum
 {
-    	LOCKED_IN		=  0,
+	LOCKED_IN		=  0,
 	DAC_OK			=  1,
 	NO_CONTEXT 		= -1,
-    	NON_POSITIVE_STEP 	= -2,
-    	LIMIT_MISMATCH 		= -3,
-	//INVALID_KERNEL 		= -4,
+	INVALID_STEP	= -2,
+	STEP_TOO_SMALL	= -3,
+	NO_RANGE		= -4,
 	CANNOT_LOG		= -5,
 }	lockin_error_codes_e;
 
-int validate_ctx(lock_in_ctx_t* ctx);
-//static inline void apply_filter(float* input, float* output, uint32_t buffSize, uint32_t kernelSize);
 
 
 int lock_in(lock_in_ctx_t* ctx);
+int cmd_lock_in(cmd_ctx_t* ctx);
