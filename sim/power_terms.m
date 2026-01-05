@@ -139,9 +139,9 @@ legend('Carrier','+1','-1','+2','-2','Total DC','Location','best');
 hold off;
 
 figure; grid on; hold on;
-plot(df_MHz, P1_opt_rms*1e3, 'LineWidth', 1.4);
-plot(df_MHz, P2_opt_rms*1e3, 'LineWidth', 1.4);
-xlabel('\Delta f (MHz)'); ylabel('Optical AC power (mW RMS)');
+plot(df_MHz, P1_opt_pk*1e3, 'LineWidth', 1.4);
+plot(df_MHz, P2_opt_pk*1e3, 'LineWidth', 1.4);
+xlabel('\Delta f (MHz)'); ylabel('Optical AC power (mW)');
 title(sprintf('Optical AC envelope vs detune (\\beta=%.2f, f_{mod}=%.0f MHz)', BETA, F_MOD/1e6));
 legend('@ f_{mod}', '@ 2f_{mod}', 'Location', 'best');
 hold off;
