@@ -48,14 +48,14 @@ module pdh_top
 );
 
   // Exported from BD (we will add these ports in Tcl)
-  wire        pdh_clk;
-  wire        pdh_rst_n;
+  logic        pdh_clk;
+  logic        pdh_rst_n;
 
-  wire [31:0] axi_from_ps;     // PS -> pdh_core
-  wire [31:0] axi_to_ps;       // pdh_core -> PS
+  logic [31:0] axi_from_ps;     // PS -> pdh_core
+  logic [31:0] axi_to_ps;       // pdh_core -> PS
 
-  wire [31:0] pdh_axis_tdata;  // ADC stream -> pdh_core
-  wire        pdh_axis_tvalid;
+  logic [31:0] pdh_axis_tdata;  // ADC stream -> pdh_core
+  logic        pdh_axis_tvalid;
 
   // Platform wrapper (PS + ADC/DAC + GPIO + clocks)
   system_wrapper u_system_wrapper (
@@ -119,10 +119,11 @@ module pdh_top
   ) u_pdh_core (
     .rst_n(pdh_rst_n),
     .clk(pdh_clk),
-    .S_AXIS_tdata(pdh_axis_tdata),
-    .S_AXIS_tvalid(pdh_axis_tvalid),
-    .axi_from_ps(axi_from_ps),
-    .axi_to_ps(axi_to_ps)
+    .S_AXIS_tdata_i(pdh_axis_tdata),
+    .S_AXIS_tvalid_i(pdh_axis_tvalid),
+    .axi_from_ps_i(axi_from_ps),
+    .axi_to_ps_o(axi_to_ps),
+    .led_o(led_o)
   );
 
 endmodule
