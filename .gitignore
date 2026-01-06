@@ -17,3 +17,5 @@ usage_statistics*
 tight_setup_hold_pins.txt
 .vscode
 client/data
+obj_dir/
+*.fst

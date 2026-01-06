@@ -8,7 +8,6 @@ module led_control #
 )
 (
     input logic en_i,
-    input logic clr_i,
     input logic clk,
     input logic rst_i,
     input logic [DATA_WIDTH-1 : 0] data_in_w,
@@ -30,13 +29,13 @@ module led_control #
     logic [CALLBACK_WIDTH-1: 0] next_callback_w, callback_r;
     assign callback_o = callback_r;
 
-    logic en_r, clr_r;
+    logic en_r;
 
 
     always_comb begin
         case(state_r)
             CLEAR: begin
-                next_state_w = (en_r & ~clr_r)? SET_LED : CLEAR;
+                next_state_w = en_r? SET_LED : CLEAR;
                 next_led_w = 0;
                 next_callback_w = 0;
             end
@@ -48,7 +47,7 @@ module led_control #
             end
 
             HOLD: begin 
-                next_state_w = clr_r? CLEAR : ((en_r)? SET_LED : HOLD);
+                next_state_w = en_r? SET_LED : HOLD;
                 next_led_w = led_r;
                 next_callback_w = led_r;
             end
@@ -69,7 +68,6 @@ module led_control #
             state_r <= CLEAR;
             led_r <= 0;
             en_r <= 0;
-            clr_r <= 0;
             callback_r <= 0;
         end
 
@@ -77,13 +75,8 @@ module led_control #
             state_r <= next_state_w;
             led_r <= next_led_w;
             en_r <= en_i;
-            clr_r <= clr_i;
             callback_r <= next_callback_w;
         end
     end 
-
-
-
-
 
 endmodule

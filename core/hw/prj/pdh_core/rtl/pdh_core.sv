@@ -17,7 +17,13 @@ module pdh_core #
 
     input logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_i,
     output logic [AXI_GPIO_OUT_WIDTH-1:0] axi_to_ps_o,
-    output logic [7:0] led_o
+    output logic [7:0] led_o,
+
+    ///////////// TEST //////////////////////////////////
+    output logic [3:0] cmd_tap,
+    output logic [3:0] state_tap,
+    output logic [7:0] led_payload_tap,
+    output logic rst_r_tap
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 1;
@@ -66,7 +72,7 @@ module pdh_core #
 
     logic [DATA_BITS-1 : 0] data_sig_w;
     assign data_sig_w = axi_from_ps_i[DATA_END : DATA_START];
-    logic [DATA_BITS-1 : 0] data_sig_r, prev_data_sig_r;
+    logic [DATA_BITS-1 : 0] data_sig_r;
 
     logic rst_i;
     assign rst_i = axi_from_ps_i[31];
@@ -98,38 +104,34 @@ module pdh_core #
     end
 
 
-    logic rst_n, strobe_edge;
-    assign strobe_edge = (state_r == ST_STROBE) && (prev_state_r != ST_STROBE);
+    logic rst_r, strobe_edge;
+    assign strobe_edge = (cmd_sig_r == CMD_STROBE) && (prev_cmd_sig_r != CMD_STROBE);
 
     always_ff @(posedge clk) begin
-        rst_n <= rst_i;
+        rst_r <= rst_i;
 
-        if(rst_n) begin
+        if(rst_r) begin
             cmd_sig_r <= CMD_IDLE; //Register cmds and data signals for CDC safety
             prev_cmd_sig_r <= CMD_IDLE;
             data_sig_r <= 0;
-            prev_data_sig_r <= 0;
             prev_state_r <= ST_IDLE;
             state_r <= ST_IDLE;
             en_bus_r <= DISABLE_ALL;
             last_cmd_r <= CMD_IDLE;
-        end
-
-        else begin
+        end else begin
             cmd_sig_r <= cmd_sig_w;
             prev_cmd_sig_r <= cmd_sig_r;
             data_sig_r <= data_sig_w;
-            prev_data_sig_r <= data_sig_r;
             prev_state_r <= state_r;
             state_r <= next_state_w;
-
-            if(strobe_edge) begin 
-                en_bus_r <= next_en_bus_w;
-                last_cmd_r <= prev_cmd_sig_r;
-            end else begin
-                en_bus_r <= DISABLE_ALL;
-                last_cmd_r <= last_cmd_r;
-            end
+        end
+        
+        if(strobe_edge) begin 
+            en_bus_r <= next_en_bus_w;
+            last_cmd_r <= prev_cmd_sig_r;
+        end else begin
+            en_bus_r <= DISABLE_ALL;
+            last_cmd_r <= last_cmd_r;
         end
     end
 
@@ -137,29 +139,31 @@ module pdh_core #
 
 
 //////////////////////// LED Controller ///////////////////
-    
-    logic clr_sig_w;
-    assign clr_sig_w = prev_data_sig_r[8];
+    logic[7:0] led_payload_r;
+   
+    always_ff @(posedge clk) begin
+        if(rst_r) begin
+            led_payload_r <= 0;
+        end else if(cmd_sig_r == CMD_SET_LED) begin
+            led_payload_r <= data_sig_r[7:0];
+        end else begin
+            led_payload_r <= led_payload_r;
+        end
+    end
 
-    logic[7:0] led_data_w;
-    assign led_data_w = prev_data_sig_r[7:0];
-    
+
     logic[7:0] led_controller_callback_w;
 
 
     led_control led_control_u(
         .en_i(en_bus_r[0]),
-        .clr_i(clr_sig_w),
         .clk(clk),
-        .rst_i(rst_n),
-        .data_in_w(led_data_w),
+        .rst_i(rst_r),
+        .data_in_w(led_payload_r),
         .callback_o(led_controller_callback_w),
         .led_o(led_o)
     );
 
-
-    logic [11:0] callback_w, callback_r;
-    assign callback_w[11:8] = last_cmd_r;
     
     logic [7:0] func_callback_w;
     always_comb begin
@@ -171,8 +175,24 @@ module pdh_core #
         endcase
     end
     
-    assign callback_w[7:0] = func_callback_w;
-    assign axi_to_ps_o[11:0] = callback_w;
+    always_comb begin
+        axi_to_ps_o = '0;
+        axi_to_ps_o[7:0] = func_callback_w;
+        axi_to_ps_o[11:8] = last_cmd_r;
+        axi_to_ps_o[15:12] = cmd_sig_r;
+    end
+
+
+
+
+
+
+
+//////////////////// TEST ////////////////////////////////
+    assign cmd_tap = cmd_sig_r;
+    assign state_tap = state_r;
+    assign led_payload_tap = led_payload_r;
+    assign rst_r_tap = rst_r;
 
 
 endmodule
