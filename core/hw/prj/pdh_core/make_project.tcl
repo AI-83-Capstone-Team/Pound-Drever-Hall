@@ -109,7 +109,7 @@ create_bd_port -dir O dac_wrt_o
 
 
 ### LED
-create_bd_port -dir O -from 7 -to 0 led_o
+#create_bd_port -dir O -from 7 -to 0 led_o
 
 
 

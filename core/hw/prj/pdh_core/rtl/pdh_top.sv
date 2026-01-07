@@ -97,7 +97,6 @@ module pdh_top
     .dac_sel_o(dac_sel_o),
     .dac_wrt_o(dac_wrt_o),
 
-    .led_o(led_o),
 
     // new exported “platform” signals (added by Tcl)
     .pdh_clk(pdh_clk),
@@ -117,7 +116,6 @@ module pdh_top
     .AXI_GPIO_IN_WIDTH(32),
     .AXI_GPIO_OUT_WIDTH(32)
   ) u_pdh_core (
-    .rst_n(pdh_rst_n),
     .clk(pdh_clk),
     .S_AXIS_tdata_i(pdh_axis_tdata),
     .S_AXIS_tvalid_i(pdh_axis_tvalid),
