@@ -1,3 +1,4 @@
+# Build Files
 state*
 __pycache__/
 tmp
@@ -19,3 +20,11 @@ tight_setup_hold_pins.txt
 client/data
 obj_dir/
 *.fst
+
+# LTspice Specific Files
+*.raw
+*.op.raw
+*.netS
+*.net
+*.fft
+*.err
