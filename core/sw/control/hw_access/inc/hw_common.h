@@ -121,3 +121,43 @@ typedef struct
 
 extern sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 extern float gAdcMirror[ADC_BUFFER_SIZE];
+
+
+extern void* gAxiMap;
+
+
+int pdh_Init();
+int pdh_Release();
+
+
+
+typedef union 
+{
+    struct __attribute__((packed))  //GCC on ARM is little endian so the field order is reversed relative to the SV buses 
+    {
+        uint32_t led_code  : 8;
+        uint32_t _padding  : 19;
+        uint32_t cmd       : 4;
+        uint32_t rst       : 1;     //Bit 31
+    }   led_cmd;
+
+    uint32_t raw;
+}   pdh_cmd_t;
+
+
+typedef union
+{
+    struct __attribute__((packed))
+    {
+        uint32_t func_callback  : 8;
+        uint32_t last_cmd       : 4;
+        uint32_t cmd_sig        : 4;
+        uint32_t _padding       : 16;
+    }   led_callback;
+
+    uint32_t raw;
+}   pdh_callback_t;
+
+
+int pdh_send_cmd(pdh_cmd_t cmd);
+int pdh_get_callback(pdh_callback_t* callback);

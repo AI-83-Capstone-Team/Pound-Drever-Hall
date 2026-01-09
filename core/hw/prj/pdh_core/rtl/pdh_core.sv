@@ -164,7 +164,7 @@ module pdh_core #
         .led_o(led_o)
     );
 
-    
+    //TODO: Full 32-bit usage scheme here
     logic [7:0] func_callback_w;
     always_comb begin
         case(last_cmd_r)

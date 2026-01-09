@@ -7,8 +7,6 @@
 #include <unistd.h>
 
 
-
-
 #ifdef DEBUG
 #define DEBUG_INFO(...) \
     do { \
@@ -21,6 +19,3 @@
     do { } while (0)
 #endif
 
-
-int pdh_Init();
-int pdh_Release();
