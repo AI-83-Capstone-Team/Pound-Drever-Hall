@@ -20,7 +20,6 @@ tight_setup_hold_pins.txt
 client/data
 obj_dir/
 *.fst
-<<<<<<< Updated upstream
 
 # LTspice Specific Files
 *.raw
@@ -29,7 +28,5 @@ obj_dir/
 *.net
 *.fft
 *.err
-=======
 compile_commands.json
 .cache/
->>>>>>> Stashed changes
