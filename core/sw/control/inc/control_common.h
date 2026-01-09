@@ -19,3 +19,5 @@
     do { } while (0)
 #endif
 
+
+int cmd_reset_fpga(cmd_ctx_t* ctx);

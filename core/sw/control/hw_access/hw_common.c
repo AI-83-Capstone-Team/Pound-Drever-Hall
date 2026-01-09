@@ -45,13 +45,13 @@ int pdh_Release()
 
 int pdh_send_cmd(pdh_cmd_t cmd)
 {
-    *((uint32_t*)(gAxiMap + AXI_WRITE_OFFSET)) = cmd.raw;
+    *((volatile uint32_t*)(gAxiMap + AXI_WRITE_OFFSET)) = cmd.raw;
     return PDH_OK;
 }
 
 
 int pdh_get_callback(pdh_callback_t* callback)
 {
-    callback->raw = *((uint32_t*)(gAxiMap + AXI_READ_OFFSET));
+    callback->raw = *((volatile uint32_t*)(gAxiMap + AXI_READ_OFFSET));
     return PDH_OK;
 }

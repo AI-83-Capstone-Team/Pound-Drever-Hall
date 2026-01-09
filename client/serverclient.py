@@ -8,6 +8,7 @@ RP_CH_1 = 0
 NUM_SAMPLES = 100
 
 def main():
+    '''
     cmds = [(
         "CMD:lock_in\n"
         "F:1.0,-1.0,0.01\n"
@@ -25,6 +26,22 @@ def main():
     (
         "CMD:rf_read\n"
         "U:0,100\n"
+    )
+    ]
+    '''
+
+    cmds = [
+    (
+        "CMD:reset_fpga\n"
+        "U:1\n"
+    ),
+    (
+        "CMD:reset_fpga\n"
+        "U:0\n"
+    ),
+    (
+        "CMD:set_led\n"
+        "U:67\n"
     )
     ]
 

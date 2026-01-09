@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+#include <stdint.h>
 #include <unistd.h>
 
 #define PDH_OK 0
@@ -130,6 +130,14 @@ int pdh_Init();
 int pdh_Release();
 
 
+typedef enum
+{
+    CMD_IDLE = 0b0000,
+    CMD_SET_LED = 0b0001,
+    CMD_STROBE = 0b1110,
+}   pdh_cmd_e;   
+
+
 
 typedef union 
 {
@@ -138,8 +146,21 @@ typedef union
         uint32_t led_code  : 8;
         uint32_t _padding  : 19;
         uint32_t cmd       : 4;
-        uint32_t rst       : 1;     //Bit 31
+        uint32_t _padding2 : 1;     //Bit 31
     }   led_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 27;
+        uint32_t strobe     : 4;
+        uint32_t _padding2  : 1;
+    }   strobe_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 31;
+        uint32_t rst        : 1;
+    }   rst_cmd;
 
     uint32_t raw;
 }   pdh_cmd_t;
