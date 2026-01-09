@@ -233,7 +233,7 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 	offset += snprintf(buff + offset, cap - offset, "type:output\nname:%s\n", ctx.name);
 	offset += snprintf(buff + offset, cap - offset, "status:%d\n", func_status);
 
-	for(uint16_t i = 0; i < ctx.output.num_outputs; i++)
+	for(size_t i = 0; i < ctx.output.num_outputs; i++)
 	{
 		output_item_t output = ctx.output.output_items[i];
 
@@ -253,7 +253,7 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
         offset += snprintf(buff + offset, cap - offset, "ADC::x%d:\n", ctx.adc_count);
         buff = (char*)realloc(buff, MAX_BYTES + (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count);
 		cap += (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count;
-        for(int i = 0; i < ctx.adc_count; i++)
+        for(size_t i = 0; i < ctx.adc_count; i++)
         {
             offset += snprintf(buff + offset, cap - offset, "%f,", gAdcMirror[i]);
         }
@@ -318,8 +318,8 @@ int main(void)
     DEBUG_INFO("Server listening on port %d...\n", SERVER_PORT);
     DEBUG_INFO("Initializing RP API...\n");
     
-    int init_code = rp_Init();
-    if(init_code == RP_OK)
+    int init_code = pdh_Init();
+    if(init_code == PDH_OK)
     {
         while(true)
         {
@@ -383,7 +383,7 @@ int main(void)
 
     else DEBUG_INFO("rp_Init() failed with code: %d\n", init_code);
 
-    rp_Release();
+    pdh_Release();
     close(listen_fd);
     return 0;
 }

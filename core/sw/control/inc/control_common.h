@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#include "rp.h"
 
 
 
@@ -23,4 +22,5 @@
 #endif
 
 
-
+int pdh_Init();
+int pdh_Release();

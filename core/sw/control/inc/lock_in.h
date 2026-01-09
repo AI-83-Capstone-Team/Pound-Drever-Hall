@@ -2,7 +2,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "rp_enums.h"
 #include "hw_common.h"
 #include "server.h"
 

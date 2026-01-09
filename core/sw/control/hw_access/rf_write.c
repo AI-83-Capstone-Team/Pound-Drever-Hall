@@ -6,7 +6,8 @@
 
 static inline rf_write_e validate_params(rp_channel_t channel, rp_waveform_t waveform, float amplitude, float frequency, float offset)
 {
-	if(channel != RP_CH_1 && channel != RP_CH_2)
+	/*
+    if(channel != RP_CH_1 && channel != RP_CH_2)
 	{
 		ELOG("invalid channel: %d\n", channel);
 		return RF_WRITE_INVALID_CHANNEL;
@@ -35,7 +36,7 @@ static inline rf_write_e validate_params(rp_channel_t channel, rp_waveform_t wav
 		ELOG("invalid offset: %f", offset);
 		return RF_WRITE_INVALID_OFFSET;
 	}
-
+    */
 	return RF_WRITE_OK;
 }
 
@@ -44,7 +45,8 @@ static inline rf_write_e validate_params(rp_channel_t channel, rp_waveform_t wav
 
 int rf_write(rp_channel_t channel, rp_waveform_t waveform, float amplitude, float frequency, float offset, bool enable)
 {	
-	rf_write_e val = validate_params(channel, waveform, amplitude, frequency, offset);
+    /*
+    rf_write_e val = validate_params(channel, waveform, amplitude, frequency, offset);
 	if(val != RF_WRITE_OK)
 	{
 		ELOG("Invalid parameters - exit code: %d", val);
@@ -68,7 +70,7 @@ int rf_write(rp_channel_t channel, rp_waveform_t waveform, float amplitude, floa
 	{
 		RP_CALL(rp_GenOutDisable(channel));
 	}
-
+    */
 	return RF_OUT_OK;
 }
 

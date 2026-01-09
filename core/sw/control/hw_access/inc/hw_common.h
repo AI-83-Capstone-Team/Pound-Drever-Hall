@@ -5,19 +5,18 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#include "rp.h"
-#include "rp_enums.h"
-
+#define PDH_OK 0
 
 #define ABS(V) ((V > 0)? V : -V)
-#define  SWEEP_BUFFER_SIZE 2000
+#define ADC_BUFFER_SIZE (16 * 1024)
+#define SWEEP_BUFFER_SIZE 2000
 
 #ifdef DEBUG
 
 #define RP_CALL(fn_call)                                   \
     do {                                                   \
         int _ret = (fn_call);                              \
-        if (_ret != RP_OK) {                               \
+        if (_ret != PDH_OK) {                               \
             fprintf(stderr, "%s failed (code %d)!\n",      \
                     #fn_call, _ret);                       \
         	return _ret;				   \
@@ -35,7 +34,7 @@
 #define RP_CALL_NOTERM(fn_call)                 	   \
     do {                                                   \
         int _ret = (fn_call);                              \
-        if (_ret != RP_OK) {                               \
+        if (_ret != PDH_OK) {                               \
             fprintf(stderr, "%s failed (code %d)!\n",      \
                     #fn_call, _ret);                       \
 	}                                                  \
@@ -61,6 +60,46 @@
     do { \
     } while (0)
 #endif
+
+
+typedef enum
+{
+    RP_CH_1,
+    RP_CH_2
+}   rp_channel_t;
+
+typedef enum
+{
+    RP_WAVEFORM_SINE,
+    RP_WAVEFORM_SQUARE,
+    RP_WAVEFORM_TRIANGLE,
+    RP_WAVEFORM_RAMP_UP,
+    RP_WAVEFORM_RAMP_DOWN,
+    RP_WAVEFORM_DC,
+    RP_WAVEFORM_PWM,
+    RP_WAVEFORM_ARBITRARY,
+    RP_WAVEFORM_DC_NEG
+}   rp_waveform_t;
+
+typedef enum {
+    RP_DEC_1     = 1,       //!< Decimation 1
+    RP_DEC_2     = 2,       //!< Decimation 2
+    RP_DEC_4     = 4,       //!< Decimation 4
+    RP_DEC_8     = 8,       //!< Decimation 8
+    RP_DEC_16    = 16,      //!< Decimation 16
+    RP_DEC_32    = 32,      //!< Decimation 32
+    RP_DEC_64    = 64,      //!< Decimation 64
+    RP_DEC_128   = 128,     //!< Decimation 128
+    RP_DEC_256   = 256,     //!< Decimation 256
+    RP_DEC_512   = 512,     //!< Decimation 512
+    RP_DEC_1024  = 1024,    //!< Decimation 1024
+    RP_DEC_2048  = 2048,    //!< Decimation 2048
+    RP_DEC_4096  = 4096,    //!< Decimation 4096
+    RP_DEC_8192  = 8192,    //!< Decimation 8192
+    RP_DEC_16384 = 16384,   //!< Decimation 16384
+    RP_DEC_32768 = 32768,   //!< Decimation 32768
+    RP_DEC_65536 = 65536    //!< Decimation 65536
+} rp_acq_decimation_t;
 
 
 typedef enum

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "control_common.h"
+#include "hw_common.h"
+#include "stdint.h"
 
 typedef enum
 {
