@@ -126,15 +126,16 @@ module pdh_core #
             data_sig_r <= data_sig_w;
             prev_state_r <= state_r;
             state_r <= next_state_w;
+            if(strobe_edge) begin 
+                en_bus_r <= next_en_bus_w;
+                last_cmd_r <= prev_cmd_sig_r;
+            end else begin
+                en_bus_r <= DISABLE_ALL;
+                last_cmd_r <= last_cmd_r;
+            end
+
         end
         
-        if(strobe_edge) begin 
-            en_bus_r <= next_en_bus_w;
-            last_cmd_r <= prev_cmd_sig_r;
-        end else begin
-            en_bus_r <= DISABLE_ALL;
-            last_cmd_r <= last_cmd_r;
-        end
     end
 
     
