@@ -35,7 +35,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"rf_write", cmd_rf_write, 3, 0, 3},
     {"rf_scope_cfg", cmd_rf_scope_cfg, 1, 0, 3},
     {"set_led", cmd_set_led, 0, 0, 1},
-    {"reset_fpga", cmd_reset_fpga, 0, 0, 1},
+    {"reset_fpga", cmd_reset_fpga, 0, 0, 0},
     {"strobe_fpga", cmd_strobe_fpga, 0, 0, 0}
 };
 

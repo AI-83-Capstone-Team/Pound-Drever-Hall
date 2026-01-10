@@ -1,8 +1,12 @@
+#include <unistd.h>
 #include <string.h>
 #include "server.h"
 #include "control_common.h"
 #include "hw_common.h"
 
+
+#define RESET_ON 1
+#define RESET_OFF 0
 
 
 int cmd_reset_fpga(cmd_ctx_t* ctx)
@@ -11,10 +15,11 @@ int cmd_reset_fpga(cmd_ctx_t* ctx)
  
     pdh_cmd_t cmd;
     cmd.raw = 0;
-    cmd.rst_cmd.rst = ctx->uint_args[0];
+    cmd.rst_cmd.rst = RESET_ON;
 
     pdh_send_cmd(cmd); 
-    asm volatile("" ::: "memory"); // Compiler Barrier
+    cmd.rst_cmd.rst = RESET_OFF;
+    pdh_send_cmd(cmd);
 
     pdh_callback_t callback;
     callback.raw = 0;
@@ -33,6 +38,7 @@ int cmd_reset_fpga(cmd_ctx_t* ctx)
     strcpy(ctx->output.output_items[2].name, "cmd_sig");
 
     ctx->output.num_outputs = 3;
+
     return PDH_OK;
 }
 

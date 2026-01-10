@@ -10,8 +10,6 @@
 float gAdcMirror[ADC_BUFFER_SIZE];
 sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 
-
-
 #define AXI_BUS_OFFSET 0x42000000
 #define AXI_BUS_DEVBIND "/dev/mem"
 #define AXI_WRITE_OFFSET    8   //TODO: Check these
@@ -46,6 +44,7 @@ int pdh_Release()
 int pdh_send_cmd(pdh_cmd_t cmd)
 {
     *((volatile uint32_t*)(gAxiMap + AXI_WRITE_OFFSET)) = cmd.raw;
+    __sync_synchronize();
     return PDH_OK;
 }
 

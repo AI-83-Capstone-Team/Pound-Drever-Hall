@@ -19,8 +19,9 @@ int cmd_set_led(cmd_ctx_t* ctx)
     cmd.led_cmd.led_code = led_code;
     
     pdh_send_cmd(cmd); 
-    asm volatile("" ::: "memory"); // Compiler Barrier
-    
+    cmd.strobe_cmd.strobe = CMD_STROBE;
+    pdh_send_cmd(cmd);
+
     pdh_callback_t callback;
     callback.raw = 0;
     pdh_get_callback(&callback);
