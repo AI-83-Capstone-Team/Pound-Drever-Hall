@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
-
+#include "server.h"
 
 #ifdef DEBUG
 #define DEBUG_INFO(...) \
@@ -21,3 +21,4 @@
 
 
 int cmd_reset_fpga(cmd_ctx_t* ctx);
+int cmd_strobe_fpga(cmd_ctx_t* ctx);

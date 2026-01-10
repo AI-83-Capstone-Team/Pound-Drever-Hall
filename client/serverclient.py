@@ -42,6 +42,9 @@ def main():
     (
         "CMD:set_led\n"
         "U:67\n"
+    ),
+    (
+        "CMD:strobe_fpga\n"
     )
     ]
 

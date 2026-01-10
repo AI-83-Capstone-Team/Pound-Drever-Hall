@@ -8,7 +8,7 @@
 
 int cmd_set_led(cmd_ctx_t* ctx)
 {
-	DEBUG_INFO("Loading command context...\n");
+	DEBUG_INFO("Loading command context for: %s...\n", __func__);
     
     pdh_cmd_t cmd;
     cmd.raw = 0;
@@ -21,9 +21,6 @@ int cmd_set_led(cmd_ctx_t* ctx)
     pdh_send_cmd(cmd); 
     asm volatile("" ::: "memory"); // Compiler Barrier
     
-    cmd.raw = 0;
-    cmd.strobe_cmd.strobe = CMD_STROBE;
-
     pdh_callback_t callback;
     callback.raw = 0;
     pdh_get_callback(&callback);

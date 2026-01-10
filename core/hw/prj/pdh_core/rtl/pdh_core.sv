@@ -51,13 +51,15 @@ module pdh_core #
 //////////////////////////////////////////////////////////
 
 
-    typedef enum logic [CMD_BITS-1:0] {
+    typedef enum logic [CMD_BITS-1:0] 
+    {
         CMD_IDLE = 4'b0000,
         CMD_SET_LED = 4'b0001,
         CMD_STROBE = 4'b1110
     } cmd_t;
 
-    typedef enum logic [CMD_BITS-1:0] {
+    typedef enum logic [CMD_BITS-1:0] 
+    {
         ST_IDLE = 4'b0000,
         ST_SET_LED = 4'b0001,
         ST_STROBE = 4'b1110,

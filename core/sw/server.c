@@ -18,7 +18,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 6
+#define NUM_CMDS 7
 
 /*
 "CMD:ex_cmd'\n'
@@ -35,7 +35,8 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"rf_write", cmd_rf_write, 3, 0, 3},
     {"rf_scope_cfg", cmd_rf_scope_cfg, 1, 0, 3},
     {"set_led", cmd_set_led, 0, 0, 1},
-    {"reset_fpga", cmd_reset_fpga, 0, 0, 1}
+    {"reset_fpga", cmd_reset_fpga, 0, 0, 1},
+    {"strobe_fpga", cmd_strobe_fpga, 0, 0, 0}
 };
 
 
