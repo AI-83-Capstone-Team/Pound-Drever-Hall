@@ -54,8 +54,11 @@ module pdh_top
   logic [31:0] axi_from_ps;     // PS -> pdh_core
   logic [31:0] axi_to_ps;       // pdh_core -> PS
 
-  logic [31:0] pdh_axis_tdata;  // ADC stream -> pdh_core
-  logic        pdh_axis_tvalid;
+  logic [31:0] pdh_adc_axis_tdata;  // ADC stream -> pdh_core
+  logic        pdh_adc_axis_tvalid;
+
+  logic [31:0] pdh_dac_axis_tdata;  // pdh_core -> DAC stream
+  logic        pdh_dac_axis_tvalid;
 
   // Platform wrapper (PS + ADC/DAC + GPIO + clocks)
   system_wrapper u_system_wrapper (
@@ -104,9 +107,13 @@ module pdh_top
     .axi_from_ps(axi_from_ps),
     .axi_to_ps(axi_to_ps),
 
-    // exported AXIS stream from ADC adapter
-    .pdh_axis_tdata(pdh_axis_tdata),
-    .pdh_axis_tvalid(pdh_axis_tvalid)
+    // exported AXI stream from ADC adapter
+    .pdh_adc_axis_tdata(pdh_adc_axis_tdata),
+    .pdh_adc_axis_tvalid(pdh_adc_axis_tvalid),
+
+    // exported AXI stream from DAC adapter
+    .pdh_dac_axis_tdata(pdh_dac_axis_tdata),
+    .pdh_dac_axis_tvalid(pdh_dac_axis_tvalid)
   );
 
   pdh_core #(

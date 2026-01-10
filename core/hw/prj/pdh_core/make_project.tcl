@@ -242,8 +242,8 @@ create_bd_port -dir O -from 31 -to 0 axi_from_ps
 connect_bd_net [get_bd_ports axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
 
 # Export the ADC AXI-stream (Vivado will create wrapper ports named pdh_axis_tdata, pdh_axis_tvalid, etc.)
-make_bd_intf_pins_external -name pdh_axis [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
-
+make_bd_intf_pins_external -name pdh_adc_axis [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
+make_bd_intf_pins_external -name pdh_dac_axis [get_bd_intf_pins axis_red_pitaya_dac_0/S_AXIS]
 
 
 
