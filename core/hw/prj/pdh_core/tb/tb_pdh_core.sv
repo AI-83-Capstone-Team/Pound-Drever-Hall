@@ -18,11 +18,8 @@ module tb_pdh_core;
   logic [31:0] S_AXIS_tdata_i;
   logic        S_AXIS_tvalid_i;
 
-  logic [7:0] led_payload_tap;
-  logic rst_r_tap;
-
-  logic [7:0] led_in_tap;
-  logic [7:0] rst_in_tap;
+  logic [31:0] dac_tdata_o;
+  logic        dac_tvalid_o;
 
   logic [3:0] last_axi_cmd;
   logic [3:0] last_module_cmd;
@@ -42,15 +39,13 @@ module tb_pdh_core;
 
   pdh_core dut (
     .clk(clk),
-    .S_AXIS_tdata_i(S_AXIS_tdata_i),
-    .S_AXIS_tvalid_i(S_AXIS_tvalid_i),
+    .adc_tdata_i(S_AXIS_tdata_i),
+    .adc_tvalid_i(S_AXIS_tvalid_i),
     .axi_from_ps_i(axi_from_ps_i),
     .axi_to_ps_o(axi_to_ps_o),
     .led_o(led_o),
-    .cmd_tap(cmd_tap),
-    .state_tap(state_tap),
-    .led_payload_tap(led_payload_tap),
-    .rst_r_tap(rst_r_tap)
+    .dac_tdata_o(dac_tdata_o),
+    .dac_tvalid_o(dac_tvalid_o)
   );
 
   // Wave dump (FST)

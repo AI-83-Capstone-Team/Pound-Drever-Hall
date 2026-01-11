@@ -124,8 +124,10 @@ module pdh_top
     .AXI_GPIO_OUT_WIDTH(32)
   ) u_pdh_core (
     .clk(pdh_clk),
-    .S_AXIS_tdata_i(pdh_axis_tdata),
-    .S_AXIS_tvalid_i(pdh_axis_tvalid),
+    .adc_tdata_i(pdh_adc_axis_tdata),
+    .adc_tvalid_i(pdh_adc_axis_tvalid),
+    .dac_tdata_o(pdh_adc_axis_tdata),
+    .dac_tvalid_o(pdh_dac_axis_tvalid), 
     .axi_from_ps_i(axi_from_ps),
     .axi_to_ps_o(axi_to_ps),
     .led_o(led_o)

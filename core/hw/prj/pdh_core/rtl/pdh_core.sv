@@ -12,21 +12,19 @@ module pdh_core #
     input logic clk, //FCLK_CLK0
 
     (* X_INTERFACE_PARAMETER = "FREQ_HZ 125000000" *)
-    input logic [AXIS_TDATA_WIDTH-1:0] S_AXIS_tdata_i,
-    input logic S_AXIS_tvalid_i,
-
+    input logic [AXIS_TDATA_WIDTH-1:0] adc_tdata_i,
+    input logic adc_tvalid_i,
+    
+    (* X_INTERFACE_PARAMETER = "FREQ_HZ 125000000" *)
+    output logic [AXIS_TDATA_WIDTH-1:0] dac_tdata_o,
+    output logic dac_tvalid_o,
+    
     input logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_i,
     output logic [AXI_GPIO_OUT_WIDTH-1:0] axi_to_ps_o,
-    output logic [7:0] led_o,
-
-    ///////////// TEST //////////////////////////////////
-    output logic [3:0] cmd_tap,
-    output logic [3:0] state_tap,
-    output logic [7:0] led_payload_tap,
-    output logic rst_r_tap
+    output logic [7:0] led_o
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
-    localparam int unsigned NUM_MODULES = 1;
+    localparam int unsigned NUM_MODULES = 2;
     localparam int unsigned CMD_BITS = 4;
     localparam int unsigned DATA_BITS = 27;
 
@@ -43,18 +41,19 @@ module pdh_core #
     logic [ADC_DATA_WIDTH-1 : 0] adc_2_tdata_w;
     logic adc_2_tvalid_w;
 
-    assign adc_1_tdata_w = S_AXIS_tdata_i[ADC_DATA_WIDTH-1 : 0];
-    assign adc_2_tdata_w = S_AXIS_tdata_i[AXIS_TDATA_WIDTH-1:ADC_DATA_WIDTH];
+    assign adc_1_tdata_w = adc_tdata_i[ADC_DATA_WIDTH-1 : 0];
+    assign adc_2_tdata_w = adc_tdata_i[AXIS_TDATA_WIDTH-1:ADC_DATA_WIDTH];
     
-    assign adc_1_tvalid_w = S_AXIS_tvalid_i;
-    assign adc_2_tvalid_w = S_AXIS_tvalid_i;
+    assign adc_1_tvalid_w = adc_tvalid_i;
+    assign adc_2_tvalid_w = adc_tvalid_i;
 //////////////////////////////////////////////////////////
 
-
+    //TODO: Turn these enums into a package
     typedef enum logic [CMD_BITS-1:0] 
     {
         CMD_IDLE = 4'b0000,
         CMD_SET_LED = 4'b0001,
+        CMD_SET_DAC = 4'b0010,
         CMD_STROBE = 4'b1110
     } cmd_t;
 
@@ -62,6 +61,7 @@ module pdh_core #
     {
         ST_IDLE = 4'b0000,
         ST_SET_LED = 4'b0001,
+        ST_SET_DAC = 4'b0010,
         ST_STROBE = 4'b1110,
         ST_INVALID_STATE = 4'b1111
     } state_t;
@@ -79,8 +79,14 @@ module pdh_core #
     logic rst_i;
     assign rst_i = axi_from_ps_i[31];
     
-    logic [NUM_MODULES-1 : 0] en_bus_r;
-    logic [NUM_MODULES-1 : 0] next_en_bus_w;
+    typedef enum logic [NUM_MODULES-1 : 0]
+    {
+        DISABLE_ALL = 2'b00,
+        ENABLE_LED  = 2'b01,
+        ENABLE_DAC  = 2'b10
+    }   enbus_t;
+
+    enbus_t en_bus_r, next_en_bus_w;
 
 
     //cmd -> next_state_cmd logic
@@ -88,18 +94,18 @@ module pdh_core #
         case(cmd_sig_r)
             CMD_IDLE: next_state_w = ST_IDLE;
             CMD_SET_LED: next_state_w = ST_SET_LED;
+            CMD_SET_DAC: next_state_w = ST_SET_DAC;
             CMD_STROBE: next_state_w = ST_STROBE;
             default: next_state_w = ST_INVALID_STATE;
         endcase
     end
 
-    localparam logic DISABLE_ALL = 1'b0;
-    localparam logic ENABLE_LED = 1'b1;
 
     always_comb begin
         case(prev_state_r)
             ST_IDLE: next_en_bus_w = DISABLE_ALL;
             ST_SET_LED: next_en_bus_w = ENABLE_LED;
+            ST_SET_DAC: next_en_bus_w = ENABLE_DAC;
             ST_STROBE: next_en_bus_w = DISABLE_ALL;
             default: next_en_bus_w = DISABLE_ALL;
         endcase
@@ -142,30 +148,53 @@ module pdh_core #
 
 
 //////////////////////// LED Controller ///////////////////
-    logic[7:0] led_payload_r;
+
+    logic[7:0] led_controller_callback_w;
+    led_control led_control_u(
+        .en_i(en_bus_r[0]),
+        .cmd_i(cmd_sig_r),
+        .clk(clk),
+        .rst_i(rst_r),
+        .led_payload_i(data_sig_r[7:0]),
+        .callback_o(led_controller_callback_w),
+        .led_o(led_o)
+    );
+
+    
+//////////////////// DAC CONTROLLER ///////////////////////////////////
+    logic[13:0] dac1_payload_r, dac1_payload_w;
+    logic[13:0] dac2_payload_r, dac2_payload_w;
+    
+    logic       dac_sel_w, dac_valid_r;
+    assign dac_sel_w = data_sig_r[14];
+
+    always_comb begin
+        dac1_payload_w = (dac_sel_w == 0)? data_sig_r[13:0] : dac1_payload_r;
+        dac2_payload_w = (dac_sel_w == 1)? data_sig_r[13:0] : dac2_payload_r;
+    end
+
+    
    
     always_ff @(posedge clk) begin
         if(rst_r) begin
-            led_payload_r <= 0;
-        end else if(cmd_sig_r == CMD_SET_LED) begin
-            led_payload_r <= data_sig_r[7:0];
+            dac1_payload_r <= 0;
+            dac2_payload_r <= 0;
+            dac_valid_r    <= 0;
+        end else if(cmd_sig_r == CMD_SET_DAC) begin
+            dac1_payload_r <= dac1_payload_w;
+            dac2_payload_r <= dac2_payload_w;
+            dac_valid_r    <= 1;
         end else begin
-            led_payload_r <= led_payload_r;
+            dac1_payload_r <= dac1_payload_w;
+            dac2_payload_r <= dac2_payload_w;
+            dac_valid_r    <= 0;
         end
     end
 
 
-    logic[7:0] led_controller_callback_w;
+/////////////////////////// CALLBACK /////////////////////////
 
 
-    led_control led_control_u(
-        .en_i(en_bus_r[0]),
-        .clk(clk),
-        .rst_i(rst_r),
-        .data_in_w(led_payload_r),
-        .callback_o(led_controller_callback_w),
-        .led_o(led_o)
-    );
 
     //TODO: Full 32-bit usage scheme here
     logic [7:0] func_callback_w;
@@ -184,18 +213,5 @@ module pdh_core #
         axi_to_ps_o[11:8] = last_cmd_r;
         axi_to_ps_o[15:12] = cmd_sig_r;
     end
-
-
-
-
-
-
-
-//////////////////// TEST ////////////////////////////////
-    assign cmd_tap = cmd_sig_r;
-    assign state_tap = state_r;
-    assign led_payload_tap = led_payload_r;
-    assign rst_r_tap = rst_r;
-
 
 endmodule

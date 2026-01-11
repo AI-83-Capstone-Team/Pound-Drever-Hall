@@ -7,10 +7,12 @@ module led_control #
     parameter LED_WIDTH = 8
 )
 (
+    input logic [3:0] cmd_i,
+    input logic [DATA_WIDTH-1:0] led_payload_i,
+
     input logic en_i,
     input logic clk,
     input logic rst_i,
-    input logic [DATA_WIDTH-1 : 0] data_in_w,
 
     output logic [CALLBACK_WIDTH-1 : 0] callback_o,
     output logic [LED_WIDTH-1 : 0] led_o
@@ -42,7 +44,7 @@ module led_control #
 
             SET_LED: begin
                 next_state_w = HOLD;
-                next_led_w =  data_in_w[LED_WIDTH-1 : 0];
+                next_led_w =  led_payload_r;
                 next_callback_w = 0;
             end
 
@@ -60,23 +62,35 @@ module led_control #
         endcase
     end
 
-    logic rst_n;
+    logic[7:0] led_payload_r;
     always_ff @(posedge clk) begin
-        rst_n <= rst_i;
 
-        if(rst_n) begin
+        if(rst_i) begin
             state_r <= CLEAR;
             led_r <= 0;
             en_r <= 0;
             callback_r <= 0;
+            led_payload_r <= 0;
         end
 
         else begin
+            if(cmd_i == 2'b01) begin
+                led_payload_r <= led_payload_i;
+            end else begin
+                led_payload_r <= led_payload_r;
+            end
+
             state_r <= next_state_w;
             led_r <= next_led_w;
             en_r <= en_i;
             callback_r <= next_callback_w;
         end
-    end 
+    end
+
+
+
+
+            
+
 
 endmodule
