@@ -77,8 +77,39 @@ module pdh_core #
     assign data_w = axi_from_ps_r[DATA_END:DATA_START];
 
     logic [7:0] led_r, next_led_w;
+    
+    logic [31:0] dac_tdata_r, next_dac_tdata_w;
+    logic dac_tvalid_r, next_dac_tvalid_w;
+
+    always_comb begin
+        case(cmd_w)
+            CMD_SET_LED: begin
+                next_led_w = strobe_edge_w? data_w[7:0] : led_r;
+                next_dac_tdata_w = dac_tdata_r;
+                next_dac_tvalid_w = 0;
+            end
+            
+            CMD_SET_DAC: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = strobe_edge_w? (data_w[14]? {2'b00, data_w[13:0], 2'b00, dac_tdata_r[13:0]} : {2'b00, dac_tdata_r[29:16], 2'b00, data_w[13:0]}) : dac_tdata_r;
+                next_dac_tvalid_w = strobe_edge_w? 1 : 0;
+            end
+
+            default: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = dac_tdata_r;
+                next_dac_tvalid_w = 0;
+            end
+        endcase
+    end
+
+
+
     assign next_led_w = (cmd_w == CMD_SET_LED & strobe_edge_w)? data_w[7:0] : led_r;
     assign led_o = led_r; 
+
+    assign dac_tdata_o = dac_tdata_r;
+    assign dac_tvalid_o = dac_tvalid_r;
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r;
     assign axi_to_ps_o = callback_r;
@@ -87,14 +118,18 @@ module pdh_core #
         if(rst_i)begin
             axi_from_ps_r <= 0;
             led_r <= 0;
+            dac_tdata_r <= 0;
+            dac_tvalid_r <= 0;
             callback_r <= 0;
         end else begin
             axi_from_ps_r <= axi_from_ps_i;
             led_r <= next_led_w;
+            dac_tdata_r <= next_dac_tdata_w;
+            dac_tvalid_r <= next_dac_tvalid_w;
             case(cmd_w)
                 CMD_IDLE: callback_r <= 32'd0;
-                CMD_SET_LED: callback_r <= {4'b0001, strobe_w, 19'd0, led_r};
-                CMD_SET_DAC: callback_r <= 32'd0;
+                CMD_SET_LED: callback_r <= {4'b0001, 20'd0, led_r};
+                CMD_SET_DAC: callback_r <= {4'b0001, dac_tdata_r[29:16], dac_tdata_r[13:0]};
                 default: callback_r <= 32'd0;
             endcase
         end
