@@ -27,11 +27,11 @@ def reset_fpga():
     ]
     execute_cmd_seq(cmds)
 
-def set_led(value):
+def set_led(value, strobe: bool = 0):
     cmds = [
     (
         "CMD:set_led\n"
-        f"U:{value}\n"
+        f"U:{value},{strobe}\n"
     )
     ]
     execute_cmd_seq(cmds)
@@ -42,5 +42,5 @@ def set_led(value):
 if __name__ == "__main__":
     reset_fpga()
     while True:
-        set_led(6)
-        set_led(7)
+        set_led(6, 1)
+        set_led(7, 1)

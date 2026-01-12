@@ -18,7 +18,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 7
+#define NUM_CMDS 6
 
 /*
 "CMD:ex_cmd'\n'
@@ -35,8 +35,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"rf_write", cmd_rf_write, 3, 0, 3},
     {"rf_scope_cfg", cmd_rf_scope_cfg, 1, 0, 3},
     {"set_led", cmd_set_led, 0, 0, 1},
-    {"reset_fpga", cmd_reset_fpga, 0, 0, 0},
-    {"strobe_fpga", cmd_strobe_fpga, 0, 0, 0}
+    {"reset_fpga", cmd_reset_fpga, 0, 0, 0}
 };
 
 
@@ -192,9 +191,9 @@ static int dispatch_command(cmd_ctx_t* ctx, int* code)
     }
     if(!cmd_found) return DISPATCH_CMD_NO_CMD;
 
-    if(ctx->num_floats != curr_cmd.required_floats) return DISPATCH_CMD_FLOAT_ARG_MISMATCH;
-    if(ctx->num_ints != curr_cmd.required_ints) return DISPATCH_CMD_INT_ARG_MISMATCH;
-    if(ctx->num_uints != curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
+    if(ctx->num_floats < curr_cmd.required_floats) return DISPATCH_CMD_FLOAT_ARG_MISMATCH;
+    if(ctx->num_ints < curr_cmd.required_ints) return DISPATCH_CMD_INT_ARG_MISMATCH;
+    if(ctx->num_uints < curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
     DEBUG_INFO("Dispatching: %s...\n", gCmds[i].name);
     *code = curr_cmd.func(ctx);
     DEBUG_INFO("done dispatch\n");

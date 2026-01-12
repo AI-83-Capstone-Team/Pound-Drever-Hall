@@ -134,27 +134,20 @@ typedef enum
 {
     CMD_IDLE = 0b0000,
     CMD_SET_LED = 0b0001,
-    CMD_STROBE = 0b1110,
 }   pdh_cmd_e;   
 
 
 
-typedef union 
+typedef union __attribute__((packed))
 {
     struct __attribute__((packed))  //GCC on ARM is little endian so the field order is reversed relative to the SV buses 
     {
         uint32_t led_code  : 8;
-        uint32_t _padding  : 19;
+        uint32_t _padding  : 18;
         uint32_t cmd       : 4;
+        uint32_t strobe    : 1;
         uint32_t _padding2 : 1;     //Bit 31
     }   led_cmd;
-
-    struct __attribute__((packed))
-    {
-        uint32_t _padding   : 27;
-        uint32_t strobe     : 4;
-        uint32_t _padding2  : 1;
-    }   strobe_cmd;
 
     struct __attribute__((packed))
     {
@@ -166,15 +159,15 @@ typedef union
 }   pdh_cmd_t;
 
 
-typedef union
+typedef union __attribute__((packed)) 
 {
     struct __attribute__((packed))
     {
         uint32_t func_callback  : 8;
-        uint32_t last_cmd       : 4;
-        uint32_t cmd_sig        : 4;
-        uint32_t _padding       : 16;
-    }   led_callback;
+        uint32_t _padding       : 19;
+        uint32_t finished       : 1; 
+        uint32_t cmd            : 4; //Bits 31:28
+    }   cb;
 
     uint32_t raw;
 }   pdh_callback_t;

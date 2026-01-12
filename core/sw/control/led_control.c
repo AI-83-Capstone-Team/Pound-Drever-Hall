@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <string.h>
 #include "hw_common.h"
 #include "control_common.h"
@@ -17,24 +18,31 @@ int cmd_set_led(cmd_ctx_t* ctx)
 
     cmd.led_cmd.cmd = CMD_SET_LED;
     cmd.led_cmd.led_code = led_code;
-    
-    pdh_send_cmd(cmd); 
-    cmd.strobe_cmd.strobe = CMD_STROBE;
     pdh_send_cmd(cmd);
+    
+    if(ctx->num_uints > 1)
+    {
+        bool strobe_on = (bool)ctx->uint_args[1];
+        if(strobe_on)
+        {
+            cmd.led_cmd.strobe = 1;
+            pdh_send_cmd(cmd);
+        }
+    }
 
     pdh_callback_t callback;
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = callback.led_callback.func_callback;
+    ctx->output.output_items[0].data.u = callback.cb.func_callback;
     ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "func_callback");
+    strcpy(ctx->output.output_items[0].name, "led code");
 
-    ctx->output.output_items[1].data.u = callback.led_callback.last_cmd;
+    ctx->output.output_items[1].data.u = callback.cb.finished;
     ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "last_cmd");
+    strcpy(ctx->output.output_items[1].name, "finished");
     
-    ctx->output.output_items[2].data.u = callback.led_callback.cmd_sig;
+    ctx->output.output_items[2].data.u = callback.cb.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;
     strcpy(ctx->output.output_items[2].name, "cmd_sig");
 
