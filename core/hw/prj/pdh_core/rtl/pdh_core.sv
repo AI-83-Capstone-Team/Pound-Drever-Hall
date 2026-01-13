@@ -103,9 +103,6 @@ module pdh_core #
         endcase
     end
 
-
-
-    assign next_led_w = (cmd_w == CMD_SET_LED & strobe_edge_w)? data_w[7:0] : led_r;
     assign led_o = led_r; 
 
     assign dac_tdata_o = dac_tdata_r;
@@ -118,7 +115,7 @@ module pdh_core #
         if(rst_i)begin
             axi_from_ps_r <= 0;
             led_r <= 0;
-            dac_tdata_r <= 0;
+            dac_tdata_r <= {2'b00, 14'h2000, 2'b00, 14'h2000}; //0x2000 -> ~0V
             dac_tvalid_r <= 0;
             callback_r <= 0;
         end else begin
@@ -129,7 +126,7 @@ module pdh_core #
             case(cmd_w)
                 CMD_IDLE: callback_r <= 32'd0;
                 CMD_SET_LED: callback_r <= {4'b0001, 20'd0, led_r};
-                CMD_SET_DAC: callback_r <= {4'b0001, dac_tdata_r[29:16], dac_tdata_r[13:0]};
+                CMD_SET_DAC: callback_r <= {4'b0010, dac_tdata_r[29:16], dac_tdata_r[13:0]};
                 default: callback_r <= 32'd0;
             endcase
         end

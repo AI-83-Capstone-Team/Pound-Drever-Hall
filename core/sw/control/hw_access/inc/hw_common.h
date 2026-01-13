@@ -134,6 +134,7 @@ typedef enum
 {
     CMD_IDLE = 0b0000,
     CMD_SET_LED = 0b0001,
+    CMD_SET_DAC = 0b0010,
 }   pdh_cmd_e;   
 
 
@@ -155,6 +156,16 @@ typedef union __attribute__((packed))
         uint32_t rst        : 1;
     }   rst_cmd;
 
+    struct __attribute__((packed))
+    {
+        uint32_t dac_code   : 14;
+        uint32_t dac_sel    : 1;
+        uint32_t _padding   : 11; 
+        uint32_t cmd        : 4;
+        uint32_t strobe     : 1; 
+        uint32_t _padding_2 : 1;
+    }   dac_cmd;
+
     uint32_t raw;
 }   pdh_cmd_t;
 
@@ -164,10 +175,17 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
         uint32_t func_callback  : 8;
-        uint32_t _padding       : 19;
-        uint32_t finished       : 1; 
+        uint32_t _padding       : 20;
         uint32_t cmd            : 4; //Bits 31:28
-    }   cb;
+    }   led_callback;
+
+    struct __attribute__((packed))
+    {
+
+        uint32_t dac_0_code     : 14;
+        uint32_t dac_1_code     : 14;
+        uint32_t cmd            : 4; //Bits 31:28
+    }   dac_callback;
 
     uint32_t raw;
 }   pdh_callback_t;

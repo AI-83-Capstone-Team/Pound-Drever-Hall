@@ -27,7 +27,7 @@ def reset_fpga():
     ]
     execute_cmd_seq(cmds)
 
-def set_led(value, strobe: bool = 0):
+def set_led(value: int, strobe: bool = 0):
     cmds = [
     (
         "CMD:set_led\n"
@@ -36,11 +36,22 @@ def set_led(value, strobe: bool = 0):
     ]
     execute_cmd_seq(cmds)
 
+def set_dac(value: float, dac_sel: bool, strobe: bool = 0):
+    cmds = [
+    (
+        "CMD:set_dac\n"
+        f"U:{dac_sel},{strobe}\n"
+        f"F:{value}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
 
 
 
 if __name__ == "__main__":
     reset_fpga()
     while True:
-        set_led(6, 1)
-        set_led(7, 1)
+        set_led(6, 0)
+        set_led(7, 0)
+        set_dac(-0.15, 0, 0)
+        set_dac(1.45, 1, 0)

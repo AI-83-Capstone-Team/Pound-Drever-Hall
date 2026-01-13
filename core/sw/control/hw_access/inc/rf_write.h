@@ -16,5 +16,6 @@ typedef enum
 }	rf_write_e;
 
 
+int set_dac(float val, bool dac_sel, bool strobe);
 
 int rf_write(rp_channel_t channel, rp_waveform_t waveform, float amplitude, float frequency, float offset, bool enable);

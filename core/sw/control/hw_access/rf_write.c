@@ -1,6 +1,7 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include "hw_common.h"
 #include "rf_write.h"
-
 
 
 

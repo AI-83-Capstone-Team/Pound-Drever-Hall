@@ -34,18 +34,14 @@ int cmd_set_led(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = callback.cb.func_callback;
+    ctx->output.output_items[0].data.u = callback.led_callback.func_callback;
     ctx->output.output_items[0].tag = UINT_TAG;
     strcpy(ctx->output.output_items[0].name, "led code");
-
-    ctx->output.output_items[1].data.u = callback.cb.finished;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "finished");
     
-    ctx->output.output_items[2].data.u = callback.cb.cmd;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "cmd_sig");
+    ctx->output.output_items[1].data.u = callback.led_callback.cmd;
+    ctx->output.output_items[1].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[1].name, "cmd_sig");
 
-    ctx->output.num_outputs = 3;
+    ctx->output.num_outputs = 2;
     return PDH_OK;
 }
