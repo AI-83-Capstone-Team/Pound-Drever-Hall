@@ -15,6 +15,8 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     bool dac_sel = (bool)ctx->uint_args[0];
     bool strobe = (bool)ctx->uint_args[1];
 
+    val *= -1.0f;
+
     if (val > 1.0) val = 1.0;
     if (val < -1.0) val = -1.0;
     

@@ -83,35 +83,31 @@ module pdh_core #
     logic [7:0] led_r, next_led_w;
     
     logic [27:0] dac_tdata_r, next_dac_tdata_w;
-    logic dac_wrt_r, delay1_dac_wrt_r, delay2_dac_wrt_r, next_dac_wrt_w;
 
     always_comb begin
         case(cmd_w)
             CMD_SET_LED: begin
                 next_led_w = strobe_edge_w? data_w[7:0] : led_r;
                 next_dac_tdata_w = dac_tdata_r;
-                next_dac_wrt_w = 0;
             end
             
             CMD_SET_DAC: begin
                 next_led_w = led_r;
                 next_dac_tdata_w = strobe_edge_w? (data_w[14]? {data_w[13:0], dac_tdata_r[13:0]} : {dac_tdata_r[27:14], data_w[13:0]}) : dac_tdata_r;
-                next_dac_wrt_w = strobe_edge_w? 1 : 0;
             end
 
             default: begin
                 next_led_w = led_r;
                 next_dac_tdata_w = dac_tdata_r;
-                next_dac_wrt_w = 0;
             end
         endcase
     end
 
     assign led_o = led_r; 
 
-    assign dac_dat_o = delay2_dac_wrt_r? dac_tdata_r[27:14] : dac_tdata_r[13:0];
-    assign dac_wrt_o = delay2_dac_wrt_r | delay1_dac_wrt_r; //pin at 1 for now
-    assign dac_sel_o = delay2_dac_wrt_r;
+    assign dac_dat_o = data_w[13:0];
+    assign dac_wrt_o = strobe_edge_w & (cmd_w == CMD_SET_DAC); //pin at 1 for now
+    assign dac_sel_o = data_w[14];
     assign dac_rst_o = rst_i;
     assign dac_clk_o = clk;
 
@@ -123,17 +119,11 @@ module pdh_core #
             axi_from_ps_r <= 0;
             led_r <= 0;
             dac_tdata_r <= {2'b00, 14'h2000, 2'b00, 14'h2000}; //0x2000 -> ~0V
-            dac_wrt_r <= 0;
-            delay1_dac_wrt_r <= 0;
-            delay2_dac_wrt_r <= 0;
             callback_r <= 0;
         end else begin
             axi_from_ps_r <= axi_from_ps_i;
             led_r <= next_led_w;
             dac_tdata_r <= next_dac_tdata_w;
-            dac_wrt_r <= next_dac_wrt_w;
-            delay1_dac_wrt_r <= dac_wrt_r;
-            delay2_dac_wrt_r <= delay1_dac_wrt_r;
             case(cmd_w)
                 CMD_IDLE: callback_r <= 32'd0;
                 CMD_SET_LED: callback_r <= {4'b0001, 20'd0, led_r};

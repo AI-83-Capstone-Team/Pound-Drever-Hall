@@ -49,9 +49,6 @@ def set_dac(value: float, dac_sel: bool, strobe: bool = 0):
 
 
 if __name__ == "__main__":
-    reset_fpga()
-    while True:
-        set_led(6, 0)
-        set_led(7, 0)
-        set_dac(-0.15, 0, 0)
-        set_dac(1.45, 1, 0)
+    #reset_fpga()
+    set_dac(0.6, 0, 1)
+    set_dac(-0.6, 1, 1)
