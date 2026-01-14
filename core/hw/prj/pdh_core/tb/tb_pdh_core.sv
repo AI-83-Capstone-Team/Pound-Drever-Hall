@@ -11,8 +11,8 @@ module tb_pdh_core;
     
     logic [31:0] S_AXIS_tdata_i = 32'h0;
     logic        S_AXIS_tvalid_i = 1'b0;
-    logic [31:0] dac_tdata_o;
-    logic        dac_tvalid_o;
+    logic [27:0] dac_dat_o;
+    logic        dac_wrt_o;
 
     typedef enum logic [3:0] {
         CMD_IDLE    = 4'b0000,
@@ -27,8 +27,8 @@ module tb_pdh_core;
       .axi_from_ps_i(axi_from_ps_i),
       .axi_to_ps_o(axi_to_ps_o),
       .led_o(led_o),
-      .dac_tdata_o(dac_tdata_o),
-      .dac_tvalid_o(dac_tvalid_o)
+      .dac_dat_o(dac_dat_o),
+      .dac_wrt_o(dac_wrt_o)
     );
 
     logic [3:0] cmd_cb_tap;
@@ -85,14 +85,14 @@ module tb_pdh_core;
         end
     endfunction
 
-    task automatic expect_dac_word(input logic [31:0] exp, input string tag="");
+    task automatic expect_dac_word(input logic [27:0] exp, input string tag="");
         begin
             // wait a couple cycles for registers to settle
-            repeat (1) @(posedge clk);
-            if (dac_tdata_o === exp)
-                $display("PASS: %s dac_tdata_o = 0x%08h", tag, dac_tdata_o);
+            repeat (2) @(posedge clk);
+            if (dac_dat_o === exp)
+                $display("PASS: %s dac_dat_o = 0x%08h", tag, dac_dat_o);
             else
-                $display("FAIL: %s dac_tdata_o = 0x%08h (expected 0x%08h)", tag, dac_tdata_o, exp);
+                $display("FAIL: %s dac_dat_o = 0x%08h (expected 0x%08h)", tag, dac_dat_o, exp);
         end
     endtask
 
@@ -139,20 +139,20 @@ module tb_pdh_core;
         send_set_dac_two_step(1'b0, 14'h0123);
 
         // Expect: {00, upper14, 00, lower14} = upper still 0
-        expect_dac_word({2'b00, 14'h0000, 2'b00, 14'h0123}, "DAC0 write");
+        expect_dac_word({14'h0000, 14'h0123}, "DAC0 write");
         // tvalid should pulse once within the command window
 
         $display("---- Set DAC1 (upper 14b) to 0x1ABC ----");
         send_set_dac_two_step(1'b1, 14'h1ABC);
 
         // Expect upper updated, lower preserved (0x0123)
-        expect_dac_word({2'b00, 14'h1ABC, 2'b00, 14'h0123}, "DAC1 write");
+        expect_dac_word({14'h1ABC, 14'h0123}, "DAC1 write");
 
         $display("---- Update DAC0 again to 0x0005 (DAC1 must stay) ----");
         send_set_dac_two_step(1'b0, 14'h0005);
 
         // Expect lower updated, upper preserved (0x1ABC)
-        expect_dac_word({2'b00, 14'h1ABC, 2'b00, 14'h0005}, "DAC0 rewrite");
+        expect_dac_word({14'h1ABC, 14'h0005}, "DAC0 rewrite");
 
 
         $finish;

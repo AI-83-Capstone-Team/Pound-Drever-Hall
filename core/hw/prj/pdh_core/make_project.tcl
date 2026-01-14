@@ -100,12 +100,7 @@ create_bd_port -dir O adc_enc_n_o
 create_bd_port -dir O adc_csn_o
 
 
-### DAC
-create_bd_port -dir O -from 13 -to 0 dac_dat_o
-create_bd_port -dir O dac_clk_o
-create_bd_port -dir O dac_rst_o
-create_bd_port -dir O dac_sel_o
-create_bd_port -dir O dac_wrt_o
+
 
 
 ### LED
@@ -140,19 +135,6 @@ create_bd_cell -type ip -vlnv pavel-demin:user:axis_red_pitaya_adc axis_red_pita
 endgroup
 
 
-#DAC AXI protocol adapter
-startgroup
-create_bd_cell -type ip -vlnv pavel-demin:user:axis_red_pitaya_dac axis_red_pitaya_dac_0
-endgroup
-
-
-#Clocking Wizard
-startgroup
-create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz clk_wiz_0
-set_property -dict [list CONFIG.PRIM_IN_FREQ.VALUE_SRC USER] [get_bd_cells clk_wiz_0]
-set_property -dict [list CONFIG.PRIM_IN_FREQ {125.000} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {250.000} CONFIG.USE_RESET {false} CONFIG.CLKIN1_JITTER_PS {80.0} CONFIG.MMCM_DIVCLK_DIVIDE {1} CONFIG.MMCM_CLKFBOUT_MULT_F {8.000} CONFIG.MMCM_CLKIN1_PERIOD {8.0} CONFIG.MMCM_CLKOUT0_DIVIDE_F {4.000} CONFIG.CLKOUT1_JITTER {104.759} CONFIG.CLKOUT1_PHASE_ERROR {96.948}] [get_bd_cells clk_wiz_0]
-endgroup
-
 
 
 #################### BUILD TOP-LEVEL WRAPPER AND SPECIFY LINK TO PS #####################################################
@@ -176,18 +158,6 @@ connect_bd_net [get_bd_ports adc_dat_b_i] [get_bd_pins axis_red_pitaya_adc_0/adc
 connect_bd_net [get_bd_ports adc_csn_o] [get_bd_pins axis_red_pitaya_adc_0/adc_csn]
 
 
-# DAC AXI Wrapper
-connect_bd_net [get_bd_ports dac_clk_o] [get_bd_pins axis_red_pitaya_dac_0/dac_clk]
-connect_bd_net [get_bd_ports dac_rst_o] [get_bd_pins axis_red_pitaya_dac_0/dac_rst]
-connect_bd_net [get_bd_ports dac_sel_o] [get_bd_pins axis_red_pitaya_dac_0/dac_sel]
-connect_bd_net [get_bd_ports dac_wrt_o] [get_bd_pins axis_red_pitaya_dac_0/dac_wrt]
-connect_bd_net [get_bd_ports dac_dat_o] [get_bd_pins axis_red_pitaya_dac_0/dac_dat]
-connect_bd_net [get_bd_pins clk_wiz_0/locked] [get_bd_pins axis_red_pitaya_dac_0/locked]
-connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins axis_red_pitaya_dac_0/ddr_clk]
-connect_bd_net [get_bd_pins axis_red_pitaya_dac_0/aclk] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
-
-#Feed wizard with ADC clock
-connect_bd_net [get_bd_pins clk_wiz_0/clk_in1] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
 
 
 # Using the AXI GPIO logic to route signals between RTL and the PS
@@ -243,7 +213,6 @@ connect_bd_net [get_bd_ports axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
 
 # Export the ADC AXI-stream (Vivado will create wrapper ports named pdh_axis_tdata, pdh_axis_tvalid, etc.)
 make_bd_intf_pins_external -name pdh_adc_axis [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
-make_bd_intf_pins_external -name pdh_dac_axis [get_bd_intf_pins axis_red_pitaya_dac_0/S_AXIS]
 
 
 

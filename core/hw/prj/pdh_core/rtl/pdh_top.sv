@@ -94,12 +94,6 @@ module pdh_top
     .adc_enc_n_o(adc_enc_n_o),
     .adc_enc_p_o(adc_enc_p_o),
 
-    .dac_clk_o(dac_clk_o),
-    .dac_dat_o(dac_dat_o),
-    .dac_rst_o(dac_rst_o),
-    .dac_sel_o(dac_sel_o),
-    .dac_wrt_o(dac_wrt_o),
-
 
     // new exported “platform” signals (added by Tcl)
     .pdh_clk(pdh_clk),
@@ -109,11 +103,8 @@ module pdh_top
 
     // exported AXI stream from ADC adapter
     .pdh_adc_axis_tdata(pdh_adc_axis_tdata),
-    .pdh_adc_axis_tvalid(pdh_adc_axis_tvalid),
+    .pdh_adc_axis_tvalid(pdh_adc_axis_tvalid)
 
-    // exported AXI stream from DAC adapter
-    .pdh_dac_axis_tdata(pdh_dac_axis_tdata),
-    .pdh_dac_axis_tvalid(pdh_dac_axis_tvalid)
   );
 
   pdh_core #(
@@ -126,11 +117,14 @@ module pdh_top
     .clk(pdh_clk),
     .adc_tdata_i(pdh_adc_axis_tdata),
     .adc_tvalid_i(pdh_adc_axis_tvalid),
-    .dac_tdata_o(pdh_adc_axis_tdata),
-    .dac_tvalid_o(pdh_dac_axis_tvalid), 
     .axi_from_ps_i(axi_from_ps),
     .axi_to_ps_o(axi_to_ps),
-    .led_o(led_o)
+    .led_o(led_o),
+    .dac_clk_o(dac_clk_o),
+    .dac_dat_o(dac_dat_o),
+    .dac_rst_o(dac_rst_o),
+    .dac_sel_o(dac_sel_o),
+    .dac_wrt_o(dac_wrt_o)
   );
 
 endmodule
