@@ -27,11 +27,19 @@ int cmd_get_adc(cmd_ctx_t *ctx)
     ctx->output.output_items[1].tag = UINT_TAG;
     strcpy(ctx->output.output_items[1].name, "IN2");
 
-    ctx->output.output_items[2].data.u = callback.adc_callback.cmd;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "cmd_sig");
+    ctx->output.output_items[2].data.f = -1.0f * (callback.adc_callback.adc_0_code * (2.0f/16383.0f) - 1.0f);
+    ctx->output.output_items[2].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[2].name, "IN1_V");
 
-    ctx->output.num_outputs = 3;
+    ctx->output.output_items[3].data.f = -1.0f * (callback.adc_callback.adc_1_code * (2.0f/16383.0f) - 1.0f);
+    ctx->output.output_items[3].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[3].name, "IN2_V");
+
+    ctx->output.output_items[4].data.u = callback.adc_callback.cmd;
+    ctx->output.output_items[4].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[4].name, "cmd_sig");
+
+    ctx->output.num_outputs = 5;
 
     return PDH_OK;
 }
