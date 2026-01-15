@@ -91,13 +91,8 @@ add_files -norecurse -fileset constrs_1 cfg/clocks.xdc
 ################### ADD PORTS ##################################################################################
 
 ### ADC
-create_bd_port -dir I -from 13 -to 0 adc_dat_a_i
-create_bd_port -dir I -from 13 -to 0 adc_dat_b_i
-create_bd_port -dir I adc_clk_p_i
-create_bd_port -dir I adc_clk_n_i
 create_bd_port -dir O adc_enc_p_o
 create_bd_port -dir O adc_enc_n_o
-create_bd_port -dir O adc_csn_o
 
 
 
@@ -129,14 +124,6 @@ set_property -dict [list CONFIG.C_IS_DUAL {1} CONFIG.C_ALL_INPUTS_2 {1}] [get_bd
 endgroup
 
 
-#ADC AXI protocol adapter, convert from 14 bit raw parallel to AXI
-startgroup
-create_bd_cell -type ip -vlnv pavel-demin:user:axis_red_pitaya_adc axis_red_pitaya_adc_0
-endgroup
-
-
-
-
 #################### BUILD TOP-LEVEL WRAPPER AND SPECIFY LINK TO PS #####################################################
 
 
@@ -146,18 +133,6 @@ apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 -config {make_ex
 #Clock master and slave AXI FSM's via PS FCLK
 connect_bd_net [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/FCLK_CLK0]
 connect_bd_net [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins processing_system7_0/FCLK_CLK0]
-
-
-
-# NOTE: Physical assignments for ports are in ports.xdc; clock defs in clocks.xdc
-# ADC AXI Wrapper
-connect_bd_net [get_bd_ports adc_clk_p_i] [get_bd_pins axis_red_pitaya_adc_0/adc_clk_p]
-connect_bd_net [get_bd_ports adc_clk_n_i] [get_bd_pins axis_red_pitaya_adc_0/adc_clk_n]
-connect_bd_net [get_bd_ports adc_dat_a_i] [get_bd_pins axis_red_pitaya_adc_0/adc_dat_a]
-connect_bd_net [get_bd_ports adc_dat_b_i] [get_bd_pins axis_red_pitaya_adc_0/adc_dat_b]
-connect_bd_net [get_bd_ports adc_csn_o] [get_bd_pins axis_red_pitaya_adc_0/adc_csn]
-
-
 
 
 # Using the AXI GPIO logic to route signals between RTL and the PS
@@ -191,9 +166,6 @@ set_property -dict [list CONFIG.C_ALL_INPUTS {1} CONFIG.C_ALL_INPUTS_2 {0} CONFI
 
 ############################ Export platform signals for RTL top ############################
 
-# Export pdh clock from ADC clock domain (matches your current wiring: pdh_core clk <= adc_clk)
-create_bd_port -dir O pdh_clk
-connect_bd_net [get_bd_ports pdh_clk] [get_bd_pins axis_red_pitaya_adc_0/adc_clk]
 
 # Export a known deasserted reset (make it explicit: CONST_VAL=1)
 startgroup
@@ -211,8 +183,6 @@ connect_bd_net [get_bd_ports axi_to_ps] [get_bd_pins axi_gpio_0/gpio_io_i]
 create_bd_port -dir O -from 31 -to 0 axi_from_ps
 connect_bd_net [get_bd_ports axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
 
-# Export the ADC AXI-stream (Vivado will create wrapper ports named pdh_axis_tdata, pdh_axis_tvalid, etc.)
-make_bd_intf_pins_external -name pdh_adc_axis [get_bd_intf_pins axis_red_pitaya_adc_0/M_AXIS]
 
 
 

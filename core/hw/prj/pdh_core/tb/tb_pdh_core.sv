@@ -22,8 +22,6 @@ module tb_pdh_core;
 
     pdh_core dut (
       .clk(clk),
-      .adc_tdata_i(S_AXIS_tdata_i),
-      .adc_tvalid_i(S_AXIS_tvalid_i),
       .axi_from_ps_i(axi_from_ps_i),
       .axi_to_ps_o(axi_to_ps_o),
       .led_o(led_o),
@@ -88,7 +86,7 @@ module tb_pdh_core;
     task automatic expect_dac_word(input logic [27:0] exp, input string tag="");
         begin
             // wait a couple cycles for registers to settle
-            repeat (2) @(posedge clk);
+            repeat (1) @(posedge clk);
             if (dac_dat_o === exp)
                 $display("PASS: %s dac_dat_o = 0x%08h", tag, dac_dat_o);
             else

@@ -48,7 +48,18 @@ def set_dac(value: float, dac_sel: bool, strobe: bool = 0):
 
 
 
+def get_adc():
+    cmds = [
+    (
+        "CMD:get_adc\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
+
 if __name__ == "__main__":
-    #reset_fpga()
-    set_dac(0.6, 0, 1)
-    set_dac(-0.6, 1, 1)
+    reset_fpga()
+    #set_dac(0.9, 0, 0)
+    set_dac(-0.9, 1, 1)
+    get_adc()
+    #set_led(67, 1)

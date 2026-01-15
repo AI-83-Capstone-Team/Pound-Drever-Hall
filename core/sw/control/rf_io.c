@@ -9,6 +9,45 @@
 
 
 
+
+
+
+
+int cmd_get_adc(cmd_ctx_t *ctx)
+{
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.adc_cmd.cmd = CMD_GET_ADC;
+    pdh_send_cmd(cmd);
+
+    pdh_callback_t callback; 
+    callback.raw = 0;
+    pdh_get_callback(&callback);
+    
+    ctx->output.output_items[0].data.u = callback.adc_callback.adc_0_code;
+    ctx->output.output_items[0].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[0].name, "IN1");
+
+    ctx->output.output_items[1].data.u = callback.adc_callback.adc_1_code;
+    ctx->output.output_items[1].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[1].name, "IN2");
+
+    ctx->output.output_items[2].data.u = callback.adc_callback.cmd;
+    ctx->output.output_items[2].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[2].name, "cmd_sig");
+
+    ctx->output.num_outputs = 3;
+
+    return PDH_OK;
+}
+
+
+
+
+
+
+
+
 int cmd_set_dac(cmd_ctx_t* ctx)
 {
     float val = ctx->float_args[0];
@@ -48,11 +87,11 @@ int cmd_set_dac(cmd_ctx_t* ctx)
 
     ctx->output.output_items[0].data.u = callback.dac_callback.dac_0_code;
     ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "DAC_0 code");
+    strcpy(ctx->output.output_items[0].name, "OUT1");
 
     ctx->output.output_items[1].data.u = callback.dac_callback.dac_1_code;
     ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "DAC_1 code");
+    strcpy(ctx->output.output_items[1].name, "OUT2");
 
     ctx->output.output_items[2].data.u = callback.dac_callback.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;

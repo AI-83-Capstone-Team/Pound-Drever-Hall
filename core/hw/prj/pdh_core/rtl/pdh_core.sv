@@ -2,21 +2,20 @@
 
 module pdh_core #
 (
-    parameter ADC_DATA_WIDTH = 16, //To account for padding
+    parameter ADC_DATA_WIDTH = 14, //To account for padding
     parameter DAC_DATA_WIDTH = 14,
     parameter AXIS_TDATA_WIDTH = 32, //Delivered as 2 16-bit unsigned ints packed together
     parameter AXI_GPIO_IN_WIDTH = 32,
     parameter AXI_GPIO_OUT_WIDTH = 32
 )
 (
-    input logic clk, //FCLK_CLK0
 
-    (* X_INTERFACE_PARAMETER = "FREQ_HZ 125000000" *)
-    input logic [AXIS_TDATA_WIDTH-1:0] adc_tdata_i,
-    input logic adc_tvalid_i,
+    input logic clk, 
+    input logic [ADC_DATA_WIDTH-1:0] adc_dat_a_i,
+    input logic [ADC_DATA_WIDTH-1:0] adc_dat_b_i,
+    output logic adc_csn_o,
     
-    (* X_INTERFACE_PARAMETER = "FREQ_HZ 125000000" *)
-    output logic [13:0] dac_dat_o,
+    output logic [DAC_DATA_WIDTH-1:0] dac_dat_o,
     output logic dac_wrt_o,
     output logic dac_rst_o,
     output logic dac_sel_o,
@@ -38,21 +37,20 @@ module pdh_core #
     localparam int unsigned DATA_START = 0;
 
 
-//////////////////////  DATA UNPACK    /////////////////////////////////
-    logic [ADC_DATA_WIDTH-1 : 0] adc_1_tdata_w;
-    logic adc_1_tvalid_w;
-    
-    logic [ADC_DATA_WIDTH-1 : 0] adc_2_tdata_w;
-    logic adc_2_tvalid_w;
+////////////////////// ADC BLOCK ////////////////////////////////////
 
-    assign adc_1_tdata_w = adc_tdata_i[ADC_DATA_WIDTH-1 : 0];
-    assign adc_2_tdata_w = adc_tdata_i[AXIS_TDATA_WIDTH-1:ADC_DATA_WIDTH];
-    
-    assign adc_1_tvalid_w = adc_tvalid_i;
-    assign adc_2_tvalid_w = adc_tvalid_i;
-//////////////////////////////////////////////////////////
+    assign adc_csn_o = 1'b1;
+    logic [ADC_DATA_WIDTH-1:0] adc_dat_a_r, adc_dat_b_r;
 
-    
+    always_ff @(posedge clk) begin
+        adc_dat_a_r <= adc_dat_a_i;
+        adc_dat_b_r <= adc_dat_b_i;
+    end
+
+
+/////////////////////////////////////////////////////////
+
+
     logic rst_i, strobe_w, strobe_edge_w;
     assign rst_i = axi_from_ps_i[31];
     
@@ -60,7 +58,8 @@ module pdh_core #
     {
         CMD_IDLE = 4'b0000,
         CMD_SET_LED = 4'b0001,
-        CMD_SET_DAC = 4'b0010
+        CMD_SET_DAC = 4'b0010,
+        CMD_GET_ADC = 4'b0100
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r;
     logic [CMD_BITS-1:0] cmd_w;
@@ -86,6 +85,11 @@ module pdh_core #
 
     always_comb begin
         case(cmd_w)
+            CMD_IDLE: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = dac_tdata_r;
+            end
+
             CMD_SET_LED: begin
                 next_led_w = strobe_edge_w? data_w[7:0] : led_r;
                 next_dac_tdata_w = dac_tdata_r;
@@ -94,6 +98,11 @@ module pdh_core #
             CMD_SET_DAC: begin
                 next_led_w = led_r;
                 next_dac_tdata_w = strobe_edge_w? (data_w[14]? {data_w[13:0], dac_tdata_r[13:0]} : {dac_tdata_r[27:14], data_w[13:0]}) : dac_tdata_r;
+            end
+
+            CMD_GET_ADC: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = dac_tdata_r;
             end
 
             default: begin
@@ -126,8 +135,9 @@ module pdh_core #
             dac_tdata_r <= next_dac_tdata_w;
             case(cmd_w)
                 CMD_IDLE: callback_r <= 32'd0;
-                CMD_SET_LED: callback_r <= {4'b0001, 20'd0, led_r};
-                CMD_SET_DAC: callback_r <= {4'b0010, dac_tdata_r[27:14], dac_tdata_r[13:0]};
+                CMD_SET_LED: callback_r <= {CMD_SET_LED, 20'd0, led_r};
+                CMD_SET_DAC: callback_r <= {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
+                CMD_GET_ADC: callback_r <= {CMD_GET_ADC, adc_dat_b_r, adc_dat_a_r};
                 default: callback_r <= 32'd0;
             endcase
         end
