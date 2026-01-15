@@ -101,10 +101,11 @@ module pdh_top
     IBUFGDS adc_clk_inst0 (.I(adc_clk_p_i), .IB(adc_clk_n_i), .O(pdh_clk_0));
     BUFG adc_clk_inst (.I(pdh_clk_0), .O(pdh_clk));
 
+    assign dac_clk_o = pdh_clk;
+
     pdh_core #(
         .ADC_DATA_WIDTH(16),
         .DAC_DATA_WIDTH(14),
-        .AXIS_TDATA_WIDTH(32),
         .AXI_GPIO_IN_WIDTH(32),
         .AXI_GPIO_OUT_WIDTH(32)
     ) u_pdh_core (
@@ -112,7 +113,6 @@ module pdh_top
         .axi_from_ps_i(axi_from_ps),
         .axi_to_ps_o(axi_to_ps),
         .led_o(led_o),
-        .dac_clk_o(dac_clk_o),
         .dac_dat_o(dac_dat_o),
         .dac_rst_o(dac_rst_o),
         .dac_sel_o(dac_sel_o),

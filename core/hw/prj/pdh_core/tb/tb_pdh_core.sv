@@ -17,7 +17,8 @@ module tb_pdh_core;
     typedef enum logic [3:0] {
         CMD_IDLE    = 4'b0000,
         CMD_SET_LED = 4'b0001,
-        CMD_SET_DAC = 4'b0010
+        CMD_SET_DAC = 4'b0010,
+        CMD_GET_ADC = 4'b0100
     } cmd_t;
 
     pdh_core dut (
@@ -152,7 +153,8 @@ module tb_pdh_core;
         // Expect lower updated, upper preserved (0x1ABC)
         expect_dac_word({14'h1ABC, 14'h0005}, "DAC0 rewrite");
 
-
+        send_cmd_two_step(CMD_GET_ADC, 26'b0);
+        repeat(5) @(posedge clk);
         $finish;
     end
 

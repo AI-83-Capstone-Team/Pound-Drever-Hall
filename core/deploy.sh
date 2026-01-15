@@ -37,12 +37,8 @@ $PASS_CMD ssh $SSH_OPTS $USER@$HOST "
     
     echo '--> Building Server...';
     cd $DEST2 && make clean && make server;
-    
-    if [ \$? -eq 0 ]; then
-        echo '🚀 Starting Server...';
-        ./build/server;
-    else
-        echo '❌ Build failed on target.';
-        exit 1;
-    fi
+    pkill -9 server 
+    echo '🚀 Starting Server...';
+    ./build/server;
+
 "
