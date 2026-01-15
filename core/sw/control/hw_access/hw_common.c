@@ -41,7 +41,7 @@ int pdh_Release()
 }
 
 
-int pdh_send_cmd(pdh_cmd_t cmd)
+ inline __attribute__((always_inline)) int pdh_send_cmd(pdh_cmd_t cmd)
 {
     *((volatile uint32_t*)(gAxiMap + AXI_WRITE_OFFSET)) = cmd.raw;
     __sync_synchronize();
@@ -49,8 +49,9 @@ int pdh_send_cmd(pdh_cmd_t cmd)
 }
 
 
-int pdh_get_callback(pdh_callback_t* callback)
+inline __attribute__((always_inline)) int pdh_get_callback(pdh_callback_t* callback)
 {
+    __sync_synchronize();
     callback->raw = *((volatile uint32_t*)(gAxiMap + AXI_READ_OFFSET));
     return PDH_OK;
 }

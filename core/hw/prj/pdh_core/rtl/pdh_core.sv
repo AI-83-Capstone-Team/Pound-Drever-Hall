@@ -80,6 +80,8 @@ module pdh_core #
     assign dac_cb_w = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
     assign adc_cb_w = {CMD_GET_ADC, adc_dat_b_i, adc_dat_a_i};
     
+    logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
+    assign axi_to_ps_o = callback_r;
 
     always_comb begin
         case(cmd_w)
@@ -123,8 +125,6 @@ module pdh_core #
     assign dac_rst_o = rst_i;
     assign dac_clk_o = clk;
 
-    logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
-    assign axi_to_ps_o = callback_r;
 
     always_ff @(posedge clk) begin
         if(rst_i)begin

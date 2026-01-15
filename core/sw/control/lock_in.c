@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hw_common.h"
+#include "control_common.h"
 #include "lock_in.h"
-#include "rf_read.h"
-#include "rf_write.h"
+
 
 #define LOCK_POINT_FLAG "lock_point"
 #define DERIVED_SLOPE_FLAG "derived_slope"
@@ -73,7 +73,7 @@ int lock_in(lock_in_ctx_t* ctx)
     {
 		return ret;
 	}
-
+/*
 	float curr_out = ctx->dac_start;
 
 	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
@@ -154,6 +154,6 @@ int lock_in(lock_in_ctx_t* ctx)
 	if(ctx->dac_step < 0) ctx->derived_slope *= -1;
 
 	rf_write(ctx->chout, best_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(best_out), 0, 0, true);
-
+*/
 	return LOCKED_IN;
 }

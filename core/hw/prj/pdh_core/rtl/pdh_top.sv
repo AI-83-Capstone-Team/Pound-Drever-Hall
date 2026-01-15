@@ -104,7 +104,7 @@ module pdh_top
     assign dac_clk_o = pdh_clk;
 
     pdh_core #(
-        .ADC_DATA_WIDTH(16),
+        .ADC_DATA_WIDTH(14),
         .DAC_DATA_WIDTH(14),
         .AXI_GPIO_IN_WIDTH(32),
         .AXI_GPIO_OUT_WIDTH(32)
