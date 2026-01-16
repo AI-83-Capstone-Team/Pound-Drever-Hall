@@ -45,6 +45,42 @@ int cmd_get_adc(cmd_ctx_t *ctx)
 }
 
 
+int cmd_check_signed(cmd_ctx_t* ctx)
+{
+    uint32_t adc_sel = (uint32_t)ctx->uint_args[0];
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
+    cmd.cs_cmd.adc_sel = adc_sel;
+
+    pdh_send_cmd(cmd);
+
+    pdh_callback_t callback; 
+    callback.raw = 0;
+    pdh_get_callback(&callback);
+
+    ctx->output.output_items[0].data.i = (int16_t)callback.cs_callback.adcx_payload;
+    ctx->output.output_items[0].tag = INT_TAG;
+    if(callback.cs_callback.adc_sel == 0)
+    {
+        strcpy(ctx->output.output_items[0].name, "IN1_16S");
+    }
+    else
+    {
+        strcpy(ctx->output.output_items[0].name, "IN2_16S");
+    }
+
+    ctx->output.output_items[1].data.u = callback.cs_callback.cmd;
+    ctx->output.output_items[1].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[1].name, "cmd_sig");
+
+    ctx->output.num_outputs = 2;
+    
+    return PDH_OK;
+}
+
+
 
 int cmd_set_dac(cmd_ctx_t* ctx)
 {

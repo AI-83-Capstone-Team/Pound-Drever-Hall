@@ -33,7 +33,7 @@ $PASS_CMD scp $SSH_OPTS -r "$SRC2" "$USER@$HOST:$DEST2"
 echo "🛠️  Configuring FPGA and Building Software..."
 $PASS_CMD ssh $SSH_OPTS $USER@$HOST "
     echo '--> Programming FPGA...';
-    fpgautil -b $DEST1;
+    fpgautil -b boot.bin;
     
     echo '--> Building Server...';
     cd $DEST2 && make clean && make server;

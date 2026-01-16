@@ -57,9 +57,20 @@ def get_adc():
     execute_cmd_seq(cmds)
 
 
+def check_signed(adc_sel: bool):
+    cmds = [
+    (
+        "CMD:check_signed\n"
+        f"U:{adc_sel}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
+
 if __name__ == "__main__":
     #reset_fpga()
-    set_dac(0.6, 0, 1)
+    set_dac(-1.6, 0, 1)
     set_dac(-0.7, 1, 1)
     get_adc()
     set_led(67, 1)
+    check_signed(1)

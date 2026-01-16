@@ -34,6 +34,7 @@ module pdh_core #
     localparam int unsigned DATA_END = 25;
     localparam int unsigned DATA_START = 0;
 
+    localparam int signed   ADC_OFFSET = 15'd8192;
 
 ////////////////////// ADC BLOCK ////////////////////////////////////
 
@@ -50,7 +51,8 @@ module pdh_core #
         CMD_IDLE = 4'b0000,
         CMD_SET_LED = 4'b0001,
         CMD_SET_DAC = 4'b0010,
-        CMD_GET_ADC = 4'b0100
+        CMD_GET_ADC = 4'b0011,
+        CMD_CHECK_SIGNED = 4'b0100
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r;
     logic [CMD_BITS-1:0] cmd_w;
@@ -74,12 +76,25 @@ module pdh_core #
     
     logic [27:0] dac_tdata_r, next_dac_tdata_w;
 
-    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w;
-    assign idle_cb_w = 32'b0;
-    assign led_cb_w = {CMD_SET_LED, 20'd0, led_r};
-    assign dac_cb_w = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
-    assign adc_cb_w = {CMD_GET_ADC, adc_dat_b_i, adc_dat_a_i};
-    
+
+    logic [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w;
+    logic signed [14:0] tmp_s_a, tmp_s_b;
+
+    always_comb begin
+        tmp_s_a = $signed({1'b0, adc_dat_a_i}) - ADC_OFFSET;
+        tmp_s_b = $signed({1'b0, adc_dat_b_i}) - ADC_OFFSET;
+        adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
+        adc_dat_b_16s_w = {tmp_s_b[14], tmp_s_b};
+    end
+
+
+    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w;
+    assign idle_cb_w    = 32'b0;
+    assign led_cb_w     = {CMD_SET_LED, 20'd0, led_r};
+    assign dac_cb_w     = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
+    assign adc_cb_w     = {CMD_GET_ADC, adc_dat_b_i, adc_dat_a_i};
+    assign cs_cb_w      = {CMD_CHECK_SIGNED, 11'd0, axi_from_ps_r[0], axi_from_ps_r[0]? adc_dat_b_16s_w : adc_dat_a_16s_w};
+
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;
 
@@ -107,6 +122,12 @@ module pdh_core #
                 next_led_w = led_r;
                 next_dac_tdata_w = dac_tdata_r;
                 next_callback_w = adc_cb_w;
+            end
+
+            CMD_CHECK_SIGNED: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = dac_tdata_r;
+                next_callback_w = cs_cb_w;
             end
 
             default: begin

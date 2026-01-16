@@ -141,6 +141,15 @@ generate_target all [get_files system.bd]
 # 4. Final verification: make sure the wrapper is actually the top
 set_property top pdh_top [current_fileset]
 
+
+
+
+set_msg_config -id {[Synth 8-690]} -new_severity ERROR
+# add others as you discover them
+
+
+
+
 #Synthesis
 synth_design -top pdh_top -flatten_hierarchy none -bufg 16 -keep_equivalent_registers
 write_checkpoint         -force   $path_out/post_synth

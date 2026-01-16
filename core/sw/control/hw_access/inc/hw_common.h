@@ -135,7 +135,8 @@ typedef enum
     CMD_IDLE = 0b0000,
     CMD_SET_LED = 0b0001,
     CMD_SET_DAC = 0b0010,
-    CMD_GET_ADC = 0b0100,
+    CMD_GET_ADC = 0b0011,
+    CMD_CHECK_SIGNED = 0b0100,
 }   pdh_cmd_e;   
 
 
@@ -173,6 +174,15 @@ typedef union __attribute__((packed))
         uint32_t cmd        : 4;
         uint32_t _padding_2 : 2;
     }   adc_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t adc_sel    : 1;
+        uint32_t _padding   : 25;
+        uint32_t cmd        : 4;
+        uint32_t _padding_2 : 2;
+    }   cs_cmd;
+
     uint32_t raw;
 }   pdh_cmd_t;
 
@@ -194,7 +204,6 @@ typedef union __attribute__((packed))
         uint32_t cmd            : 4; //Bits 31:28
     }   dac_callback;
 
-    
     struct __attribute__((packed))
     {
 
@@ -202,6 +211,14 @@ typedef union __attribute__((packed))
         uint32_t adc_1_code     : 14;
         uint32_t cmd            : 4; //Bits 31:28
     }   adc_callback;
+
+    struct __attribute__((packed))
+    {
+        uint32_t adcx_payload   : 16;
+        uint32_t adc_sel        : 1;
+        uint32_t _padding       : 11;
+        uint32_t cmd            : 4;
+    }   cs_callback;
 
     uint32_t raw;
 }   pdh_callback_t;
