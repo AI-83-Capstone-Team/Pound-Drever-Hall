@@ -46,8 +46,6 @@ def set_dac(value: float, dac_sel: bool, strobe: bool = 0):
     ]
     execute_cmd_seq(cmds)
 
-
-
 def get_adc():
     cmds = [
     (
@@ -55,7 +53,6 @@ def get_adc():
     )
     ]
     execute_cmd_seq(cmds)
-
 
 def check_signed(adc_sel: bool):
     cmds = [
@@ -70,7 +67,7 @@ def check_signed(adc_sel: bool):
 if __name__ == "__main__":
     reset_fpga()
     while True:
-        set_dac(-1.6, 0, 1)
+        set_dac(-0.58, 0, 1)
         set_dac(-0.7, 1, 1)
         get_adc()
         set_led(67, 1)

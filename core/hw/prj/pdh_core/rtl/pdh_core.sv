@@ -19,7 +19,7 @@ module pdh_core #
     output logic dac_rst_o,
     output logic dac_sel_o,
 
-    input logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_i,
+    input  logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_i,
     output logic [AXI_GPIO_OUT_WIDTH-1:0] axi_to_ps_o,
     output logic [7:0] led_o
 
@@ -81,8 +81,8 @@ module pdh_core #
     logic signed [14:0] tmp_s_a, tmp_s_b;
 
     always_comb begin
-        tmp_s_a = -1 * $signed({1'b0, adc_dat_a_i}) - ADC_OFFSET;
-        tmp_s_b = -1 * $signed({1'b0, adc_dat_b_i}) - ADC_OFFSET;
+        tmp_s_a = -1 * ($signed({1'b0, adc_dat_a_i}) - ADC_OFFSET);
+        tmp_s_b = -1 * ($signed({1'b0, adc_dat_b_i}) - ADC_OFFSET);
         adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
         adc_dat_b_16s_w = {tmp_s_b[14], tmp_s_b};
     end
