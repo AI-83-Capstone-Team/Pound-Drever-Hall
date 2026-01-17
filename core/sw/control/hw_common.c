@@ -15,7 +15,7 @@ sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 #define AXI_WRITE_OFFSET    8   //TODO: Check these
 #define AXI_READ_OFFSET     0
 
-void* gAxiMap;
+static void* gAxiMap;
 
 
 int pdh_Init()

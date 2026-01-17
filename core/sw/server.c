@@ -8,11 +8,8 @@
 #include <errno.h>
 
 #include "server.h"
-#include "control_common.h"
-#include "led_control.h"
-#include "lock_in.h"
-#include "rf_io.h"
-
+#include "control.h"
+#include "hw_common.h"
 
 #define SERVER_PORT 5555
 #define MAX_BYTES    1024

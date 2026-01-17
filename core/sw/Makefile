@@ -1,16 +1,14 @@
 CFLAGS  := -std=gnu11 -Wall -Werror
-CFLAGS += -I/opt/redpitaya/include -Icontrol/inc -Icontrol/hw_access/inc -I/opt/redpitaya/include/api250-12 -DDEBUG
+CFLAGS += -I/opt/redpitaya/include -Icontrol/inc  -I/opt/redpitaya/include/api250-12 -DDEBUG
 LDFLAGS := -L/opt/redpitaya/lib
 LDLIBS := -static -lm -lstdc++ -lpthread #-lsocketc
 
-SRC_DIRS := control control/hw_access
-
+SRC_DIRS := control 
 OBJDIR := build/objects
 ASMDIR := build/asm
 BUILDDIR := build
 
 SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-TESTS := scope_test lock_in_test rf_write_test rf_loopback digital_led_bar
 
 OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
 
@@ -20,21 +18,13 @@ all:
 	@echo "  make server"
 	@echo "To generate server assembly:"
 	@echo "  make build/asm/server.s"
-	@echo "Available test executables:"
-	@echo "  make scope_test"
-	@echo "  make lock_in_test"
-	@echo "  make rf_write_test"
-	@echo "  make rf_loopback"
-	@echo "  make digital_led_bar"
+
 
 
 server: server.c $(OBJS)
 	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
-$(TESTS): %: tests/%.c $(OBJS)
-	mkdir -p $(BUILDDIR)
-	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
 $(OBJDIR)/%.o: %.c
@@ -50,3 +40,4 @@ $(ASMDIR)/%.s: %.c
 
 clean:
 	rm -rf $(BUILDDIR)
+	rm -rf .cache

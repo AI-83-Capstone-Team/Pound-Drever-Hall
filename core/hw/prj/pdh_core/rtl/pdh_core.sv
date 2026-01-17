@@ -9,9 +9,9 @@ module pdh_core #
 )
 (
 
-    input logic clk, 
-    input logic [ADC_DATA_WIDTH-1:0] adc_dat_a_i,
-    input logic [ADC_DATA_WIDTH-1:0] adc_dat_b_i,
+    input  logic clk, 
+    input  logic [ADC_DATA_WIDTH-1:0] adc_dat_a_i,
+    input  logic [ADC_DATA_WIDTH-1:0] adc_dat_b_i,
     output logic adc_csn_o,
     
     output logic [DAC_DATA_WIDTH-1:0] dac_dat_o,
@@ -81,8 +81,8 @@ module pdh_core #
     logic signed [14:0] tmp_s_a, tmp_s_b;
 
     always_comb begin
-        tmp_s_a = $signed({1'b0, adc_dat_a_i}) - ADC_OFFSET;
-        tmp_s_b = $signed({1'b0, adc_dat_b_i}) - ADC_OFFSET;
+        tmp_s_a = -1 * $signed({1'b0, adc_dat_a_i}) - ADC_OFFSET;
+        tmp_s_b = -1 * $signed({1'b0, adc_dat_b_i}) - ADC_OFFSET;
         adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
         adc_dat_b_16s_w = {tmp_s_b[14], tmp_s_b};
     end
