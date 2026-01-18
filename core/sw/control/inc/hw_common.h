@@ -122,8 +122,8 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t adc_sel    : 1;
-        uint32_t _padding   : 25;
+        uint32_t reg_sel    : 4;
+        uint32_t _padding   : 22;
         uint32_t cmd        : 4;
         uint32_t _padding_2 : 2;
     }   cs_cmd;
@@ -160,8 +160,8 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
         uint32_t adcx_payload   : 16;
-        uint32_t adc_sel        : 1;
-        uint32_t _padding       : 11;
+        uint32_t adc_sel        : 4;
+        uint32_t _padding       : 8;
         uint32_t cmd            : 4;
     }   cs_callback;
 

@@ -48,10 +48,10 @@ int cmd_set_led(cmd_ctx_t* ctx)
     cmd.led_cmd.led_code = led_code;
     pdh_send_cmd(cmd);
     
-    if(ctx->num_uints > 1)
+    if (ctx->num_uints > 1)
     {
         bool strobe_on = (bool)ctx->uint_args[1];
-        if(strobe_on)
+        if (strobe_on)
         {
             cmd.led_cmd.strobe = 1;
             pdh_send_cmd(cmd);
@@ -114,12 +114,12 @@ int cmd_get_adc(cmd_ctx_t *ctx)
 
 int cmd_check_signed(cmd_ctx_t* ctx)
 {
-    uint32_t adc_sel = (uint32_t)ctx->uint_args[0];
+    uint32_t reg_sel = ctx->uint_args[0];
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
-    cmd.cs_cmd.adc_sel = adc_sel;
+    cmd.cs_cmd.reg_sel = reg_sel;
 
     pdh_send_cmd(cmd);
 
@@ -129,7 +129,7 @@ int cmd_check_signed(cmd_ctx_t* ctx)
 
     ctx->output.output_items[0].data.i = (int16_t)callback.cs_callback.adcx_payload;
     ctx->output.output_items[0].tag = INT_TAG;
-    if(callback.cs_callback.adc_sel == 0)
+    if (callback.cs_callback.adc_sel == 0)
     {
         strcpy(ctx->output.output_items[0].name, "IN1_16S");
     }
@@ -166,8 +166,8 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     //[0, 1] -> [0, 16383]; 16383 is max DAC output of 1.0V, 0 is min DAC output of -1.0V. 0 at ~16383//2
     int code = (int)lrintf(y * 16383.0f);
 
-    if(code < 0) code = 0;
-    if(code > 16383) code = 16383;
+    if (code < 0) code = 0;
+    if (code > 16383) code = 16383;
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
@@ -176,7 +176,7 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     cmd.dac_cmd.cmd = CMD_SET_DAC;
     pdh_send_cmd(cmd);
 
-    if(strobe)
+    if (strobe)
     {
         cmd.dac_cmd.strobe = 1;
         pdh_send_cmd(cmd);
@@ -201,6 +201,54 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     ctx->output.num_outputs = 3;
     return PDH_OK;
 }
+
+
+/*
+static inline int16_t float_to_q15(float x)
+{
+    if (x >= 0.999969482421875f)    return (int16_t)0x7FFF;
+    if (x <= -1.0f)                 return (int16_t)0x8000;
+
+    int32_t q = (int32_t)lrintf(x * 32768.0f);
+    if (q > 32767) q = 32767;
+    if (q < -32768) q =  
+}
+
+
+
+
+int cmd_set_rotation(cmd_ctx_t* ctx)
+{
+    float theta_deg = ctx->float_args[0];
+    
+    float theta_rad = theta_deg * (M_PI / 180.0f);
+    if (theta_rad > M_PI) theta_rad = M_PI;
+    if (theta_rad < -M_PI) theta_rad = -M_PI;
+
+    float c = cosf(theta_rad);
+    float s = sinf(theta_rad);
+
+    
+
+
+    return PDH_OK;
+}
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 static int validate_params(const lock_in_ctx_t *ctx)
@@ -271,7 +319,7 @@ int lock_in(lock_in_ctx_t* ctx)
 	float curr_out = ctx->dac_start;
 
 	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
-	if(num_readings > SWEEP_BUFFER_SIZE) return STEP_TOO_SMALL;
+	if (num_readings > SWEEP_BUFFER_SIZE) return STEP_TOO_SMALL;
 
 	DEBUG_INFO("Allocating: %d readings\n", num_readings);
 	float* readings = (float*)malloc(num_readings * sizeof(float));
@@ -304,22 +352,22 @@ int lock_in(lock_in_ctx_t* ctx)
 	for(uint32_t index = 1; index < num_readings; index++)
 	{
 		float curr_in = readings[index] - (index * slope);
-		if(curr_in < best_in)
+		if (curr_in < best_in)
 		{
 			best_in = curr_in;
 			best_out = ctx->dac_start + (index * ctx->dac_step);
 		}
 	}
 
-	if(ctx->log_data)
+	if (ctx->log_data)
 	{
 		DEBUG_INFO("Logging sweep data...\n");
 		FILE* f = fopen("lockin_log.csv", "w");
-		if(!f) return CANNOT_LOG;
+		if (!f) return CANNOT_LOG;
 		for(uint32_t index = 0; index < num_readings; index++)
 		{
 			float normalized;
-			if(ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
+			if (ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
 			else normalized = readings[index] - index*slope - best_out;
 			
 			fprintf(f, "%f, %f, %f\n", ctx->dac_start + index*ctx->dac_step, readings[index], normalized);
@@ -332,7 +380,7 @@ int lock_in(lock_in_ctx_t* ctx)
 		for(uint32_t index = 0; index < num_readings; index++)
 		{
 			float normalized;
-			if(ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
+			if (ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
 			else normalized = readings[index] - index*slope - best_out;
 			sweep_entry_t entry = {(ctx->dac_start+index*ctx->dac_step), (readings[index]), normalized};
 			gSweepBuff[index] = entry;
@@ -345,7 +393,7 @@ int lock_in(lock_in_ctx_t* ctx)
 	ctx->lock_point = best_out;
 
 	ctx->derived_slope = slope;
-	if(ctx->dac_step < 0) ctx->derived_slope *= -1;
+	if (ctx->dac_step < 0) ctx->derived_slope *= -1;
 
 	rf_write(ctx->chout, best_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(best_out), 0, 0, true);
 */
