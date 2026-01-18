@@ -82,6 +82,8 @@ typedef enum
     CMD_SET_DAC = 0b0010,
     CMD_GET_ADC = 0b0011,
     CMD_CHECK_SIGNED = 0b0100,
+    CMD_SET_ROT_COEFFS = 0b0101,
+    CMD_COMMIT_ROT_COEFFS = 0b0110,
 }   pdh_cmd_e;   
 
 
@@ -128,6 +130,24 @@ typedef union __attribute__((packed))
         uint32_t _padding_2 : 2;
     }   cs_cmd;
 
+    struct __attribute__((packed))
+    {
+        uint32_t rot_payload    : 16;
+        uint32_t rot_select     : 1;
+        uint32_t _padding       : 9;
+        uint32_t cmd            : 4;
+        uint32_t strobe         : 1;
+        uint32_t _padding2      : 1;
+    }   set_rot_coeff_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 26;
+        uint32_t cmd        : 4;
+        uint32_t strobe     : 1;
+        uint32_t _padding_2 : 1;
+    }   commit_rot_coeff_cmd;
+
     uint32_t raw;
 }   pdh_cmd_t;
 
@@ -160,10 +180,27 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
         uint32_t adcx_payload   : 16;
-        uint32_t adc_sel        : 4;
+        uint32_t reg_sel        : 4;
         uint32_t _padding       : 8;
         uint32_t cmd            : 4;
     }   cs_callback;
+
+    
+    struct __attribute__((packed))
+    {
+        uint32_t cos_theta_r    : 14;
+        uint32_t sin_theta_r    : 14;
+        uint32_t cmd            : 4;
+    }   set_rot_coeff_cb;
+
+
+    struct __attribute__((packed))
+    {
+        uint32_t i_feed         : 14;
+        uint32_t q_feed         : 14;
+        uint32_t cmd            : 4;
+    }   commit_rot_coeff_cb;
+
 
     uint32_t raw;
 }   pdh_callback_t;

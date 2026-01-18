@@ -92,7 +92,7 @@ module pdh_core #
 
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
-    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w;
+    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w, set_rot_cb_w, commit_rot_cb_w;
     assign idle_cb_w    = 32'b0;
     assign led_cb_w     = {CMD_SET_LED, 20'd0, led_r};
     assign dac_cb_w     = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
@@ -113,18 +113,19 @@ module pdh_core #
             4'b0100: cs_cb_w = {base_bus, rot_cos_theta_r};
 
             4'b0101: cs_cb_w = {base_bus, rot_sin_theta_r};
-            
+           
+            4'b0110: cs_cb_w = {base_bus, i_feed_w};
+
+            4'b0111: cs_cb_w = {base_bus, q_feed_w};
+
             default: cs_cb_w = {base_bus, 16'd0};
             
         endcase
     end
 
 
-
-
-
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
-    assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, i_feed_w[15:2], q_feed_w[15:2]};
+    assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_w[15:2], i_feed_w[15:2]};
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;

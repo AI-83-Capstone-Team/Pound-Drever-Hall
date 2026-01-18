@@ -2,6 +2,7 @@
 import re
 import time
 import socket
+import math
 
 SERVER_IP = "10.42.0.62"
 SERVER_PORT = 5555
@@ -63,12 +64,24 @@ def check_signed(adc_sel: bool):
     ]
     execute_cmd_seq(cmds)
 
+def set_rotation(theta_deg: float):
+    theta_rad = math.pi * theta_deg / 180.0
+    cmds = [
+    (
+        "CMD:set_rotation\n"
+        f"F:{theta_rad}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
 
 if __name__ == "__main__":
     reset_fpga()
-    while True:
-        set_dac(0.58, 0, 1)
-        set_dac(-0.7, 1, 1)
-        get_adc()
-        set_led(67, 1)
-        check_signed(0)
+#    while True:
+    set_dac(0.5, 0, 1)
+    set_dac(-0.5, 1, 1)
+    get_adc()
+    set_led(67, 1)
+    check_signed(0)
+    set_rotation(45.0)
+
+    check_signed(6)
