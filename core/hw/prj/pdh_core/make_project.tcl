@@ -77,6 +77,32 @@ connect_bd_net [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins pr
 connect_bd_net [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins processing_system7_0/FCLK_CLK0]
 
 
+# ------------------------------------------------------------
+# Expose HP0 AXI interface to the top-level wrapper
+# ------------------------------------------------------------
+create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI_HP0_EXT
+set_property -dict [list CONFIG.PROTOCOL {AXI3}] [get_bd_intf_ports S_AXI_HP0_EXT]
+set_property -dict [list CONFIG.DATA_WIDTH {64}] [get_bd_intf_ports S_AXI_HP0_EXT]
+set_property -dict [list CONFIG.FREQ_HZ {125000000}] [get_bd_intf_ports S_AXI_HP0_EXT]
+connect_bd_intf_net [get_bd_intf_ports S_AXI_HP0_EXT] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
+
+
+
+# ------------------------------------------------------------
+# Export PS clock/reset so your DMA can live in the same domain
+# ------------------------------------------------------------
+create_bd_port -dir O fclk0
+connect_bd_net [get_bd_ports fclk0] [get_bd_pins processing_system7_0/FCLK_CLK0]
+
+create_bd_port -dir O fclk0_resetn
+connect_bd_net [get_bd_ports fclk0_resetn] [get_bd_pins processing_system7_0/FCLK_RESET0_N]
+
+
+
+
+
+
+
 # Using the AXI GPIO logic to route signals between RTL and the PS
 apply_bd_automation -rule xilinx.com:bd_rule:axi4 -config {Master "/processing_system7_0/M_AXI_GP0" Clk "Auto" }  [get_bd_intf_pins axi_gpio_0/S_AXI]
 
@@ -145,9 +171,12 @@ set_property top pdh_top [current_fileset]
 
 
 set_msg_config -id {[Synth 8-690]} -new_severity ERROR
-# add others as you discover them
 
-
+# ============================================================
+# Make Block Design width mismatches fatal
+# ============================================================
+set_msg_config -id {BD 41-235}  -new_severity ERROR
+set_msg_config -id {BD 41-2384} -new_severity ERROR
 
 
 #Synthesis

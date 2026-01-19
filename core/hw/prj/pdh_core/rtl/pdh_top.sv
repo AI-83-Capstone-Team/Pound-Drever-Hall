@@ -47,21 +47,84 @@ module pdh_top
     output [7:0]  led_o
 );
 
-    // Exported from BD (we will add these ports in Tcl)
-    logic        pdh_rst_n;
+    // -----------------------------
+    // PS <-> GPIO to pdh_core
+    // -----------------------------
+    logic [0:0]  pdh_rst_n;      // wrapper exports [0:0]
+    logic [31:0] axi_from_ps;    // PS -> pdh_core
+    logic [31:0] axi_to_ps;      // pdh_core -> PS
 
-    logic [31:0] axi_from_ps;     // PS -> pdh_core
-    logic [31:0] axi_to_ps;       // pdh_core -> PS
+    // -----------------------------
+    // Clocks
+    // -----------------------------
+    logic pdh_clk_0, pdh_clk;
 
-    logic [31:0] pdh_adc_axis_tdata;  // ADC stream -> pdh_core
-    logic        pdh_adc_axis_tvalid;
+    IBUFGDS adc_clk_inst0 (.I(adc_clk_p_i), .IB(adc_clk_n_i), .O(pdh_clk_0));
+    BUFG    adc_clk_inst  (.I(pdh_clk_0),   .O(pdh_clk));
 
-    logic [31:0] pdh_dac_axis_tdata;  // pdh_core -> DAC stream
-    logic        pdh_dac_axis_tvalid;
+    assign dac_clk_o = pdh_clk;
 
-    // Platform wrapper (PS + ADC/DAC + GPIO + clocks)
+    // -----------------------------
+    // HP0 clock/reset exported by BD
+    // -----------------------------
+    logic fclk0;
+    logic fclk0_resetn;
+
+    // -----------------------------
+    // HP0 AXI (WRITE-ONLY minimal)
+    // -----------------------------
+    logic [31:0] hp0_awaddr;
+    logic        hp0_awvalid;
+    logic        hp0_awready;
+
+    logic [63:0] hp0_wdata;
+    logic        hp0_wvalid;
+    logic        hp0_wready;
+
+    logic        hp0_bvalid;
+    logic        hp0_bready;
+
+    // -----------------------------
+    // HP0 AXI constants (pinned)
+    // -----------------------------
+    wire [3:0] hp0_awlen   = 4'd0;      // 1-beat writes for bring-up
+    wire [2:0] hp0_awsize  = 3'd3;      // 8 bytes/beat (64-bit)
+    wire [1:0] hp0_awburst = 2'b01;     // INCR
+    wire [5:0] hp0_awid    = 6'd0;
+    wire [3:0] hp0_awcache = 4'd0;
+    wire [2:0] hp0_awprot  = 3'd0;
+    wire [1:0] hp0_awlock  = 2'd0;
+    wire [3:0] hp0_awqos   = 4'd0;
+
+    wire [7:0] hp0_wstrb   = 8'hFF;     // all bytes valid
+    wire [5:0] hp0_wid     = 6'd0;
+    wire       hp0_wlast   = 1'b1;      // always last (since AWLEN=0)
+
+    // Always drain write responses
+    assign hp0_bready = 1'b1;
+
+    // -----------------------------
+    // HP0 AXI READ CHANNEL (tied off)
+    // Only the INPUTS to the wrapper need driving.
+    // -----------------------------
+    wire [31:0] hp0_araddr  = 32'd0;
+    wire [1:0]  hp0_arburst = 2'd0;
+    wire [3:0]  hp0_arcache = 4'd0;
+    wire [5:0]  hp0_arid    = 6'd0;
+    wire [3:0]  hp0_arlen   = 4'd0;
+    wire [1:0]  hp0_arlock  = 2'd0;
+    wire [2:0]  hp0_arprot  = 3'd0;
+    wire [3:0]  hp0_arqos   = 4'd0;
+    wire [2:0]  hp0_arsize  = 3'd0;
+    wire        hp0_arvalid = 1'b0;
+
+    wire        hp0_rready  = 1'b0;     // never accept reads
+
+    // -----------------------------
+    // Platform wrapper (PS + DDR + GPIO + HP0 exported)
+    // -----------------------------
     system_wrapper u_system_wrapper (
-        // existing external pins
+        // external pins
         .DDR_addr(DDR_addr),
         .DDR_ba(DDR_ba),
         .DDR_cas_n(DDR_cas_n),
@@ -88,20 +151,73 @@ module pdh_top
         .adc_enc_n_o(adc_enc_n_o),
         .adc_enc_p_o(adc_enc_p_o),
 
-        // new exported “platform” signals (added by Tcl)
+        // GPIO bridge to pdh_core
         .pdh_rst_n(pdh_rst_n),
         .axi_from_ps(axi_from_ps),
-        .axi_to_ps(axi_to_ps)
+        .axi_to_ps(axi_to_ps),
+
+        // exported PS clock/reset
+        .fclk0(fclk0),
+        .fclk0_resetn(fclk0_resetn),
+
+        // HP0 READ (tied off inputs)
+        .S_AXI_HP0_EXT_araddr (hp0_araddr),
+        .S_AXI_HP0_EXT_arburst(hp0_arburst),
+        .S_AXI_HP0_EXT_arcache(hp0_arcache),
+        .S_AXI_HP0_EXT_arid   (hp0_arid),
+        .S_AXI_HP0_EXT_arlen  (hp0_arlen),
+        .S_AXI_HP0_EXT_arlock (hp0_arlock),
+        .S_AXI_HP0_EXT_arprot (hp0_arprot),
+        .S_AXI_HP0_EXT_arqos  (hp0_arqos),
+        .S_AXI_HP0_EXT_arsize (hp0_arsize),
+        .S_AXI_HP0_EXT_arvalid(hp0_arvalid),
+        .S_AXI_HP0_EXT_rready (hp0_rready),
+
+        // HP0 WRITE (minimal + pinned constants)
+        .S_AXI_HP0_EXT_awaddr (hp0_awaddr),
+        .S_AXI_HP0_EXT_awburst(hp0_awburst),
+        .S_AXI_HP0_EXT_awcache(hp0_awcache),
+        .S_AXI_HP0_EXT_awid   (hp0_awid),
+        .S_AXI_HP0_EXT_awlen  (hp0_awlen),
+        .S_AXI_HP0_EXT_awlock (hp0_awlock),
+        .S_AXI_HP0_EXT_awprot (hp0_awprot),
+        .S_AXI_HP0_EXT_awqos  (hp0_awqos),
+        .S_AXI_HP0_EXT_awsize (hp0_awsize),
+        .S_AXI_HP0_EXT_awvalid(hp0_awvalid),
+        .S_AXI_HP0_EXT_awready(hp0_awready),
+
+        .S_AXI_HP0_EXT_wdata  (hp0_wdata),
+        .S_AXI_HP0_EXT_wid    (hp0_wid),
+        .S_AXI_HP0_EXT_wlast  (hp0_wlast),
+        .S_AXI_HP0_EXT_wstrb  (hp0_wstrb),
+        .S_AXI_HP0_EXT_wvalid (hp0_wvalid),
+        .S_AXI_HP0_EXT_wready (hp0_wready),
+
+        .S_AXI_HP0_EXT_bvalid (hp0_bvalid),
+        .S_AXI_HP0_EXT_bready (hp0_bready)
+
+        // NOTE: all other HP0 outputs (ARREADY/RDATA/etc, BRESP/BID, etc)
+        // are intentionally left unconnected.
     );
 
+    // -----------------------------
+    // DMA controller (minimal interface)
+    // -----------------------------
+    dma_controller u_dma (
+        .aclk        (fclk0),
+        .aresetn     (fclk0_resetn),
 
+        .m_axi_awaddr (hp0_awaddr),
+        .m_axi_awvalid(hp0_awvalid),
+        .m_axi_awready(hp0_awready),
 
-    logic pdh_clk_0, pdh_clk;
+        .m_axi_wdata  (hp0_wdata),
+        .m_axi_wvalid (hp0_wvalid),
+        .m_axi_wready (hp0_wready),
 
-    IBUFGDS adc_clk_inst0 (.I(adc_clk_p_i), .IB(adc_clk_n_i), .O(pdh_clk_0));
-    BUFG adc_clk_inst (.I(pdh_clk_0), .O(pdh_clk));
-
-    assign dac_clk_o = pdh_clk;
+        .m_axi_bvalid (hp0_bvalid)
+        // bready is tied high in top-level (hp0_bready)
+    );
 
     pdh_core #(
         .ADC_DATA_WIDTH(14),
@@ -120,6 +236,6 @@ module pdh_top
         .adc_dat_a_i(adc_dat_a_i),
         .adc_dat_b_i(adc_dat_b_i),
         .adc_csn_o(adc_csn_o)
-  );
+    );
 
 endmodule

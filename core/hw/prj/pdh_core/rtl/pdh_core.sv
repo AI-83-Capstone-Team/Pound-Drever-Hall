@@ -238,7 +238,6 @@ module pdh_core #
     assign dac_wrt_o = strobe_edge_w & (cmd_w == CMD_SET_DAC); //pin at 1 for now
     assign dac_sel_o = data_w[14];
     assign dac_rst_o = rst_i;
-    assign dac_clk_o = clk;
 
 
     always_ff @(posedge clk) begin
