@@ -29,7 +29,7 @@ U:6,7"
 static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_led", cmd_set_led, 0, 0, 1},
     {"reset_fpga", cmd_reset_fpga, 0, 0, 0},
-    {"set_dac", cmd_set_dac, 1, 0, 2},
+    {"set_dac", cmd_set_dac, 1, 0, 1},
     {"get_adc", cmd_get_adc, 0, 0, 0},
     {"check_signed", cmd_check_signed, 0, 0, 1},
     {"set_rotation", cmd_set_rotation, 1, 0, 0}

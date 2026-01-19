@@ -43,7 +43,7 @@ module pdh_core #
 /////////////////////////////////////////////////////////
 
 
-    logic rst_i, strobe_w, strobe_edge_w;
+    logic rst_i, strobe_meta_w, strobe_sync_r, strobe_edge_w;
     assign rst_i = axi_from_ps_i[31];
     
     typedef enum logic [CMD_BITS-1:0] 
@@ -56,20 +56,23 @@ module pdh_core #
         CMD_SET_ROT_COEFFS = 4'b0101,
         CMD_COMMIT_ROT_COEFFS = 4'b0110
     } cmd_t;
-    logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r;
+    logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
     logic [CMD_BITS-1:0] cmd_w;
-
-
-    assign cmd_w = axi_from_ps_r[CMD_END:CMD_START];
     
-    assign strobe_w = axi_from_ps_r[30];
+    assign strobe_meta_w = axi_from_ps_i[30];
     posedge_detector u_strobe_edge_detector(
-        .D(strobe_w),
+        .D(strobe_sync_r),
         .clk(clk),
         .rst(rst_i),
         .Q(strobe_edge_w)
     );
 
+    always_comb begin
+        next_axi_from_ps_w = strobe_edge_w? axi_from_ps_i : axi_from_ps_r;
+    end
+
+
+    assign cmd_w = axi_from_ps_r[CMD_END:CMD_START];
 
     logic [DATA_BITS-1:0] data_w;
     assign data_w = axi_from_ps_r[DATA_END:DATA_START];
@@ -131,7 +134,7 @@ module pdh_core #
     assign axi_to_ps_o = callback_r;
 
     always_comb begin
-        case(cmd_w)
+        unique case(cmd_w)
             CMD_IDLE: begin
                 next_led_w = led_r;
                 next_dac_tdata_w = dac_tdata_r;
@@ -143,7 +146,7 @@ module pdh_core #
             end
 
             CMD_SET_LED: begin
-                next_led_w = strobe_edge_w? data_w[7:0] : led_r;
+                next_led_w = data_w[7:0];
                 next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
@@ -154,7 +157,7 @@ module pdh_core #
             
             CMD_SET_DAC: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = strobe_edge_w? (data_w[14]? {data_w[13:0], dac_tdata_r[13:0]} : {dac_tdata_r[27:14], data_w[13:0]}) : dac_tdata_r;
+                next_dac_tdata_w = data_w[14]? {data_w[13:0], dac_tdata_r[13:0]} : {dac_tdata_r[27:14], data_w[13:0]};
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
@@ -185,8 +188,8 @@ module pdh_core #
             CMD_SET_ROT_COEFFS: begin
                 next_led_w = led_r;
                 next_dac_tdata_w = dac_tdata_r;
-                next_sin_theta_w = (data_w[16] & strobe_edge_w)? data_w[15:0] : sin_theta_r;
-                next_cos_theta_w = (~data_w[16] & strobe_edge_w)? data_w[15:0] : cos_theta_r;
+                next_sin_theta_w = data_w[16]? data_w[15:0] : sin_theta_r;
+                next_cos_theta_w = ~data_w[16]? data_w[15:0] : cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_rot_cb_w;
@@ -197,8 +200,8 @@ module pdh_core #
                 next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
-                next_rot_sin_theta_w = strobe_edge_w? sin_theta_r : rot_sin_theta_r;
-                next_rot_cos_theta_w = strobe_edge_w? cos_theta_r : rot_cos_theta_r;
+                next_rot_sin_theta_w = sin_theta_r;
+                next_rot_cos_theta_w = cos_theta_r;
                 next_callback_w = commit_rot_cb_w;
             end
 
@@ -240,6 +243,7 @@ module pdh_core #
 
     always_ff @(posedge clk) begin
         if(rst_i)begin
+            strobe_sync_r <= 0;
             axi_from_ps_r <= 0;
             led_r <= 0;
             dac_tdata_r <= {2'b00, 14'h2000, 2'b00, 14'h2000}; //0x2000 -> ~0V
@@ -249,7 +253,8 @@ module pdh_core #
             rot_cos_theta_r <= 16'sh7FFF;
             callback_r <= 0;
         end else begin
-            axi_from_ps_r <= axi_from_ps_i;
+            strobe_sync_r <= strobe_meta_w;
+            axi_from_ps_r <= next_axi_from_ps_w;
             led_r <= next_led_w;
             dac_tdata_r <= next_dac_tdata_w;
             sin_theta_r <= next_sin_theta_w; 

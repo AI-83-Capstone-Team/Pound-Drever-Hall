@@ -119,7 +119,8 @@ typedef union __attribute__((packed))
     {
         uint32_t _padding   : 26;
         uint32_t cmd        : 4;
-        uint32_t _padding_2 : 2;
+        uint32_t strobe     : 1; 
+        uint32_t _padding_2 : 1;
     }   adc_cmd;
 
     struct __attribute__((packed))
@@ -127,7 +128,8 @@ typedef union __attribute__((packed))
         uint32_t reg_sel    : 4;
         uint32_t _padding   : 22;
         uint32_t cmd        : 4;
-        uint32_t _padding_2 : 2;
+        uint32_t strobe     : 1;
+        uint32_t _padding_2 : 1;
     }   cs_cmd;
 
     struct __attribute__((packed))

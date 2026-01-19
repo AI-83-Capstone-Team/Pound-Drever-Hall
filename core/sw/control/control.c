@@ -48,15 +48,8 @@ int cmd_set_led(cmd_ctx_t* ctx)
     cmd.led_cmd.led_code = led_code;
     pdh_send_cmd(cmd);
     
-    if (ctx->num_uints > 1)
-    {
-        bool strobe_on = (bool)ctx->uint_args[1];
-        if (strobe_on)
-        {
-            cmd.led_cmd.strobe = 1;
-            pdh_send_cmd(cmd);
-        }
-    }
+    cmd.led_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
 
     pdh_callback_t callback;
     callback.raw = 0;
@@ -80,6 +73,8 @@ int cmd_get_adc(cmd_ctx_t *ctx)
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.adc_cmd.cmd = CMD_GET_ADC;
+    pdh_send_cmd(cmd);
+    cmd.adc_cmd.strobe = 1;
     pdh_send_cmd(cmd);
 
     pdh_callback_t callback; 
@@ -122,6 +117,8 @@ int cmd_check_signed(cmd_ctx_t* ctx)
     cmd.cs_cmd.reg_sel = reg_sel;
 
     pdh_send_cmd(cmd);
+    cmd.cs_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
 
     pdh_callback_t callback; 
     callback.raw = 0;
@@ -150,7 +147,6 @@ int cmd_set_dac(cmd_ctx_t* ctx)
 {
     float val = ctx->float_args[0];
     bool dac_sel = (bool)ctx->uint_args[0];
-    bool strobe = (bool)ctx->uint_args[1];
 
     val *= -1.0f;
 
@@ -172,12 +168,8 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     cmd.dac_cmd.dac_sel = dac_sel;
     cmd.dac_cmd.cmd = CMD_SET_DAC;
     pdh_send_cmd(cmd);
-
-    if (strobe)
-    {
-        cmd.dac_cmd.strobe = 1;
-        pdh_send_cmd(cmd);
-    }
+    cmd.dac_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
 
     pdh_callback_t callback;
     callback.raw = 0;

@@ -28,20 +28,20 @@ def reset_fpga():
     ]
     execute_cmd_seq(cmds)
 
-def set_led(value: int, strobe: bool = 0):
+def set_led(value: int):
     cmds = [
     (
         "CMD:set_led\n"
-        f"U:{value},{strobe}\n"
+        f"U:{value}\n"
     )
     ]
     execute_cmd_seq(cmds)
 
-def set_dac(value: float, dac_sel: bool, strobe: bool = 0):
+def set_dac(value: float, dac_sel: bool):
     cmds = [
     (
         "CMD:set_dac\n"
-        f"U:{dac_sel},{strobe}\n"
+        f"U:{dac_sel}\n"
         f"F:{value}\n"
     )
     ]
@@ -77,11 +77,11 @@ def set_rotation(theta_deg: float):
 if __name__ == "__main__":
     reset_fpga()
 #    while True:
-    set_dac(0.5, 0, 1)
-    set_dac(-0.5, 1, 1)
+    set_dac(0.0, 0)
+    set_dac(-1.5, 1)
     get_adc()
-    set_led(67, 1)
+    set_led(67)
     check_signed(0)
-    set_rotation(45.0)
+    set_rotation(90.0)
 
     check_signed(6)
