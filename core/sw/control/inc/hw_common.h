@@ -68,9 +68,8 @@ typedef struct
 extern sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 extern float gAdcMirror[ADC_BUFFER_SIZE];
 
-
-
-
+int dma_Init();
+int dma_Release();
 int pdh_Init();
 int pdh_Release();
 
@@ -84,6 +83,7 @@ typedef enum
     CMD_CHECK_SIGNED = 0b0100,
     CMD_SET_ROT_COEFFS = 0b0101,
     CMD_COMMIT_ROT_COEFFS = 0b0110,
+    CMD_GET_FRAME = 0b0111,
 }   pdh_cmd_e;   
 
 
@@ -112,7 +112,7 @@ typedef union __attribute__((packed))
         uint32_t _padding   : 11; 
         uint32_t cmd        : 4;
         uint32_t strobe     : 1; 
-        uint32_t _padding_2 : 1;
+        uint32_t _padding2  : 1;
     }   dac_cmd;
 
     struct __attribute__((packed))
@@ -120,7 +120,7 @@ typedef union __attribute__((packed))
         uint32_t _padding   : 26;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1; 
-        uint32_t _padding_2 : 1;
+        uint32_t _padding2  : 1;
     }   adc_cmd;
 
     struct __attribute__((packed))
@@ -129,7 +129,7 @@ typedef union __attribute__((packed))
         uint32_t _padding   : 22;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
+        uint32_t _padding2  : 1;
     }   cs_cmd;
 
     struct __attribute__((packed))
@@ -147,8 +147,16 @@ typedef union __attribute__((packed))
         uint32_t _padding   : 26;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
+        uint32_t _padding2  : 1;
     }   commit_rot_coeff_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 26; //TODO: Add a payload here so user can select what things to capture
+        uint32_t cmd        : 4;
+        uint32_t strobe     : 1;
+        uint32_t _padding2  : 1;
+    }   get_frame_cmd;
 
     uint32_t raw;
 }   pdh_cmd_t;
@@ -204,9 +212,16 @@ typedef union __attribute__((packed))
     }   commit_rot_coeff_cb;
 
 
+    struct __attribute__((packed))
+    {
+        uint32_t dma_engaged    : 1;
+        uint32_t padding        : 27;
+        uint32_t cmd            : 4;
+    }   get_frame_cb;
+
     uint32_t raw;
 }   pdh_callback_t;
 
 
-int pdh_send_cmd(pdh_cmd_t cmd);
 int pdh_get_callback(pdh_callback_t* callback);
+int pdh_send_cmd(pdh_cmd_t cmd);

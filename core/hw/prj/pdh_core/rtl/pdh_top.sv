@@ -198,7 +198,7 @@ module pdh_top
         // are intentionally left unconnected.
     );
 
-    logic core_rst, dma_enable_w, dma_finished_w;
+    logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w;
     logic [63:0] dma_data_w;
 
     // -----------------------------
@@ -224,7 +224,8 @@ module pdh_top
         
         .enable_i(dma_enable_w),
         .data_i(dma_data_w),
-        .finished_o(dma_finished_w)
+        .finished_o(dma_finished_w),
+        .dma_engaged_o(dma_engaged_w)
     );
 
     pdh_core #(
@@ -248,7 +249,8 @@ module pdh_top
 
         .dma_enable_o(dma_enable_w),
         .dma_data_o(dma_data_w),
-        .dma_finished_i(dma_finished_w)
+        .dma_finished_i(dma_finished_w),
+        .dma_engaged_i(dma_engaged_w)
     );
 
 endmodule

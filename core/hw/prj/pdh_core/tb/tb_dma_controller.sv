@@ -61,6 +61,7 @@ module tb_dma_controller;
     logic        enable_i;
     logic [63:0] data_i;
     logic        finished_o;
+    logic        engaged_o;
 
     // -----------------------------
     // Instantiate DUT

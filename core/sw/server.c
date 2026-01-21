@@ -15,7 +15,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 6
+#define NUM_CMDS 9
 
 /*
 "CMD:ex_cmd'\n'
@@ -32,7 +32,8 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_dac", cmd_set_dac, 1, 0, 1},
     {"get_adc", cmd_get_adc, 0, 0, 0},
     {"check_signed", cmd_check_signed, 0, 0, 1},
-    {"set_rotation", cmd_set_rotation, 1, 0, 0}
+    {"set_rotation", cmd_set_rotation, 1, 0, 0},
+    {"get_frame", cmd_get_frame, 0, 0, 0}
 };
 
 
@@ -381,7 +382,7 @@ int main(void)
     }
 
     else DEBUG_INFO("rp_Init() failed with code: %d\n", init_code);
-
+    dma_Release();
     pdh_Release();
     close(listen_fd);
     return 0;

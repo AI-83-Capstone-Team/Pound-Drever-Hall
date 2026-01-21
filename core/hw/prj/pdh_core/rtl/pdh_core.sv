@@ -26,7 +26,8 @@ module pdh_core #
 
     output logic dma_enable_o,
     output logic [63:0] dma_data_o,
-    input  logic dma_finished_i
+    input  logic dma_finished_i,
+    input  logic dma_engaged_i
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
@@ -101,7 +102,19 @@ module pdh_core #
 
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
-    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w, set_rot_cb_w, commit_rot_cb_w;
+    logic dma_engaged_r, dma_finished_r;
+    always_ff @(posedge clk or posedge rst_i) begin
+        if(rst_i) begin
+            dma_engaged_r <= 1'b0;
+            dma_finished_r <= 1'b0;
+        end else begin
+            dma_engaged_r <= dma_engaged_i;
+            dma_finished_r <= dma_finished_i;
+        end
+    end
+    
+
+    logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w, set_rot_cb_w, commit_rot_cb_w, get_frame_cb_w;
     assign idle_cb_w    = 32'b0;
     assign led_cb_w     = {CMD_SET_LED, 20'd0, led_r};
     assign dac_cb_w     = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
@@ -127,7 +140,9 @@ module pdh_core #
 
             4'b0111: cs_cb_w = {base_bus, q_feed_w};
 
-            4'b1000: cs_cb_w = {base_bus, 15'b0, dma_finished_i};
+            4'b1000: cs_cb_w = {base_bus, 15'b0, dma_finished_r};
+
+            4'b1001: cs_cb_w = {base_bus, 15'b0, dma_engaged_r};
 
             default: cs_cb_w = {base_bus, 16'd0};
             
@@ -137,6 +152,7 @@ module pdh_core #
 
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_w[15:2], i_feed_w[15:2]};
+    assign get_frame_cb_w = {CMD_GET_FRAME, 27'd0, dma_engaged_r};
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;
@@ -211,6 +227,16 @@ module pdh_core #
                 next_rot_sin_theta_w = sin_theta_r;
                 next_rot_cos_theta_w = cos_theta_r;
                 next_callback_w = commit_rot_cb_w;
+            end
+
+            CMD_GET_FRAME: begin
+                next_led_w = led_r;
+                next_dac_tdata_w = dac_tdata_r;
+                next_sin_theta_w = sin_theta_r;
+                next_cos_theta_w = cos_theta_r;
+                next_rot_sin_theta_w = rot_sin_theta_r;
+                next_rot_cos_theta_w = rot_cos_theta_r;
+                next_callback_w = get_frame_cb_w;
             end
 
             default: begin

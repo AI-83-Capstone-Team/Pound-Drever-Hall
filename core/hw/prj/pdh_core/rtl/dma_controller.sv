@@ -25,11 +25,14 @@ module dma_controller
 
     input   logic enable_i,
     input   logic [63:0] data_i, //TODO: FIFO on this
-    output  logic finished_o
+    output  logic finished_o,
+    output  logic dma_engaged_o
 );
 
-    localparam int unsigned HP0_BASE_ADDR = 32'h1F00_0000;
-    localparam int unsigned FINAL_WRITE_ADDR = HP0_BASE_ADDR + 32'h000c3500 - 1;
+    // localparam int unsigned HP0_BASE_ADDR = 32'h1F00_0000;
+    localparam int unsigned HP0_BASE_ADDR = 32'h4300_0000;
+    localparam int unsigned DMA_SIZE = 32'h000C3500;
+    localparam int unsigned FINAL_WRITE_ADDR = HP0_BASE_ADDR + DMA_SIZE - 1;
     localparam int unsigned BYTES_PER_BEAT = 8; //each address points to a location in DDR holding this many bits
     localparam int unsigned ADDR_INC = 16*8; // beats/burst * bytes/beat
 
@@ -41,9 +44,11 @@ module dma_controller
     localparam logic [7:0] STROBE_FULL = 8'hFF;
 
 
-
+    
 
     logic enable_meta_w, enable_sync_r, enable_sync_edge_w;
+    assign enable_meta_w = enable_i;
+
     posedge_detector #(
     ) u_enable_edge_detector (
         .clk(aclk),
@@ -67,7 +72,7 @@ module dma_controller
     logic [31:0] addr_r, next_addr_w;
     logic [4:0] beat_r, next_beat_w;
     logic [63:0] data_r, next_data_w;
-    logic awvalid_w, wvalid_w, wlast_w, bready_w, finished_w;
+    logic awvalid_w, wvalid_w, wlast_w, bready_w, finished_w, dma_engaged_w;
 
     //State transition logic
     always_comb begin
@@ -94,6 +99,7 @@ module dma_controller
                 wlast_w = 1'b0;
                 bready_w = 1'b0;
                 finished_w = 1'b0;
+                dma_engaged_w = 1'b0;
             end
 
             ST_SET_ADDR_AWAIT_ACK: begin
@@ -105,6 +111,7 @@ module dma_controller
                 wlast_w = 1'b0;
                 bready_w = 1'b0;
                 finished_w = 1'b0;
+                dma_engaged_w = 1'b1;
             end
 
             ST_SET_DATA_AWAIT_ACK: begin
@@ -116,6 +123,7 @@ module dma_controller
                 wlast_w = (beat_r == BURST_LEN);
                 bready_w = 1'b0;
                 finished_w = 1'b0;
+                dma_engaged_w = 1'b1;
             end
 
             ST_AWAIT_RESP: begin
@@ -128,6 +136,7 @@ module dma_controller
                 wlast_w = 1'b0;
                 bready_w = 1'b1;
                 finished_w = 1'b0;
+                dma_engaged_w = 1'b1;
             end
 
             ST_DONE: begin
@@ -139,6 +148,7 @@ module dma_controller
                 wlast_w = 1'b0;
                 bready_w = 1'b0;
                 finished_w = 1'b1;
+                dma_engaged_w = 1'b0;
             end
             
             default: begin
@@ -150,6 +160,7 @@ module dma_controller
                 wlast_w = 1'b0;
                 bready_w = 1'b0;
                 finished_w = 1'b0;
+                dma_engaged_w = 1'b0;
             end
         endcase
     end
@@ -170,7 +181,7 @@ module dma_controller
     assign m_axi_wlast = wlast_w;
 
     assign finished_o = finished_w;
-
+    assign dma_engaged_o = dma_engaged_w;
 
     always_ff @(posedge aclk or posedge rst_i) begin
         if (rst_i) begin

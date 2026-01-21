@@ -74,6 +74,16 @@ def set_rotation(theta_deg: float):
     ]
     execute_cmd_seq(cmds)
 
+def get_frame():
+    cmds = [
+    (
+        "CMD:get_frame\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
+
+
 if __name__ == "__main__":
     reset_fpga()
 #    while True:
@@ -83,5 +93,9 @@ if __name__ == "__main__":
     set_led(67)
     check_signed(0)
     set_rotation(90.0)
-
     check_signed(6)
+    get_frame()
+    check_signed(8)
+    check_signed(9)
+    check_signed(8)
+    check_signed(9)

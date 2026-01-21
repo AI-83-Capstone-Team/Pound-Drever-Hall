@@ -5,7 +5,7 @@
 ### RTL
 ```bash
 cd core/hw
-make
+make pdh_core
 ```
 
 ### Software

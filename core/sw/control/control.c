@@ -285,6 +285,40 @@ int cmd_set_rotation(cmd_ctx_t* ctx)
 
 
 
+
+int cmd_get_frame(cmd_ctx_t* ctx)
+{
+
+	DEBUG_INFO("Executing command: %s...\n", __func__);
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
+    pdh_send_cmd(cmd);
+    cmd.get_frame_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+
+    pdh_callback_t cb;
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+
+    ctx->output.output_items[0].data.u = cb.get_frame_cb.dma_engaged; 
+    ctx->output.output_items[0].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[0].name, "DMA_ENGAGED");
+
+    ctx->output.output_items[1].data.u = cb.get_frame_cb.cmd;
+    ctx->output.output_items[1].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[1].name, "cmd_sig");
+
+    return PDH_OK;
+}
+
+
+
+
+
+
+
 static int validate_params(const lock_in_ctx_t *ctx)
 {
 	if (!ctx)
