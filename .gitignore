@@ -19,8 +19,7 @@ tight_setup_hold_pins.txt
 .vscode
 client/data
 obj_dir/
-*.fst
-
+dumps/
 # LTspice Specific Files
 *.raw
 *.op.raw

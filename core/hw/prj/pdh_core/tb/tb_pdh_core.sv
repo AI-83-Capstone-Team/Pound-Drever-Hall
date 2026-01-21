@@ -108,7 +108,7 @@ module tb_pdh_core;
 
 
     initial begin
-        $dumpfile("wave.fst");
+        $dumpfile("dumps/tb_pdh.vcd");
         $dumpvars(0, tb_pdh_core);
         
         axi_from_ps_i = 32'h0;

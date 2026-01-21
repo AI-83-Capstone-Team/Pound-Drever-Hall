@@ -21,8 +21,12 @@ module pdh_core #
 
     input  logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_i,
     output logic [AXI_GPIO_OUT_WIDTH-1:0] axi_to_ps_o,
-    output logic [7:0] led_o
+    output logic [7:0] led_o,
+    output logic rst_o,
 
+    output logic dma_enable_o,
+    output logic [63:0] dma_data_o,
+    input  logic dma_finished_i
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
@@ -45,6 +49,7 @@ module pdh_core #
 
     logic rst_i, strobe_meta_w, strobe_sync_r, strobe_edge_w;
     assign rst_i = axi_from_ps_i[31];
+    assign rst_o = rst_i;
     
     typedef enum logic [CMD_BITS-1:0] 
     {
@@ -54,7 +59,8 @@ module pdh_core #
         CMD_GET_ADC = 4'b0011,
         CMD_CHECK_SIGNED = 4'b0100,
         CMD_SET_ROT_COEFFS = 4'b0101,
-        CMD_COMMIT_ROT_COEFFS = 4'b0110
+        CMD_COMMIT_ROT_COEFFS = 4'b0110,
+        CMD_GET_FRAME = 4'b0111
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
     logic [CMD_BITS-1:0] cmd_w;
@@ -120,6 +126,8 @@ module pdh_core #
             4'b0110: cs_cb_w = {base_bus, i_feed_w};
 
             4'b0111: cs_cb_w = {base_bus, q_feed_w};
+
+            4'b1000: cs_cb_w = {base_bus, 15'b0, dma_finished_i};
 
             default: cs_cb_w = {base_bus, 16'd0};
             
@@ -240,7 +248,11 @@ module pdh_core #
     assign dac_rst_o = rst_i;
 
 
-    always_ff @(posedge clk) begin
+    assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
+    assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
+
+
+    always_ff @(posedge clk or posedge rst_i) begin
         if(rst_i)begin
             strobe_sync_r <= 0;
             axi_from_ps_r <= 0;

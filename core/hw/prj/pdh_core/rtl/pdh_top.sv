@@ -70,38 +70,18 @@ module pdh_top
     logic fclk0;
     logic fclk0_resetn;
 
-    // -----------------------------
-    // HP0 AXI (WRITE-ONLY minimal)
-    // -----------------------------
-    logic [31:0] hp0_awaddr;
-    logic        hp0_awvalid;
-    logic        hp0_awready;
-
-    logic [63:0] hp0_wdata;
-    logic        hp0_wvalid;
-    logic        hp0_wready;
-
-    logic        hp0_bvalid;
-    logic        hp0_bready;
 
     // -----------------------------
     // HP0 AXI constants (pinned)
     // -----------------------------
-    wire [3:0] hp0_awlen   = 4'd0;      // 1-beat writes for bring-up
-    wire [2:0] hp0_awsize  = 3'd3;      // 8 bytes/beat (64-bit)
-    wire [1:0] hp0_awburst = 2'b01;     // INCR
+
     wire [5:0] hp0_awid    = 6'd0;
     wire [3:0] hp0_awcache = 4'd0;
     wire [2:0] hp0_awprot  = 3'd0;
     wire [1:0] hp0_awlock  = 2'd0;
     wire [3:0] hp0_awqos   = 4'd0;
 
-    wire [7:0] hp0_wstrb   = 8'hFF;     // all bytes valid
     wire [5:0] hp0_wid     = 6'd0;
-    wire       hp0_wlast   = 1'b1;      // always last (since AWLEN=0)
-
-    // Always drain write responses
-    assign hp0_bready = 1'b1;
 
     // -----------------------------
     // HP0 AXI READ CHANNEL (tied off)
@@ -119,6 +99,24 @@ module pdh_top
     wire        hp0_arvalid = 1'b0;
 
     wire        hp0_rready  = 1'b0;     // never accept reads
+
+
+    // Hot AXI signals
+    logic [31:0] m_axi_awaddr;
+    logic        m_axi_awvalid;
+    logic        m_axi_awready;
+    logic [3:0]  m_axi_awlen;   //num beats in burst
+    logic [2:0]  m_axi_awsize;  //num bytes in beat
+    logic [1:0]  m_axi_awburst; //burst code
+
+    logic [63:0] m_axi_wdata;
+    logic        m_axi_wvalid;
+    logic        m_axi_wready;
+    logic        m_axi_bvalid;
+    logic        m_axi_bready;
+    logic [1:0]  m_axi_bresp; 
+    logic [7:0]  m_axi_wstrb;
+    logic        m_axi_wlast;
 
     // -----------------------------
     // Platform wrapper (PS + DDR + GPIO + HP0 exported)
@@ -174,49 +172,59 @@ module pdh_top
         .S_AXI_HP0_EXT_rready (hp0_rready),
 
         // HP0 WRITE (minimal + pinned constants)
-        .S_AXI_HP0_EXT_awaddr (hp0_awaddr),
-        .S_AXI_HP0_EXT_awburst(hp0_awburst),
+        .S_AXI_HP0_EXT_awaddr (m_axi_awaddr),
+        .S_AXI_HP0_EXT_awburst(m_axi_awburst),
         .S_AXI_HP0_EXT_awcache(hp0_awcache),
         .S_AXI_HP0_EXT_awid   (hp0_awid),
-        .S_AXI_HP0_EXT_awlen  (hp0_awlen),
+        .S_AXI_HP0_EXT_awlen  (m_axi_awlen),
         .S_AXI_HP0_EXT_awlock (hp0_awlock),
         .S_AXI_HP0_EXT_awprot (hp0_awprot),
         .S_AXI_HP0_EXT_awqos  (hp0_awqos),
-        .S_AXI_HP0_EXT_awsize (hp0_awsize),
-        .S_AXI_HP0_EXT_awvalid(hp0_awvalid),
-        .S_AXI_HP0_EXT_awready(hp0_awready),
+        .S_AXI_HP0_EXT_awsize (m_axi_awsize),
+        .S_AXI_HP0_EXT_awvalid(m_axi_awvalid),
+        .S_AXI_HP0_EXT_awready(m_axi_awready),
 
-        .S_AXI_HP0_EXT_wdata  (hp0_wdata),
+        .S_AXI_HP0_EXT_wdata  (m_axi_wdata),
         .S_AXI_HP0_EXT_wid    (hp0_wid),
-        .S_AXI_HP0_EXT_wlast  (hp0_wlast),
-        .S_AXI_HP0_EXT_wstrb  (hp0_wstrb),
-        .S_AXI_HP0_EXT_wvalid (hp0_wvalid),
-        .S_AXI_HP0_EXT_wready (hp0_wready),
+        .S_AXI_HP0_EXT_wlast  (m_axi_wlast),
+        .S_AXI_HP0_EXT_wstrb  (m_axi_wstrb),
+        .S_AXI_HP0_EXT_wvalid (m_axi_wvalid),
+        .S_AXI_HP0_EXT_wready (m_axi_wready),
 
-        .S_AXI_HP0_EXT_bvalid (hp0_bvalid),
-        .S_AXI_HP0_EXT_bready (hp0_bready)
+        .S_AXI_HP0_EXT_bvalid (m_axi_bvalid),
+        .S_AXI_HP0_EXT_bready (m_axi_bready)
 
         // NOTE: all other HP0 outputs (ARREADY/RDATA/etc, BRESP/BID, etc)
         // are intentionally left unconnected.
     );
 
+    logic core_rst, dma_enable_w, dma_finished_w;
+    logic [63:0] dma_data_w;
+
     // -----------------------------
     // DMA controller (minimal interface)
     // -----------------------------
     dma_controller u_dma (
-        .aclk        (fclk0),
-        .aresetn     (fclk0_resetn),
-
-        .m_axi_awaddr (hp0_awaddr),
-        .m_axi_awvalid(hp0_awvalid),
-        .m_axi_awready(hp0_awready),
-
-        .m_axi_wdata  (hp0_wdata),
-        .m_axi_wvalid (hp0_wvalid),
-        .m_axi_wready (hp0_wready),
-
-        .m_axi_bvalid (hp0_bvalid)
-        // bready is tied high in top-level (hp0_bready)
+        .aclk(fclk0),
+        .rst_i(core_rst),
+        .m_axi_awaddr(m_axi_awaddr),
+        .m_axi_awvalid(m_axi_awvalid),
+        .m_axi_awready(m_axi_awready),
+        .m_axi_awlen(m_axi_awlen),
+        .m_axi_awsize(m_axi_awsize),
+        .m_axi_awburst(m_axi_awburst),
+        .m_axi_wdata(m_axi_wdata),
+        .m_axi_wvalid(m_axi_wvalid),
+        .m_axi_wready(m_axi_wready),
+        .m_axi_bvalid(m_axi_bvalid),
+        .m_axi_bready(m_axi_bready),
+        .m_axi_bresp(m_axi_bresp),
+        .m_axi_wstrb(m_axi_wstrb),
+        .m_axi_wlast(m_axi_wlast),
+        
+        .enable_i(dma_enable_w),
+        .data_i(dma_data_w),
+        .finished_o(dma_finished_w)
     );
 
     pdh_core #(
@@ -235,7 +243,12 @@ module pdh_top
         .dac_wrt_o(dac_wrt_o),
         .adc_dat_a_i(adc_dat_a_i),
         .adc_dat_b_i(adc_dat_b_i),
-        .adc_csn_o(adc_csn_o)
+        .adc_csn_o(adc_csn_o),
+        .rst_o(core_rst),
+
+        .dma_enable_o(dma_enable_w),
+        .dma_data_o(dma_data_w),
+        .dma_finished_i(dma_finished_w)
     );
 
 endmodule

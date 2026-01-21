@@ -9,7 +9,7 @@ module posedge_detector
     logic prev_D;
     assign Q = D & ~prev_D;
     
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or posedge rst) begin
         if(rst) begin
             prev_D <= 0;
         end else begin
