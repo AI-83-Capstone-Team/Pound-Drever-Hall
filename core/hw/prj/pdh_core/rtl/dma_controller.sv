@@ -30,7 +30,7 @@ module dma_controller
 );
 
     // localparam int unsigned HP0_BASE_ADDR = 32'h1F00_0000;
-    localparam int unsigned HP0_BASE_ADDR = 32'h4300_0000;
+    localparam int unsigned HP0_BASE_ADDR = 0; //32'h4300_0000;
     localparam int unsigned DMA_SIZE = 32'h000C3500;
     localparam int unsigned FINAL_WRITE_ADDR = HP0_BASE_ADDR + DMA_SIZE - 1;
     localparam int unsigned BYTES_PER_BEAT = 8; //each address points to a location in DDR holding this many bits
@@ -80,8 +80,8 @@ module dma_controller
             ST_IDLE: next_state_w = enable_sync_edge_w? ST_SET_ADDR_AWAIT_ACK : ST_IDLE;
             ST_SET_ADDR_AWAIT_ACK: next_state_w = m_axi_awready? ST_SET_DATA_AWAIT_ACK : ST_SET_ADDR_AWAIT_ACK;
             ST_SET_DATA_AWAIT_ACK: next_state_w = (m_axi_wready && (beat_r == BURST_LEN))? ST_AWAIT_RESP : ST_SET_DATA_AWAIT_ACK;
-            //ST_AWAIT_RESP: next_state_w = m_axi_bvalid? ((m_axi_bresp == 2'b00)? ((addr_r + ADDR_INC > FINAL_WRITE_ADDR)? ST_DONE : ST_SET_ADDR_AWAIT_ACK) : ST_SET_ADDR_AWAIT_ACK) : ST_AWAIT_RESP; <-ignoring response status for now to see if we can observe corrupted writes
-            ST_AWAIT_RESP: next_state_w = m_axi_bvalid? ((addr_r + ADDR_INC > FINAL_WRITE_ADDR)? ST_DONE : ST_SET_ADDR_AWAIT_ACK) : ST_AWAIT_RESP;
+            ST_AWAIT_RESP: next_state_w = m_axi_bvalid? ((m_axi_bresp == 2'b00)? ((addr_r + ADDR_INC > FINAL_WRITE_ADDR)? ST_DONE : ST_SET_ADDR_AWAIT_ACK) : ST_SET_ADDR_AWAIT_ACK) : ST_AWAIT_RESP;
+            //ST_AWAIT_RESP: next_state_w = m_axi_bvalid? ((addr_r + ADDR_INC > FINAL_WRITE_ADDR)? ST_DONE : ST_SET_ADDR_AWAIT_ACK) : ST_AWAIT_RESP;
             ST_DONE: next_state_w = enable_sync_edge_w? ST_SET_ADDR_AWAIT_ACK : ST_DONE;
             default: next_state_w = ST_IDLE;
         endcase
@@ -127,8 +127,8 @@ module dma_controller
             end
 
             ST_AWAIT_RESP: begin
-               // next_addr_w = (m_axi_bvalid & (m_axi_bresp == 2'b00))? addr_r + ADDR_INC : addr_r;
-                next_addr_w = (m_axi_bvalid)? addr_r + ADDR_INC : addr_r;
+                next_addr_w = (m_axi_bvalid & (m_axi_bresp == 2'b00))? addr_r + ADDR_INC : addr_r;
+                //next_addr_w = (m_axi_bvalid)? addr_r + ADDR_INC : addr_r;
                 next_beat_w = BEAT_BASE; //should wrap to base anyway via overflow
                 next_data_w = 64'b0;
                 awvalid_w = 1'b0;

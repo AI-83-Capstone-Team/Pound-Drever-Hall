@@ -468,3 +468,33 @@ int lock_in(lock_in_ctx_t* ctx)
 	return LOCKED_IN;
 }
 
+
+int cmd_test_frame(cmd_ctx_t* ctx)
+{
+    uint32_t byte_offset = ctx->uint_args[0];
+    
+    dma_frame_t frame;
+    frame.raw = dma_get_frame(byte_offset);
+
+    ctx->output.output_items[0].data.i = (int16_t)frame.data.sin_theta_r;
+    ctx->output.output_items[0].tag = INT_TAG;
+    strcpy(ctx->output.output_items[0].name, "sin_theta_r");
+    
+    ctx->output.output_items[1].data.i = (int16_t)frame.data.cos_theta_r;
+    ctx->output.output_items[1].tag = INT_TAG;
+    strcpy(ctx->output.output_items[1].name, "cos_theta_r");
+
+    ctx->output.output_items[2].data.i = (int16_t)frame.data.q_feed_w;
+    ctx->output.output_items[2].tag = INT_TAG;
+    strcpy(ctx->output.output_items[2].name, "q_feed_w");
+    
+    ctx->output.output_items[3].data.i = (int16_t)frame.data.i_feed_w;
+    ctx->output.output_items[3].tag = INT_TAG;
+    strcpy(ctx->output.output_items[3].name, "i_feed_w");
+
+    ctx->output.num_outputs = 4;
+    return PDH_OK;
+}
+
+
+

@@ -16,9 +16,9 @@ sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 #define AXI_READ_OFFSET     0
 
 //#define HP0_BASE_ADDR 0x1F000000
-#define HP0_BASE_ADDR 0x43000000
+#define HP0_BASE_ADDR 0x00000000
 #define HP0_RANGE 0xC3500
-#define MAP_LEN 0x000C4000 //DMA region size rounded up to the nearest 4096-byte chunk
+#define MAP_LEN 0x000C4000 //DMA region size rounded up to the nearest 4096-byte chunk, also seems to allocate 0x1000 past this as well (4096 byte padding)
 #define DMA_WRITE_OFFSET 0
 #define DMA_READ_OFFSET 0
 
@@ -45,6 +45,14 @@ int dma_Release()
     munmap(gDmaMap, MAP_LEN);
     return PDH_OK;
 }
+
+uint64_t dma_get_frame(uint32_t byte_offset)
+{
+    __sync_synchronize();
+    return *((volatile uint64_t*)((uint8_t*)gDmaMap + byte_offset));
+}
+
+
 
 
 int pdh_Init()

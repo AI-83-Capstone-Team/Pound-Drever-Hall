@@ -223,5 +223,19 @@ typedef union __attribute__((packed))
 }   pdh_callback_t;
 
 
+typedef union __attribute__((packed))
+{
+    struct __attribute__((packed))
+    {
+        uint64_t sin_theta_r    : 16;
+        uint64_t cos_theta_r    : 16;
+        uint64_t q_feed_w       : 16;
+        uint64_t i_feed_w       : 16;
+    }   data;
+
+    uint64_t raw;
+}   dma_frame_t;
+
+uint64_t dma_get_frame(uint32_t byte_offset);
 int pdh_get_callback(pdh_callback_t* callback);
 int pdh_send_cmd(pdh_cmd_t cmd);

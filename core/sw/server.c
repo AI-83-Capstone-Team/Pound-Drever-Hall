@@ -15,7 +15,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 9
+#define NUM_CMDS 10
 
 /*
 "CMD:ex_cmd'\n'
@@ -33,7 +33,8 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"get_adc", cmd_get_adc, 0, 0, 0},
     {"check_signed", cmd_check_signed, 0, 0, 1},
     {"set_rotation", cmd_set_rotation, 1, 0, 0},
-    {"get_frame", cmd_get_frame, 0, 0, 0}
+    {"get_frame", cmd_get_frame, 0, 0, 0},
+    {"test_frame", cmd_test_frame, 0, 0, 1}
 };
 
 
@@ -318,8 +319,9 @@ int main(void)
     DEBUG_INFO("Server listening on port %d...\n", SERVER_PORT);
     DEBUG_INFO("Initializing RP API...\n");
     
-    int init_code = pdh_Init();
-    if(init_code == PDH_OK)
+    int pdh_code = pdh_Init();
+    int dma_code = dma_Init();
+    if(pdh_code == PDH_OK && dma_code == PDH_OK)
     {
         while(true)
         {
@@ -381,7 +383,11 @@ int main(void)
         }
     }
 
-    else DEBUG_INFO("rp_Init() failed with code: %d\n", init_code);
+    else 
+    { 
+        DEBUG_INFO("pdh_Init() exited with code: %d\n", pdh_code);
+        DEBUG_INFO("dma_Init() exited with code: %d\n", dma_code);
+    }
     dma_Release();
     pdh_Release();
     close(listen_fd);
