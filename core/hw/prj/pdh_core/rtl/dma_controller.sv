@@ -174,7 +174,7 @@ module dma_controller
     
     //outputs
     assign m_axi_awaddr = addr_r;
-    assign m_axi_wdata = {addr_r[31:0], data_r[31:0]};
+    assign m_axi_wdata = data_r[63:0];
     assign m_axi_awvalid = awvalid_w;
     assign m_axi_wvalid = wvalid_w;
     assign m_axi_bready = bready_w;

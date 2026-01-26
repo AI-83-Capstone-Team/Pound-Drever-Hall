@@ -95,12 +95,12 @@ def test_frame(byte_offset):
 if __name__ == "__main__":
     reset_fpga()
 #    while True:
-    set_dac(0.0, 0)
+    set_dac(0.7, 0)
     set_dac(0.0, 1)
     get_adc()
     set_led(67)
     check_signed(0)
-    set_rotation(0.0)
+    set_rotation(45.0)
     check_signed(6)
     get_frame()
     time.sleep(0.01)
