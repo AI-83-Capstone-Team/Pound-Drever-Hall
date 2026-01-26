@@ -16,7 +16,7 @@ sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 #define AXI_READ_OFFSET     0
 
 //#define HP0_BASE_ADDR 0x1F000000
-#define HP0_BASE_ADDR 0x00000000
+#define HP0_BASE_ADDR 0x10000000
 #define HP0_RANGE 0xC3500
 #define MAP_LEN 0x000C4000 //DMA region size rounded up to the nearest 4096-byte chunk, also seems to allocate 0x1000 past this as well (4096 byte padding)
 #define DMA_WRITE_OFFSET 0

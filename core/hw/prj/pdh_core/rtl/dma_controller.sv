@@ -30,7 +30,7 @@ module dma_controller
 );
 
     // localparam int unsigned HP0_BASE_ADDR = 32'h1F00_0000;
-    localparam int unsigned HP0_BASE_ADDR = 0; //32'h4300_0000;
+    localparam int unsigned HP0_BASE_ADDR = 32'h1000_0000; //32'h4300_0000;
     localparam int unsigned DMA_SIZE = 32'h000C3500;
     localparam int unsigned FINAL_WRITE_ADDR = HP0_BASE_ADDR + DMA_SIZE - 1;
     localparam int unsigned BYTES_PER_BEAT = 8; //each address points to a location in DDR holding this many bits
@@ -174,7 +174,7 @@ module dma_controller
     
     //outputs
     assign m_axi_awaddr = addr_r;
-    assign m_axi_wdata = data_r;
+    assign m_axi_wdata = {addr_r[31:0], data_r[31:0]};
     assign m_axi_awvalid = awvalid_w;
     assign m_axi_wvalid = wvalid_w;
     assign m_axi_bready = bready_w;

@@ -87,8 +87,8 @@ set_property -dict [list CONFIG.FREQ_HZ {125000000}] [get_bd_intf_ports S_AXI_HP
 connect_bd_intf_net [get_bd_intf_ports S_AXI_HP0_EXT] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
 
 assign_bd_address [get_bd_addr_segs {processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM }]
-set_property offset 0x00000000 [get_bd_addr_segs {S_AXI_HP0_EXT/SEG_processing_system7_0_HP0_DDR_LOWOCM}]
-set_property range 512M [get_bd_addr_segs {S_AXI_HP0_EXT/SEG_processing_system7_0_HP0_DDR_LOWOCM}]
+set_property range 1M [get_bd_addr_segs {S_AXI_HP0_EXT/SEG_processing_system7_0_HP0_DDR_LOWOCM}]
+set_property offset 0x10000000 [get_bd_addr_segs {S_AXI_HP0_EXT/SEG_processing_system7_0_HP0_DDR_LOWOCM}]
 
 
 
@@ -110,7 +110,6 @@ connect_bd_net [get_bd_ports fclk0_resetn] [get_bd_pins processing_system7_0/FCL
 # Using the AXI GPIO logic to route signals between RTL and the PS
 apply_bd_automation -rule xilinx.com:bd_rule:axi4 -config {Master "/processing_system7_0/M_AXI_GP0" Clk "Auto" }  [get_bd_intf_pins axi_gpio_0/S_AXI]
 
-#apply_bd_automation -rule xilinx.com:bd_rule:axi3 -config {Slave "/processing_system7_0/S_AXI_HP0" Clk "Auto" }  [get_bd_intf_pins S_AXI_HP0_EXT]
 
 # Tell PS this is where AXI bus mappings start in memory
 set_property offset 0x42000000 [get_bd_addr_segs {processing_system7_0/Data/SEG_axi_gpio_0_Reg}]
