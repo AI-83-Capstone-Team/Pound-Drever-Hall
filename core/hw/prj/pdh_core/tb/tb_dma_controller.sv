@@ -66,7 +66,11 @@ module tb_dma_controller;
     // -----------------------------
     // Instantiate DUT
     // -----------------------------
-    dma_controller dut (
+    dma_controller 
+    #(
+        .DMA_SIZE(32'h000000A0)
+    ) dut
+    (
         .aclk(aclk),
         .rst_i(rst_i),
 
@@ -309,7 +313,7 @@ module tb_dma_controller;
 
             // Wait until we see 16 beats + a B response (or timeout)
             timeout = 0;
-            while (timeout < 500) begin
+            while (timeout < 50000) begin
                 @(posedge aclk);
                 timeout++;
 

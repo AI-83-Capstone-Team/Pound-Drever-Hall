@@ -108,17 +108,7 @@ if __name__ == "__main__":
     check_signed(9)
     check_signed(8)
     check_signed(9)
-    test_frame(0x0000C34F8) #garbage until 0X80000 sharp idk why
+    test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
     test_frame(0x00000) #garbage until 0X80000 sharp idk why
 
-    get_frame()
-    #time.sleep(0.01)
-    check_signed(8)
-    check_signed(9)
-    check_signed(8)
-    check_signed(9)
-    test_frame(0x0000C34F8) #garbage until 0X80000 sharp idk why
-    test_frame(0x00070) #garbage until 0X80000 sharp idk why
-    
-    check_signed(6)
-    check_signed(7)
+

@@ -3,6 +3,10 @@
 
 
 module dma_controller
+#(
+    parameter int unsigned HP0_BASE_ADDR = 32'h1000_0000, //32'h4300_0000;
+    parameter int unsigned DMA_SIZE = 32'h00020000
+)
 (
     input   logic        aclk,
     input   logic        rst_i,
@@ -26,12 +30,11 @@ module dma_controller
     input   logic enable_i,
     input   logic [63:0] data_i, //TODO: FIFO on this
     output  logic finished_o,
-    output  logic dma_engaged_o
+    output  logic dma_engaged_o,
+
+    output  logic [31:0] bram_addr_o
 );
 
-    // localparam int unsigned HP0_BASE_ADDR = 32'h1F00_0000;
-    localparam int unsigned HP0_BASE_ADDR = 32'h1000_0000; //32'h4300_0000;
-    localparam int unsigned DMA_SIZE = 32'h000C3500;
     localparam int unsigned FINAL_WRITE_ADDR = HP0_BASE_ADDR + DMA_SIZE - 1;
     localparam int unsigned BYTES_PER_BEAT = 8; //each address points to a location in DDR holding this many bits
     localparam int unsigned ADDR_INC = 16*8; // beats/burst * bytes/beat
@@ -43,8 +46,6 @@ module dma_controller
     localparam logic [2:0] BEAT_SIZE = 3'd3;
     localparam logic [7:0] STROBE_FULL = 8'hFF;
 
-
-    
 
     logic enable_meta_w, enable_sync_r, enable_sync_edge_w;
     assign enable_meta_w = enable_i;
@@ -65,7 +66,7 @@ module dma_controller
         ST_SET_DATA_AWAIT_ACK = 3'b010,
         ST_AWAIT_RESP = 3'b011,
         ST_DONE = 3'b100
-    } state_t;
+    }   state_t;
     state_t state_r, next_state_w;
 
 
@@ -182,6 +183,8 @@ module dma_controller
 
     assign finished_o = finished_w;
     assign dma_engaged_o = dma_engaged_w;
+
+    assign bram_addr_o = ((addr_r - HP0_BASE_ADDR)>> 3) + {27'b0, beat_r};
 
     always_ff @(posedge aclk or posedge rst_i) begin
         if (rst_i) begin

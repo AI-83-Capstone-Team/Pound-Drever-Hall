@@ -201,32 +201,6 @@ module pdh_top
     logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w;
     logic [63:0] dma_data_w;
 
-    // -----------------------------
-    // DMA controller (minimal interface)
-    // -----------------------------
-    dma_controller u_dma (
-        .aclk(fclk0),
-        .rst_i(core_rst),
-        .m_axi_awaddr(m_axi_awaddr),
-        .m_axi_awvalid(m_axi_awvalid),
-        .m_axi_awready(m_axi_awready),
-        .m_axi_awlen(m_axi_awlen),
-        .m_axi_awsize(m_axi_awsize),
-        .m_axi_awburst(m_axi_awburst),
-        .m_axi_wdata(m_axi_wdata),
-        .m_axi_wvalid(m_axi_wvalid),
-        .m_axi_wready(m_axi_wready),
-        .m_axi_bvalid(m_axi_bvalid),
-        .m_axi_bready(m_axi_bready),
-        .m_axi_bresp(m_axi_bresp),
-        .m_axi_wstrb(m_axi_wstrb),
-        .m_axi_wlast(m_axi_wlast),
-        
-        .enable_i(dma_enable_w),
-        .data_i(dma_data_w),
-        .finished_o(dma_finished_w),
-        .dma_engaged_o(dma_engaged_w)
-    );
 
     pdh_core #(
         .ADC_DATA_WIDTH(14),
@@ -251,6 +225,57 @@ module pdh_top
         .dma_data_o(dma_data_w),
         .dma_finished_i(dma_finished_w),
         .dma_engaged_i(dma_engaged_w)
+    );
+
+
+    
+    //(* ram_style = "block" *) reg[63:0] mem[0:1];
+    //logic [63:0] dma_dout;
+    //always @(posedge pdh_clk) begin
+    //    mem[0] <= dma_data_w;
+    //    dma_dout <= mem[0];
+    //end
+
+    logic [31:0] bram_addr_w;
+    logic [63:0] bram_out_w;
+    logic dma_controller_enable_w, dma_controller_finished_w;
+    bram_controller u_bram(
+        .pdh_clk(pdh_clk),
+        .axi_clk(fclk0),
+        .rst_i(core_rst),
+        .addr_i(bram_addr_w),
+        .din(dma_data_w),
+        .dout(bram_out_w),
+        .enable_i(dma_enable_w),
+        .dma_enable(dma_controller_enable_w),
+        .dma_termination_sig(dma_controller_finished_w),
+        .transaction_complete(dma_finished_w)
+    );
+
+
+    dma_controller u_dma (
+        .aclk(fclk0),
+        .rst_i(core_rst),
+        .m_axi_awaddr(m_axi_awaddr),
+        .m_axi_awvalid(m_axi_awvalid),
+        .m_axi_awready(m_axi_awready),
+        .m_axi_awlen(m_axi_awlen),
+        .m_axi_awsize(m_axi_awsize),
+        .m_axi_awburst(m_axi_awburst),
+        .m_axi_wdata(m_axi_wdata),
+        .m_axi_wvalid(m_axi_wvalid),
+        .m_axi_wready(m_axi_wready),
+        .m_axi_bvalid(m_axi_bvalid),
+        .m_axi_bready(m_axi_bready),
+        .m_axi_bresp(m_axi_bresp),
+        .m_axi_wstrb(m_axi_wstrb),
+        .m_axi_wlast(m_axi_wlast),
+        
+        .enable_i(dma_controller_enable_w),
+        .data_i(bram_out_w),
+        .finished_o(dma_controller_finished_w),
+        .dma_engaged_o(dma_engaged_w),
+        .bram_addr_o(bram_addr_w)
     );
 
 endmodule
