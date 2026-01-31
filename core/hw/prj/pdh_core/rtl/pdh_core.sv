@@ -49,9 +49,9 @@ module pdh_core #
 /////////////////////////////////////////////////////////
 
 
-    logic rst_i, strobe_meta_w, strobe_sync_r, strobe_edge_w;
+    logic rst_i, rst_r, strobe_meta_w, strobe_sync_r, strobe_pipe1_r, strobe_edge_w;
     assign rst_i = axi_from_ps_i[31];
-    assign rst_o = rst_i;
+    assign rst_o = rst_r;
     
     typedef enum logic [CMD_BITS-1:0] 
     {
@@ -268,16 +268,16 @@ module pdh_core #
             end
 
             default: begin
-                next_led_w = led_r;
-                next_sin_theta_w = sin_theta_r;
-                next_cos_theta_w = cos_theta_r;
-                next_rot_sin_theta_w = rot_sin_theta_r;
-                next_rot_cos_theta_w = rot_cos_theta_r;
+                next_led_w = 8'd0;
+                next_sin_theta_w = 16'd0;
+                next_cos_theta_w = 16'sh7FFF;
+                next_rot_sin_theta_w = 16'd0;
+                next_rot_cos_theta_w = 16'sh7FFF;
                 next_callback_w = 32'b0;
-                next_decimation_code_w = decimation_code_r;
+                next_decimation_code_w = 26'd1;
                 next_dac_wrt_w = 1'b0;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
+                next_dac_sel_w = 1'b0;
+                next_dac_dat_w = 14'h2000;
             end
         endcase
     end
@@ -299,7 +299,7 @@ module pdh_core #
 
     assign led_o = led_r; 
     
-    assign dac_rst_o = rst_i; //TODO: rst_r async set sync release
+    assign dac_rst_o = 1'b0; //rst_i; //TODO: rst_r async set sync release
 
     assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
     assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
@@ -308,8 +308,8 @@ module pdh_core #
     
 
     always_ff @(posedge clk or posedge rst_i) begin
-        if(rst_i)begin
-            strobe_sync_r <= 0;
+        if(rst_i || rst_r)begin
+            {strobe_sync_r, strobe_pipe1_r} <= {1'b0, 1'b0};
             axi_from_ps_r <= 0;
             led_r <= 0;
             sin_theta_r <= 0; 
@@ -322,7 +322,7 @@ module pdh_core #
             dac_sel_r <= 1'b0;
             dac_dat_r <= 14'h2000;
         end else begin
-            strobe_sync_r <= strobe_meta_w;
+            {strobe_sync_r, strobe_pipe1_r} <= {strobe_pipe1_r, strobe_meta_w};
             axi_from_ps_r <= next_axi_from_ps_w;
             led_r <= next_led_w;
             sin_theta_r <= next_sin_theta_w; 
@@ -334,6 +334,8 @@ module pdh_core #
             dac_sel_r <= next_dac_sel_w;
             dac_dat_r <= next_dac_dat_w;
         end
+
+        rst_r <= rst_i;
     end
 
     assign dac_wrt_o = dac_wrt_r;
