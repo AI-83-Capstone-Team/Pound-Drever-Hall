@@ -200,6 +200,7 @@ module pdh_top
 
     logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w;
     logic [63:0] dma_data_w;
+    logic [25:0] decimation_code_w;
 
 
     pdh_core #(
@@ -224,18 +225,13 @@ module pdh_top
         .dma_enable_o(dma_enable_w),
         .dma_data_o(dma_data_w),
         .dma_finished_i(dma_finished_w),
-        .dma_engaged_i(dma_engaged_w)
+        .dma_engaged_i(dma_engaged_w),
+
+        .decimation_code_o(decimation_code_w)
     );
 
 
     
-    //(* ram_style = "block" *) reg[63:0] mem[0:1];
-    //logic [63:0] dma_dout;
-    //always @(posedge pdh_clk) begin
-    //    mem[0] <= dma_data_w;
-    //    dma_dout <= mem[0];
-    //end
-
     logic [31:0] bram_addr_w;
     logic [63:0] bram_out_w;
     logic dma_controller_enable_w, dma_controller_finished_w;
@@ -249,7 +245,8 @@ module pdh_top
         .enable_i(dma_enable_w),
         .dma_enable(dma_controller_enable_w),
         .dma_termination_sig(dma_controller_finished_w),
-        .transaction_complete(dma_finished_w)
+        .transaction_complete(dma_finished_w),
+        .decimation_code_i(decimation_code_w)
     );
 
 

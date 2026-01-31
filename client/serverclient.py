@@ -74,10 +74,11 @@ def set_rotation(theta_deg: float):
     ]
     execute_cmd_seq(cmds)
 
-def get_frame():
+def get_frame(decimation):
     cmds = [
     (
         "CMD:get_frame\n"
+        f"U:{decimation}\n"
     )
     ]
     execute_cmd_seq(cmds)
@@ -95,20 +96,23 @@ def test_frame(byte_offset):
 if __name__ == "__main__":
     reset_fpga()
 #    while True:
-    set_dac(0.7, 0)
-    set_dac(0.0, 1)
+    set_dac(1.0, 0)
+    set_dac(-0.5, 1)
     get_adc()
     set_led(67)
-    check_signed(0)
-    set_rotation(45.0)
-    check_signed(6)
-    get_frame()
-    time.sleep(0.01)
+    #check_signed(0)
+    ##set_rotation(45.0)
+    #check_signed(6)
+    get_frame(10000)
+    #time.sleep(0.01)
     check_signed(8)
     check_signed(9)
-    check_signed(8)
-    check_signed(9)
-    test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
+    #check_signed(8)
+    #check_signed(9)
     test_frame(0x00000) #garbage until 0X80000 sharp idk why
-
-
+    test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
+    test_frame(0x0000020000) #garbage until 0X80000 sharp idk why
+    #get_adc()
+    #set_dac(1.0, 0) <- these two lines cause both feeds to zero, may be a dac_sel_o timing issue
+    #set_dac(0.0, 1)
+    #get_adc()

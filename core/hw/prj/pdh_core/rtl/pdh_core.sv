@@ -24,6 +24,8 @@ module pdh_core #
     output logic [7:0] led_o,
     output logic rst_o,
 
+    output logic [25:0] decimation_code_o,
+
     output logic dma_enable_o,
     output logic [63:0] dma_data_o,
     input  logic dma_finished_i,
@@ -32,7 +34,6 @@ module pdh_core #
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
     localparam int unsigned CMD_BITS = 4;
-    localparam int unsigned DATA_BITS = 26;
 
     localparam int unsigned CMD_END = 29;
     localparam int unsigned CMD_START = 26;
@@ -81,7 +82,7 @@ module pdh_core #
 
     assign cmd_w = axi_from_ps_r[CMD_END:CMD_START];
 
-    logic [DATA_BITS-1:0] data_w;
+    logic [25:0] data_w;
     assign data_w = axi_from_ps_r[DATA_END:DATA_START];
 
     logic [7:0] led_r, next_led_w;
@@ -149,10 +150,11 @@ module pdh_core #
         endcase
     end
 
+    logic [25:0] decimation_code_r, next_decimation_code_w;
 
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_w[15:2], i_feed_w[15:2]};
-    assign get_frame_cb_w = {CMD_GET_FRAME, 27'd0, dma_engaged_r};
+    assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, decimation_code_r, dma_engaged_r};
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;
@@ -167,6 +169,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = idle_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_SET_LED: begin
@@ -177,6 +180,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = led_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
             
             CMD_SET_DAC: begin
@@ -187,6 +191,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = dac_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_GET_ADC: begin
@@ -197,6 +202,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = adc_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_CHECK_SIGNED: begin
@@ -207,6 +213,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = cs_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_SET_ROT_COEFFS: begin
@@ -217,6 +224,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_rot_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_COMMIT_ROT_COEFFS: begin 
@@ -227,6 +235,7 @@ module pdh_core #
                 next_rot_sin_theta_w = sin_theta_r;
                 next_rot_cos_theta_w = cos_theta_r;
                 next_callback_w = commit_rot_cb_w;
+                next_decimation_code_w = decimation_code_r;
             end
 
             CMD_GET_FRAME: begin
@@ -237,6 +246,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = get_frame_cb_w;
+                next_decimation_code_w = data_w[25:0];
             end
 
             default: begin
@@ -247,6 +257,7 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = 32'b0;
+                next_decimation_code_w = decimation_code_r;
             end
         endcase
     end
@@ -273,10 +284,10 @@ module pdh_core #
     assign dac_sel_o = data_w[14];
     assign dac_rst_o = rst_i;
 
-
     assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
     assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
 
+    assign decimation_code_o = decimation_code_r;
 
     always_ff @(posedge clk or posedge rst_i) begin
         if(rst_i)begin
@@ -289,6 +300,7 @@ module pdh_core #
             rot_sin_theta_r <= 0;
             rot_cos_theta_r <= 16'sh7FFF;
             callback_r <= 0;
+            decimation_code_r <= 26'd1;
         end else begin
             strobe_sync_r <= strobe_meta_w;
             axi_from_ps_r <= next_axi_from_ps_w;

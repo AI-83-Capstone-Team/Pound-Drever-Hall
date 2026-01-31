@@ -10,6 +10,7 @@
 #define LOCK_POINT_FLAG "lock_point"
 #define DERIVED_SLOPE_FLAG "derived_slope"
 
+
 int cmd_reset_fpga(cmd_ctx_t* ctx)
 {
 	DEBUG_INFO("Loading command context for: %s...\n", __func__);
@@ -34,6 +35,7 @@ int cmd_reset_fpga(cmd_ctx_t* ctx)
 
     return PDH_OK;
 }
+
 
 int cmd_set_led(cmd_ctx_t* ctx)
 {
@@ -142,7 +144,6 @@ int cmd_check_signed(cmd_ctx_t* ctx)
 }
 
 
-
 int cmd_set_dac(cmd_ctx_t* ctx)
 {
     float val = ctx->float_args[0];
@@ -190,7 +191,6 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     ctx->output.num_outputs = 3;
     return PDH_OK;
 }
-
 
 
 static inline int16_t float_to_q15(float x)
@@ -284,16 +284,18 @@ int cmd_set_rotation(cmd_ctx_t* ctx)
 }
 
 
-
-
 int cmd_get_frame(cmd_ctx_t* ctx)
 {
 
 	DEBUG_INFO("Executing command: %s...\n", __func__);
 
+    uint32_t decimation_code = ctx->uint_args[0];
+    if(decimation_code < 1) decimation_code = 1; //TODO: Proper error code handling
+
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
+    cmd.get_frame_cmd.decimation = decimation_code;
     pdh_send_cmd(cmd);
     cmd.get_frame_cmd.strobe = 1;
     pdh_send_cmd(cmd);
@@ -306,17 +308,44 @@ int cmd_get_frame(cmd_ctx_t* ctx)
     ctx->output.output_items[0].tag = UINT_TAG;
     strcpy(ctx->output.output_items[0].name, "DMA_ENGAGED");
 
-    ctx->output.output_items[1].data.u = cb.get_frame_cb.cmd;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "cmd_sig");
+    ctx->output.output_items[1].data.u = cb.get_frame_cb.decimation;
+    ctx->output.output_items[0].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[0].name, "DECIMATION_CODE_REGISTERED");
+
+    ctx->output.output_items[2].data.u = cb.get_frame_cb.cmd;
+    ctx->output.output_items[2].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[2].name, "cmd_sig");
 
     return PDH_OK;
 }
 
 
+int cmd_test_frame(cmd_ctx_t* ctx)
+{
+    uint32_t byte_offset = ctx->uint_args[0];
+    
+    dma_frame_t frame;
+    frame.raw = dma_get_frame(byte_offset);
 
+    ctx->output.output_items[0].data.i = (int16_t)frame.data.sin_theta_r;
+    ctx->output.output_items[0].tag = INT_TAG;
+    strcpy(ctx->output.output_items[0].name, "sin_theta_r");
+    
+    ctx->output.output_items[1].data.i = (int16_t)frame.data.cos_theta_r;
+    ctx->output.output_items[1].tag = INT_TAG;
+    strcpy(ctx->output.output_items[1].name, "cos_theta_r");
 
+    ctx->output.output_items[2].data.i = (int16_t)frame.data.q_feed_w;
+    ctx->output.output_items[2].tag = INT_TAG;
+    strcpy(ctx->output.output_items[2].name, "q_feed_w");
+    
+    ctx->output.output_items[3].data.i = (int16_t)frame.data.i_feed_w;
+    ctx->output.output_items[3].tag = INT_TAG;
+    strcpy(ctx->output.output_items[3].name, "i_feed_w");
 
+    ctx->output.num_outputs = 4;
+    return PDH_OK;
+}
 
 
 static int validate_params(const lock_in_ctx_t *ctx)
@@ -338,42 +367,6 @@ static int validate_params(const lock_in_ctx_t *ctx)
 
 	return DAC_OK;
 }
-
-
-int cmd_lock_in(cmd_ctx_t* ctx)
-{
-	DEBUG_INFO("Loading command context...\n");
-	lock_in_ctx_t lock_ctx = {
-		false,
-		(uint32_t)ctx->uint_args[0], 	//chin
-		(uint32_t)ctx->uint_args[1],	//chout
-		ctx->float_args[0],	//dac_end
-		ctx->float_args[1], //dac_start
-		ctx->float_args[2],	//dac_step
-		0.0,				//lock_point
-		0.0					//derived_slope
-	};
-
-	DEBUG_INFO("Start lock_in...\n");
-
-	int return_code = lock_in(&lock_ctx);
-	ctx->output.output_items[0].data.i = return_code;
-	ctx->output.output_items[0].tag = INT_TAG;
-	strcpy(ctx->output.output_items[0].name, RETURN_STATUS_FLAG);
-
-	ctx->output.output_items[1].data.f = lock_ctx.lock_point;
-	ctx->output.output_items[1].tag = FLOAT_TAG;
-	strcpy(ctx->output.output_items[1].name, LOCK_POINT_FLAG);
-
-	ctx->output.output_items[2].data.f = lock_ctx.derived_slope;
-	ctx->output.output_items[2].tag = FLOAT_TAG;
-	strcpy(ctx->output.output_items[2].name, DERIVED_SLOPE_FLAG);
-
-	ctx->output.num_outputs = 3;
-	ctx->sweep_count = lock_ctx.num_readings;
-	return return_code;
-}
-
 
 int lock_in(lock_in_ctx_t* ctx)
 {
@@ -468,33 +461,42 @@ int lock_in(lock_in_ctx_t* ctx)
 	return LOCKED_IN;
 }
 
-
-int cmd_test_frame(cmd_ctx_t* ctx)
+int cmd_lock_in(cmd_ctx_t* ctx)
 {
-    uint32_t byte_offset = ctx->uint_args[0];
-    
-    dma_frame_t frame;
-    frame.raw = dma_get_frame(byte_offset);
+	DEBUG_INFO("Loading command context...\n");
+	lock_in_ctx_t lock_ctx = {
+		false,
+		(uint32_t)ctx->uint_args[0], 	//chin
+		(uint32_t)ctx->uint_args[1],	//chout
+		ctx->float_args[0],	//dac_end
+		ctx->float_args[1], //dac_start
+		ctx->float_args[2],	//dac_step
+		0.0,				//lock_point
+		0.0					//derived_slope
+	};
 
-    ctx->output.output_items[0].data.i = (int16_t)frame.data.sin_theta_r;
-    ctx->output.output_items[0].tag = INT_TAG;
-    strcpy(ctx->output.output_items[0].name, "sin_theta_r");
-    
-    ctx->output.output_items[1].data.i = (int16_t)frame.data.cos_theta_r;
-    ctx->output.output_items[1].tag = INT_TAG;
-    strcpy(ctx->output.output_items[1].name, "cos_theta_r");
+	DEBUG_INFO("Start lock_in...\n");
 
-    ctx->output.output_items[2].data.i = (int16_t)frame.data.q_feed_w;
-    ctx->output.output_items[2].tag = INT_TAG;
-    strcpy(ctx->output.output_items[2].name, "q_feed_w");
-    
-    ctx->output.output_items[3].data.i = (int16_t)frame.data.i_feed_w;
-    ctx->output.output_items[3].tag = INT_TAG;
-    strcpy(ctx->output.output_items[3].name, "i_feed_w");
+	int return_code = lock_in(&lock_ctx);
+	ctx->output.output_items[0].data.i = return_code;
+	ctx->output.output_items[0].tag = INT_TAG;
+	strcpy(ctx->output.output_items[0].name, RETURN_STATUS_FLAG);
 
-    ctx->output.num_outputs = 4;
-    return PDH_OK;
+	ctx->output.output_items[1].data.f = lock_ctx.lock_point;
+	ctx->output.output_items[1].tag = FLOAT_TAG;
+	strcpy(ctx->output.output_items[1].name, LOCK_POINT_FLAG);
+
+	ctx->output.output_items[2].data.f = lock_ctx.derived_slope;
+	ctx->output.output_items[2].tag = FLOAT_TAG;
+	strcpy(ctx->output.output_items[2].name, DERIVED_SLOPE_FLAG);
+
+	ctx->output.num_outputs = 3;
+	ctx->sweep_count = lock_ctx.num_readings;
+	return return_code;
 }
+
+
+
 
 
 

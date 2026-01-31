@@ -152,7 +152,7 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t _padding   : 26; //TODO: Add a payload here so user can select what things to capture
+        uint32_t decimation : 26;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
         uint32_t _padding2  : 1;
@@ -215,7 +215,8 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
         uint32_t dma_engaged    : 1;
-        uint32_t padding        : 27;
+        uint32_t decimation     : 26;
+        uint32_t _padding       : 1;
         uint32_t cmd            : 4;
     }   get_frame_cb;
 
