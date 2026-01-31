@@ -318,9 +318,7 @@ module pdh_core #
             rot_cos_theta_r <= 16'sh7FFF;
             callback_r <= 0;
             decimation_code_r <= 26'd1;
-            dac_wrt_r <= 1'b0;
-            dac_sel_r <= 1'b0;
-            dac_dat_r <= 14'h2000;
+
         end else begin
             {strobe_sync_r, strobe_pipe1_r} <= {strobe_pipe1_r, strobe_meta_w};
             axi_from_ps_r <= next_axi_from_ps_w;
@@ -330,12 +328,16 @@ module pdh_core #
             rot_sin_theta_r <= next_rot_sin_theta_w;
             rot_cos_theta_r <= next_rot_cos_theta_w;
             callback_r <= next_callback_w;
-            dac_wrt_r <= next_dac_wrt_w;
-            dac_sel_r <= next_dac_sel_w;
-            dac_dat_r <= next_dac_dat_w;
+
         end
 
         rst_r <= rst_i;
+    end
+
+    always_ff @(negedge clk) begin
+        dac_wrt_r <= next_dac_wrt_w;
+        dac_sel_r <= next_dac_sel_w;
+        dac_dat_r <= next_dac_dat_w;
     end
 
     assign dac_wrt_o = dac_wrt_r;
