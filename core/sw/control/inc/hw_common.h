@@ -174,8 +174,9 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
 
-        uint32_t dac_0_code     : 14;
-        uint32_t dac_1_code     : 14;
+        uint32_t dac_code       : 14;
+        uint32_t dac_sel        : 1;
+        uint32_t padding        : 13;
         uint32_t cmd            : 4; //Bits 31:28
     }   dac_callback;
 

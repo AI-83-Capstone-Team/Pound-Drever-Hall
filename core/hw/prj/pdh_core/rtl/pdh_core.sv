@@ -87,7 +87,6 @@ module pdh_core #
 
     logic [7:0] led_r, next_led_w;
     
-    logic [27:0] dac_tdata_r, next_dac_tdata_w;
 
 
     logic signed [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w;
@@ -118,7 +117,7 @@ module pdh_core #
     logic [AXI_GPIO_OUT_WIDTH-1:0] idle_cb_w, led_cb_w, dac_cb_w, adc_cb_w, cs_cb_w, set_rot_cb_w, commit_rot_cb_w, get_frame_cb_w;
     assign idle_cb_w    = 32'b0;
     assign led_cb_w     = {CMD_SET_LED, 20'd0, led_r};
-    assign dac_cb_w     = {CMD_SET_DAC, dac_tdata_r[27:14], dac_tdata_r[13:0]};
+    assign dac_cb_w     = {CMD_SET_DAC, 13'b0, dac_sel_r, dac_dat_r};
     assign adc_cb_w     = {CMD_GET_ADC, adc_dat_b_i, adc_dat_a_i};
 
     logic [15:0] base_bus;
@@ -159,105 +158,126 @@ module pdh_core #
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;
 
+    logic [13:0] dac_dat_r, next_dac_dat_w;
+    logic dac_sel_r, next_dac_sel_w, dac_wrt_r, next_dac_wrt_w;
+
     always_comb begin
         unique case(cmd_w)
             CMD_IDLE: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = idle_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             CMD_SET_LED: begin
                 next_led_w = data_w[7:0];
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = led_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
             
             CMD_SET_DAC: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = data_w[14]? {data_w[13:0], dac_tdata_r[13:0]} : {dac_tdata_r[27:14], data_w[13:0]};
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = dac_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b1;
+                next_dac_sel_w = data_w[14];
+                next_dac_dat_w = data_w[13:0];
             end
 
             CMD_GET_ADC: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = adc_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             CMD_CHECK_SIGNED: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = cs_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             CMD_SET_ROT_COEFFS: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = data_w[16]? data_w[15:0] : sin_theta_r;
                 next_cos_theta_w = ~data_w[16]? data_w[15:0] : cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_rot_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             CMD_COMMIT_ROT_COEFFS: begin 
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = sin_theta_r;
                 next_rot_cos_theta_w = cos_theta_r;
                 next_callback_w = commit_rot_cb_w;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             CMD_GET_FRAME: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = get_frame_cb_w;
                 next_decimation_code_w = data_w[25:0];
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
 
             default: begin
                 next_led_w = led_r;
-                next_dac_tdata_w = dac_tdata_r;
                 next_sin_theta_w = sin_theta_r;
                 next_cos_theta_w = cos_theta_r;
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = 32'b0;
                 next_decimation_code_w = decimation_code_r;
+                next_dac_wrt_w = 1'b0;
+                next_dac_sel_w = dac_sel_r;
+                next_dac_dat_w = dac_dat_r;
             end
         endcase
     end
@@ -278,40 +298,46 @@ module pdh_core #
 ////////////////////////////////////////////////////////
 
     assign led_o = led_r; 
-
-    assign dac_dat_o = data_w[13:0];
-    assign dac_wrt_o = strobe_edge_w & (cmd_w == CMD_SET_DAC); //pin at 1 for now
-    assign dac_sel_o = data_w[14];
-    assign dac_rst_o = rst_i;
+    
+    assign dac_rst_o = rst_i; //TODO: rst_r async set sync release
 
     assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
     assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
 
     assign decimation_code_o = decimation_code_r;
+    
 
     always_ff @(posedge clk or posedge rst_i) begin
         if(rst_i)begin
             strobe_sync_r <= 0;
             axi_from_ps_r <= 0;
             led_r <= 0;
-            dac_tdata_r <= {2'b00, 14'h2000, 2'b00, 14'h2000}; //0x2000 -> ~0V
             sin_theta_r <= 0; 
             cos_theta_r <= 16'sh7FFF;
             rot_sin_theta_r <= 0;
             rot_cos_theta_r <= 16'sh7FFF;
             callback_r <= 0;
             decimation_code_r <= 26'd1;
+            dac_wrt_r <= 1'b0;
+            dac_sel_r <= 1'b0;
+            dac_dat_r <= 14'h2000;
         end else begin
             strobe_sync_r <= strobe_meta_w;
             axi_from_ps_r <= next_axi_from_ps_w;
             led_r <= next_led_w;
-            dac_tdata_r <= next_dac_tdata_w;
             sin_theta_r <= next_sin_theta_w; 
             cos_theta_r <= next_cos_theta_w;
             rot_sin_theta_r <= next_rot_sin_theta_w;
             rot_cos_theta_r <= next_rot_cos_theta_w;
             callback_r <= next_callback_w;
+            dac_wrt_r <= next_dac_wrt_w;
+            dac_sel_r <= next_dac_sel_w;
+            dac_dat_r <= next_dac_dat_w;
         end
     end
+
+    assign dac_wrt_o = dac_wrt_r;
+    assign dac_sel_o = dac_sel_r;
+    assign dac_dat_o = dac_dat_r;
 
 endmodule

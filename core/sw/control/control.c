@@ -176,13 +176,13 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = callback.dac_callback.dac_0_code;
+    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_callback.dac_code;
     ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "OUT1");
+    strcpy(ctx->output.output_items[0].name, "DAC_CODE");
 
-    ctx->output.output_items[1].data.u = callback.dac_callback.dac_1_code;
+    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_callback.dac_sel;
     ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "OUT2");
+    strcpy(ctx->output.output_items[1].name, "DAC_SELECT");
 
     ctx->output.output_items[2].data.u = callback.dac_callback.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;

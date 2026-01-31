@@ -94,10 +94,12 @@ def test_frame(byte_offset):
     execute_cmd_seq(cmds)
 
 if __name__ == "__main__":
-    reset_fpga()
-#    while True:
-    set_dac(1.0, 0)
-    set_dac(-0.5, 1)
+    #reset_fpga()
+    #while True:
+    set_dac(0.6, 0)
+    time.sleep(0.1)
+    set_dac(-0.2, 1)
+    time.sleep(0.1)
     get_adc()
     set_led(67)
     #check_signed(0)
@@ -111,8 +113,13 @@ if __name__ == "__main__":
     #check_signed(9)
     test_frame(0x00000) #garbage until 0X80000 sharp idk why
     test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
-    test_frame(0x0000020000) #garbage until 0X80000 sharp idk why
+    #test_frame(0x0000020000) #garbage until 0X80000 sharp idk why
     #get_adc()
-    #set_dac(1.0, 0) <- these two lines cause both feeds to zero, may be a dac_sel_o timing issue
-    #set_dac(0.0, 1)
-    #get_adc()
+    #set_dac(1.0, 0)
+    #set_dac(-0.5, 1)
+    time.sleep(0.1)
+    get_adc()
+    set_dac(-0.357, 0)
+    get_adc()
+    set_dac(0.9, 1)
+    get_adc()
