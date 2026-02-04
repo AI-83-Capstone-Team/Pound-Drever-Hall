@@ -221,12 +221,10 @@ module pdh_top
         .adc_dat_b_i(adc_dat_b_i),
         .adc_csn_o(adc_csn_o),
         .rst_o(core_rst),
-
         .dma_enable_o(dma_enable_w),
         .dma_data_o(dma_data_w),
         .dma_finished_i(dma_finished_w),
         .dma_engaged_i(dma_engaged_w),
-
         .decimation_code_o(decimation_code_w)
     );
 
@@ -267,7 +265,6 @@ module pdh_top
         .m_axi_bresp(m_axi_bresp),
         .m_axi_wstrb(m_axi_wstrb),
         .m_axi_wlast(m_axi_wlast),
-        
         .enable_i(dma_controller_enable_w),
         .data_i(bram_out_w),
         .finished_o(dma_controller_finished_w),
