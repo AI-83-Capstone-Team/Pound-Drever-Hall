@@ -17,29 +17,20 @@ module pid_core
 
     input logic [DEC_W-1:0] decimate_i,
 
-    input logic strobe_i,
     input logic enable_i,
 
     output logic [13:0] pid_out
 );
-    logic strobe_edge_w;
-    posedge_detector strobe_pd
-    (
-        .clk(clk),
-        .rst(rst),
-        .D(strobe_i),
-        .Q(strobe_edge_w)
-    );
 
 
     logic signed [S16_W-1:0] kp_r, kd_r, ki_r, sp_r;
     logic [3:0]  alpha_r;
     logic [DEC_W-1:0] decimate_r;
     logic [DEC_W-1:0] cnt_r, next_cnt_w;
-    logic tick1_w, tick2_r;
+    logic tick1_w, tick1_r, tick2_r;
     always_comb begin
-        next_cnt_w = (cnt_r == (decimate_r-1))? 0 : cnt_r + 1;
-        tick1_w = enable_r && (cnt_r == 0);
+        next_cnt_w = (cnt_r >= (decimate_r-1))? 0 : cnt_r + 1;
+        tick1_w = enable_i && (cnt_r == 0);
     end
 
     localparam int unsigned W1S = S32_W;
@@ -83,8 +74,8 @@ module pid_core
     always_comb begin
         error_w = dat_i - sp_r; //We dont worry about the overflow here because our core data feed is nominally a 14-bit signed int extended into s16 so there should be enough room at 16 bits as-is
         sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_w[S16_W-1]}},error_w});
-        sum_error_w = tick1_w? sat_signed_from_signed(sum_error_wide_w) : sum_error_r; //Want to include last piped error in sum
-        yk_w = tick1_w? (((error_w - yk_r)>>>alpha_r) + yk_r) : yk_r; 
+        sum_error_w = tick1_r? sat_signed_from_signed(sum_error_wide_w) : sum_error_r; //Want to include last piped error in sum
+        yk_w = tick1_r? (((error_w - yk_r)>>>alpha_r) + yk_r) : yk_r; 
 
         p_error_w = tick2_r? kp_r * error_pipe1_r : p_error_r;
         d_error_w = tick2_r? kd_r * (error_w - yk_r) : d_error_r;
@@ -99,45 +90,40 @@ module pid_core
     
 
     //assume rst, enable are synchronous with feeder block (pdh_core)
-    logic enable_r;
     always_ff @(posedge clk or posedge rst) begin
         if(rst) begin
             {kp_r, kd_r, ki_r, sp_r} <= '0; 
             alpha_r <= '0;
-            decimate_r <= '1;
+            decimate_r <= {{(DEC_W-1){1'b0}}, 1'b1};
+
             sum_error_r <= '0;
             error_pipe1_r <= '0;
             yk_r <= '0;
             {p_error_r, d_error_r, i_error_r} <= '0;
-            enable_r <= '0;
             cnt_r <= '0;
-            tick2_r <= '0;
-        end else if(enable_r) begin
+            {tick2_r, tick1_r} <= {1'b0, 1'b0};
+        end else if(enable_i) begin
+            {kp_r, kd_r, ki_r, sp_r} <= {kp_i, kd_i, ki_i, sp_i};
+            alpha_r <= alpha_i;
+            decimate_r <= (decimate_i < 1)? 1 : decimate_i;
+
             sum_error_r <= sum_error_w;
             error_pipe1_r <= error_w;
             yk_r <= yk_w;
             {p_error_r, d_error_r, i_error_r} <= {p_error_w, d_error_w, i_error_w};
             cnt_r <= next_cnt_w;
-            tick2_r <= tick1_w;
+            {tick2_r, tick1_r} <= {tick1_r, tick1_w};
         end else begin
+            {kp_r, kd_r, ki_r, sp_r} <= {kp_r, kd_r, ki_r, sp_r};
+            alpha_r <= alpha_r;
+            decimate_r <= decimate_r;
+
             sum_error_r <= '0;
             error_pipe1_r <= '0;
             yk_r <= '0;
             {p_error_r, d_error_r, i_error_r} <= '0;
             cnt_r <= '0;
-            tick2_r <= '0;
-        end
-
-        if(strobe_edge_w) begin
-            enable_r <= enable_i;
-            {kp_r, kd_r, ki_r, sp_r} <= {kp_i, kd_i, ki_i, sp_i};
-            alpha_r <= alpha_i;
-            decimate_r <= (decimate_i < 1)? 1 : decimate_i;
-        end else begin
-            enable_r <= enable_r;
-            {kp_r, kd_r, ki_r, sp_r} <= {kp_r, kd_r, ki_r, sp_r};
-            alpha_r <= alpha_r;
-            decimate_r <= decimate_r;
+            {tick2_r, tick1_r} <= {1'b0, 1'b0};
         end
     end
 

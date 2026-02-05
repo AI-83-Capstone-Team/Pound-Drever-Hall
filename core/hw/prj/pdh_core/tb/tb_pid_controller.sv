@@ -22,7 +22,6 @@ module tb_pid_controller;
     pid_core u_pid (
         .clk(clk),
         .rst(rst),
-        .strobe_i(strobe_i),
         .enable_i(enable_i),
         .kp_i(kp_i),
         .kd_i(kd_i),
@@ -50,23 +49,18 @@ module tb_pid_controller;
         alpha_i = 4'd2;
         enable_i = 1'b1;
         #4
-        strobe_i = 1'b1;
         decimate_i = 14'd2; 
 
         #400;
         sp_i = 16'sd10;
-        strobe_i = 1'b0;
         #4;
-        strobe_i = 1'b1;
 
         #400;
         dat_i = {{3{1'b1}}, {13{1'b0}}};
         #400;
 
         sp_i = -16'sd10;
-        strobe_i = 1'b0;
         #10;
-        strobe_i = 1'b1;
         #400;
         
         $finish;
