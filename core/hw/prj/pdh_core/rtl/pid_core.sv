@@ -83,7 +83,7 @@ module pid_core
         
         sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_w[S16_W-1]}}, error_w});
         sum_error1_w = apply_satwidth_truncation(.in(sum_error_wide_w), .threshold(sat_threshold_w));
-        sum_error2_w = (tick1_r && (pid_out != '1) && (pid_out != '0))? sum_error1_w : sum_error_r; //Want to include last piped error in sum
+        sum_error2_w = (tick1_r && !(pid_out == {14{1'b1}} && sum_error1_w > sum_error_r) && !(pid_out == 14'd0 && sum_error1_w < sum_error_r))? sum_error1_w : sum_error_r; //Want to include last piped error in sum
 
         //EMA: y[k] = ax[k] + (1-a)y[k-1] where a = 2^(-alpha)
         yk_w = tick1_r? (((error_w - yk_r)>>>alpha_r) + yk_r) : yk_r; 

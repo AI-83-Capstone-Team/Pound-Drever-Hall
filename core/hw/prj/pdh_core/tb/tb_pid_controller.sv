@@ -67,23 +67,22 @@ module tb_pid_controller;
         satwidth_i = 5'd15;
         #1000;
         dat_i = 16'sd8192;
-        #2000;
+        #1000;
         
         rst= 1'b1;
         enable_i = 1'b0;
+        kp_i = {3'b0, {13{1'b1}}};
+        kd_i = {4'b0, {12{1'b1}}};
+        ki_i =  {4'b0, {12{1'b1}}};
         #7;
         rst = 1'b0;
         #1;
         dat_i = 16'sd8192;
 
-        satwidth_i = 5'd0;
-        kp_i = {1'b0, {15{1'b1}}};
-        sp_i = {14'sd0};
-        kd_i = {3'b0, {13{1'b1}}};
-        ki_i =  {3'b0, {13{1'b1}}};
-        alpha_i = 4'd2;
+        satwidth_i = 5'd15;
+
         enable_i = 1'b1;
-        #400;
+        #2000;
         $finish;
     end
 
