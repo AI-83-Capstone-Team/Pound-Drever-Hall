@@ -95,18 +95,31 @@ def test_frame(byte_offset):
 
 if __name__ == "__main__":
     reset_fpga()
-    #while True:
-    set_dac(-0.8, 0)
-    set_dac(0.7, 1)
+    ##while True:
+
+    #get_adc()
+    #set_led(67)
+
+    #get_frame(10000)
+
+    #check_signed(8)
+    #check_signed(9)
+
+    #test_frame(0x00000) #garbage until 0X80000 sharp idk why
+    #test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
+
+    #get_adc()
+
+
+    set_dac(1.0, 0)
+    set_dac(-1.0, 1)
+    #set_rotation(0)
+    check_signed(6)
+    check_signed(7)
     get_adc()
-    set_led(67)
 
-    get_frame(10000)
+    #set_rotation(180)
+    #check_signed(6)
+    #check_signed(7)
 
-    check_signed(8)
-    check_signed(9)
 
-    test_frame(0x00000) #garbage until 0X80000 sharp idk why
-    test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
-
-    get_adc()

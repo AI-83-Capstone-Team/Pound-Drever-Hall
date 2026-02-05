@@ -1,8 +1,8 @@
 module pid_core 
 #(
-    parameter int unsigned S32_W = 32;
-    parameter int unsigned S16_W = 16;
-    parameter int unsigned DEC_W = 14;
+    parameter int unsigned S32_W = 32,
+    parameter int unsigned S16_W = 16,
+    parameter int unsigned DEC_W = 14
 )
 (
     input logic clk,
@@ -42,26 +42,24 @@ module pid_core
         tick1_w = enable_r && (cnt_r == 0);
     end
 
+    localparam int unsigned W1S = S32_W;
+    localparam int unsigned W2S = S32_W+1;
+    localparam int unsigned W1U = 14;
+    localparam int unsigned W2U = 20;
 
-    function automatic logic signed [W1-1:0] sat_signed_from_signed #(
-        int unsigned W1,
-        int unsigned W2
-    )(input logic signed [W2-1:0] x);
-        if (W2 < W1) $fatal("sat_signed_from_signed: W2 must be >= W1");
-        if(x > {{(W2-W1){1'b0}}, 1'b0, {(W1-1){1'b1}}}) sat_signed_from_signed = {1'b0, {(W1-1){1'b1}}};
-        else if(x < {{(W2-W1){1'b1}}, 1'b1, {(W1-1){1'b0}}}) sat_signed_from_signed = {1'b1, {(W1-1){1'b0}}};
-        else sat_signed_from_signed = x[W1-1:0];
+    function automatic logic signed [W1S-1:0] sat_signed_from_signed (input logic signed [W2S-1:0] x);
+        if (W2S < W1S) $fatal("sat_signed_from_signed: W2 must be >= W1");
+        if($signed(x) > $signed({{(W2S-W1S){1'b0}}, 1'b0, {(W1S-1){1'b1}}})) sat_signed_from_signed = $signed({1'b0, {(W1S-1){1'b1}}});
+        else if($signed(x) < $signed({{(W2S-W1S){1'b1}}, 1'b1, {(W1S-1){1'b0}}})) sat_signed_from_signed = $signed({1'b1, {(W1S-1){1'b0}}});
+        else sat_signed_from_signed = $signed(x[W1S-1:0]);
     endfunction
 
     
-    function automatic logic unsigned [W1-1:0] sat_unsigned_from_signed #(
-        int unsigned W1,
-        int unsigned W2
-    )(input logic signed [W2-1:0] x);
-        if (W2 < W1) $fatal("sat_unsigned_from_signed: W2 must be >= W1");
-        if(x > $signed({{(W2-W1){1'b0}}, {W1{1'b1}}})) sat_unsigned_from_signed = {W1{1'b1}};
-        else if(x[W2-1] == 1) sat_unsigned_from_signed = {W1{1'b0}};
-        else sat_unsigned_from_signed = x[W1-1:0];
+    function automatic logic unsigned [W1U-1:0] sat_unsigned_from_signed (input logic signed [W2U-1:0] x);
+        if (W2U < W1U) $fatal("sat_unsigned_from_signed: W2 must be >= W1");
+        if($signed(x) > $signed({{(W2U-W1U){1'b0}}, {W1U{1'b1}}})) sat_unsigned_from_signed = {W1U{1'b1}};
+        else if(x[W2U-1] == 1) sat_unsigned_from_signed = {W1U{1'b0}};
+        else sat_unsigned_from_signed = x[W1U-1:0];
     endfunction
 
 
@@ -79,21 +77,28 @@ module pid_core
 
     logic signed [19:0] total_error_wide_w;
 
+    logic signed [S16_W-1:0] p_error_shifted_w, d_error_shifted_w, i_error_shifted_w;
+
+
     always_comb begin
         error_w = dat_i - sp_r; //We dont worry about the overflow here because our core data feed is nominally a 14-bit signed int extended into s16 so there should be enough room at 16 bits as-is
-        sum_error_wide_w = sum_error_r + error_w;
-        sum_error_w = tick1_w? sat_signed_from_signed(.W1(S32_W), .W2(S32_W+1))(sum_error_wide_w) : sum_error_r; //Want to include last piped error in sum
-        yk_w = tick1_w? ((error_w - yk_r)>>>alpha_r) + yk_r) : yk_r; 
+        sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_w[S16_W-1]}},error_w});
+        sum_error_w = tick1_w? sat_signed_from_signed(sum_error_wide_w) : sum_error_r; //Want to include last piped error in sum
+        yk_w = tick1_w? (((error_w - yk_r)>>>alpha_r) + yk_r) : yk_r; 
 
         p_error_w = tick2_r? kp_r * error_pipe1_r : p_error_r;
-        d_error_w = tick2_r? kd_r * yk_r : d_error_r;
+        d_error_w = tick2_r? kd_r * (error_w - yk_r) : d_error_r;
         i_error_w = tick2_r? ki_r * sum_error_r : i_error_r;
 
-        total_error_wide_w = (p_error_r>>>15) + (d_error_r>>>15) + (i_error_r>>>31) + 20'sd8192;
+        p_error_shifted_w = p_error_r>>>15;
+        d_error_shifted_w = d_error_r>>>15;
+        i_error_shifted_w = i_error_r>>>31;
+
+        total_error_wide_w = p_error_shifted_w + d_error_shifted_w + i_error_shifted_w;
     end
     
 
-    //assume rst, enable are synchrnous with feeder block (pdh_core)
+    //assume rst, enable are synchronous with feeder block (pdh_core)
     logic enable_r;
     always_ff @(posedge clk or posedge rst) begin
         if(rst) begin
@@ -117,7 +122,7 @@ module pid_core
         end else begin
             sum_error_r <= '0;
             error_pipe1_r <= '0;
-            yk_r <= 0';
+            yk_r <= '0;
             {p_error_r, d_error_r, i_error_r} <= '0;
             cnt_r <= '0;
             tick2_r <= '0;
@@ -137,7 +142,7 @@ module pid_core
     end
 
 
-    assign pid_out = sat_unsigned_from_signed #(.W1(14), .W2(20))(total_error_wide_w);
+    assign pid_out = sat_unsigned_from_signed(total_error_wide_w + 20'sd8191);
 
 
 endmodule
