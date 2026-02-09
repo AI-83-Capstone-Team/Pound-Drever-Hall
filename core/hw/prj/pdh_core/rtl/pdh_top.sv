@@ -225,7 +225,7 @@ module pdh_top
         .dma_data_o(dma_data_w),
         .dma_finished_i(dma_finished_w),
         .dma_engaged_i(dma_engaged_w),
-        .decimation_code_o(decimation_code_w)
+        .dma_decimation_code_o(decimation_code_w)
     );
 
 

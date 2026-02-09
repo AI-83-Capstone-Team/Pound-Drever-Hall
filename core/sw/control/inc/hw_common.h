@@ -109,7 +109,8 @@ typedef union __attribute__((packed))
     {
         uint32_t dac_code   : 14;
         uint32_t dac_sel    : 1;
-        uint32_t _padding   : 11; 
+        uint32_t dac_enable : 1;
+        uint32_t _padding   : 10; 
         uint32_t cmd        : 4;
         uint32_t strobe     : 1; 
         uint32_t _padding2  : 1;
@@ -125,8 +126,8 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t reg_sel    : 4;
-        uint32_t _padding   : 22;
+        uint32_t reg_sel    : 5;
+        uint32_t _padding   : 21;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
         uint32_t _padding2  : 1;
@@ -169,16 +170,17 @@ typedef union __attribute__((packed))
         uint32_t func_callback  : 8;
         uint32_t _padding       : 20;
         uint32_t cmd            : 4; //Bits 31:28
-    }   led_callback;
+    }   led_cb;
 
     struct __attribute__((packed))
     {
 
         uint32_t dac_code       : 14;
         uint32_t dac_sel        : 1;
-        uint32_t padding        : 13;
+        uint32_t dac_enable     : 1;
+        uint32_t padding        : 12;
         uint32_t cmd            : 4; //Bits 31:28
-    }   dac_callback;
+    }   dac_cb;
 
     struct __attribute__((packed))
     {
@@ -186,15 +188,15 @@ typedef union __attribute__((packed))
         uint32_t adc_0_code     : 14;
         uint32_t adc_1_code     : 14;
         uint32_t cmd            : 4; //Bits 31:28
-    }   adc_callback;
+    }   adc_cb;
 
-    struct __attribute__((packed))
+    struct __attribute__((packed)) //TODO: More efficient packing
     {
-        uint32_t adcx_payload   : 16;
-        uint32_t reg_sel        : 4;
-        uint32_t _padding       : 8;
+        uint32_t payload        : 16;
+        uint32_t reg_sel        : 5;
+        uint32_t _padding       : 7;
         uint32_t cmd            : 4;
-    }   cs_callback;
+    }   cs_cb;
 
     
     struct __attribute__((packed))

@@ -57,11 +57,11 @@ int cmd_set_led(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = callback.led_callback.func_callback;
+    ctx->output.output_items[0].data.u = callback.led_cb.func_callback;
     ctx->output.output_items[0].tag = UINT_TAG;
     strcpy(ctx->output.output_items[0].name, "led code");
     
-    ctx->output.output_items[1].data.u = callback.led_callback.cmd;
+    ctx->output.output_items[1].data.u = callback.led_cb.cmd;
     ctx->output.output_items[1].tag = UINT_TAG;
     strcpy(ctx->output.output_items[1].name, "cmd_sig");
 
@@ -83,23 +83,23 @@ int cmd_get_adc(cmd_ctx_t *ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
     
-    ctx->output.output_items[0].data.u = callback.adc_callback.adc_0_code;
+    ctx->output.output_items[0].data.u = callback.adc_cb.adc_0_code;
     ctx->output.output_items[0].tag = UINT_TAG;
     strcpy(ctx->output.output_items[0].name, "IN1");
 
-    ctx->output.output_items[1].data.u = callback.adc_callback.adc_1_code;
+    ctx->output.output_items[1].data.u = callback.adc_cb.adc_1_code;
     ctx->output.output_items[1].tag = UINT_TAG;
     strcpy(ctx->output.output_items[1].name, "IN2");
 
-    ctx->output.output_items[2].data.f = -1.0f * (callback.adc_callback.adc_0_code * (2.0f/16383.0f) - 1.0f);
+    ctx->output.output_items[2].data.f = -1.0f * (callback.adc_cb.adc_0_code * (2.0f/16383.0f) - 1.0f);
     ctx->output.output_items[2].tag = FLOAT_TAG;
     strcpy(ctx->output.output_items[2].name, "IN1_V");
 
-    ctx->output.output_items[3].data.f = -1.0f * (callback.adc_callback.adc_1_code * (2.0f/16383.0f) - 1.0f);
+    ctx->output.output_items[3].data.f = -1.0f * (callback.adc_cb.adc_1_code * (2.0f/16383.0f) - 1.0f);
     ctx->output.output_items[3].tag = FLOAT_TAG;
     strcpy(ctx->output.output_items[3].name, "IN2_V");
 
-    ctx->output.output_items[4].data.u = callback.adc_callback.cmd;
+    ctx->output.output_items[4].data.u = callback.adc_cb.cmd;
     ctx->output.output_items[4].tag = UINT_TAG;
     strcpy(ctx->output.output_items[4].name, "cmd_sig");
 
@@ -126,15 +126,15 @@ int cmd_check_signed(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.i = (int16_t)callback.cs_callback.adcx_payload;
+    ctx->output.output_items[0].data.i = (int16_t)callback.cs_cb.payload;
     ctx->output.output_items[0].tag = INT_TAG;
     strcpy(ctx->output.output_items[0].name, "REG_VALUE");
 
-    ctx->output.output_items[1].data.u = callback.cs_callback.reg_sel; 
+    ctx->output.output_items[1].data.u = callback.cs_cb.reg_sel; 
     ctx->output.output_items[1].tag = UINT_TAG;
     strcpy(ctx->output.output_items[1].name, "REG_ID");
 
-    ctx->output.output_items[2].data.u = callback.cs_callback.cmd;
+    ctx->output.output_items[2].data.u = callback.cs_cb.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;
     strcpy(ctx->output.output_items[2].name, "cmd_sig");
 
@@ -148,6 +148,7 @@ int cmd_set_dac(cmd_ctx_t* ctx)
 {
     float val = ctx->float_args[0];
     bool dac_sel = (bool)ctx->uint_args[0];
+    bool dac_enable = (bool)ctx->uint_args[1];
 
     val *= -1.0f;
 
@@ -167,6 +168,7 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     cmd.raw = 0;
     cmd.dac_cmd.dac_code = code;
     cmd.dac_cmd.dac_sel = dac_sel;
+    cmd.dac_cmd.dac_enable = dac_enable;
     cmd.dac_cmd.cmd = CMD_SET_DAC;
     pdh_send_cmd(cmd);
     cmd.dac_cmd.strobe = 1;
@@ -176,15 +178,15 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_callback.dac_code;
+    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_cb.dac_code;
     ctx->output.output_items[0].tag = UINT_TAG;
     strcpy(ctx->output.output_items[0].name, "DAC_CODE");
 
-    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_callback.dac_sel;
+    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_cb.dac_sel;
     ctx->output.output_items[1].tag = UINT_TAG;
     strcpy(ctx->output.output_items[1].name, "DAC_SELECT");
 
-    ctx->output.output_items[2].data.u = callback.dac_callback.cmd;
+    ctx->output.output_items[2].data.u = callback.dac_cb.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;
     strcpy(ctx->output.output_items[2].name, "cmd_sig");
 

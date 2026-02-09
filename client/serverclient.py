@@ -41,7 +41,7 @@ def set_dac(value: float, dac_sel: bool):
     cmds = [
     (
         "CMD:set_dac\n"
-        f"U:{dac_sel}\n"
+        f"U:{dac_sel},1\n"
         f"F:{value}\n"
     )
     ]
