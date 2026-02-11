@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 #include "server.h"
@@ -9,6 +10,12 @@
 #define RESET_OFF 0
 #define LOCK_POINT_FLAG "lock_point"
 #define DERIVED_SLOPE_FLAG "derived_slope"
+
+
+
+
+
+//TODO: Better error handling for invalid inputs
 
 
 int cmd_reset_fpga(cmd_ctx_t* ctx)
@@ -207,8 +214,131 @@ static inline int16_t float_to_q15(float x)
     return (int16_t)q;
 }
 
+
+#define MAX_DEC 0x3FFF
+#define MAX_ALPHA 15
+#define MAX_SAT 31
+int cmd_configure_pid(cmd_ctx_t* ctx)
+{
+    float kp_f = ctx->float_args[0];
+    float kd_f = ctx->float_args[1];
+    float ki_f = ctx->float_args[2];
+    float sp_f = ctx->float_args[3];
+    uint32_t dec = ctx->uint_args[0];
+    uint32_t alpha = ctx->uint_args[1];
+    uint32_t sat = ctx->uint_args[2];
+    uint32_t en = ctx->uint_args[3];
+
+    int16_t kp_i = float_to_q15(kp_f);
+    int16_t kd_i = float_to_q15(kd_f);
+    int16_t ki_i = float_to_q15(ki_f);
+    int16_t sp_i = float_to_q15(sp_f);
+
+    if(sp_i > 8191) sp_i = 8191;
+    else if(sp_i < -8192) sp_i = -8192;
+    if(dec > MAX_DEC) dec = MAX_DEC;
+    if(alpha > MAX_ALPHA) alpha = MAX_ALPHA; 
+    if(sat > MAX_SAT) alpha = MAX_SAT;
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.set_kp_cmd.cmd = CMD_SET_KP;
+    cmd.set_kp_cmd.kp = kp_i;
+    pdh_send_cmd(cmd);
+    cmd.set_kp_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    pdh_callback_t cb;
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+    ctx->output.output_items[0].data.f = ((int16_t)cb.set_kp_cb.kp_r) / 32768.0;
+    ctx->output.output_items[0].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[0].name, "kp_r");
+    
+    cmd.raw = 0;
+    cmd.set_kd_cmd.cmd = CMD_SET_KD;
+    cmd.set_kd_cmd.kd = kd_i;
+    pdh_send_cmd(cmd);
+    cmd.set_kd_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+    ctx->output.output_items[1].data.f = ((int16_t)cb.set_kd_cb.kd_r) / 32768.0;
+    ctx->output.output_items[1].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[1].name, "kd_r");
+
+    cmd.raw = 0;
+    cmd.set_ki_cmd.cmd = CMD_SET_KI;
+    cmd.set_ki_cmd.ki = ki_i;
+    pdh_send_cmd(cmd);
+    cmd.set_ki_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+    ctx->output.output_items[2].data.f = ((int16_t)cb.set_ki_cb.ki_r) / 32768.0;
+    ctx->output.output_items[2].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[2].name, "ki_r");
+
+    cmd.raw = 0;
+    cmd.set_dec_cmd.cmd = CMD_SET_DEC;
+    cmd.set_dec_cmd.dec = dec;
+    pdh_send_cmd(cmd);
+    cmd.set_dec_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+    ctx->output.output_items[3].data.u = (uint32_t)cb.set_dec_cb.dec_r;
+    ctx->output.output_items[3].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[3].name, "dec_r");
+
+    cmd.raw = 0;
+    cmd.set_sp_cmd.cmd = CMD_SET_SP;
+    cmd.set_sp_cmd.sp = sp_i;
+    pdh_send_cmd(cmd);
+    cmd.set_sp_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+    ctx->output.output_items[4].data.f = ((int16_t)cb.set_sp_cb.sp_r) / 32768.0;
+    ctx->output.output_items[4].tag = FLOAT_TAG;
+    strcpy(ctx->output.output_items[4].name, "sp_r");
+
+    cmd.raw = 0;
+    cmd.set_alpha_sat_en_cmd.cmd = CMD_SET_ALPHA_SAT_EN;
+    cmd.set_alpha_sat_en_cmd.alpha = alpha;
+    cmd.set_alpha_sat_en_cmd.sat = sat;
+    cmd.set_alpha_sat_en_cmd.en = en;
+    pdh_send_cmd(cmd);
+    cmd.set_alpha_sat_en_cmd.strobe = 1;
+    pdh_send_cmd(cmd);
+    cb.raw = 0;
+    pdh_get_callback(&cb);
+
+    ctx->output.output_items[5].data.u = (uint32_t)cb.set_alpha_sat_en_cb.alpha_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
+    ctx->output.output_items[5].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[5].name, "alpha_r");
+
+    ctx->output.output_items[6].data.u = (uint32_t)cb.set_alpha_sat_en_cb.sat_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
+    ctx->output.output_items[6].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[6].name, "sat_r");
+
+    ctx->output.output_items[7].data.u = (uint32_t)cb.set_alpha_sat_en_cb.en_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
+    ctx->output.output_items[7].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[7].name, "en_r");
+
+    ctx->output.num_outputs = 8;
+
+    return PDH_OK;
+}
+
+
+
+
+
 #define SIN_SELECT 1
 #define COS_SELECT 0
+#define ROTATION_CONST 32768.0f
+
+
 int cmd_set_rotation(cmd_ctx_t* ctx)
 {
     float theta_rad = ctx->float_args[0];
@@ -244,12 +374,12 @@ int cmd_set_rotation(cmd_ctx_t* ctx)
     pdh_get_callback(&cb);
 
     uint16_t tmp = cb.set_rot_coeff_cb.cos_theta_r << 2;
-    ctx->output.output_items[0].data.f = ((int16_t)tmp)/32768.0f;
+    ctx->output.output_items[0].data.f = ((int16_t)tmp)/ROTATION_CONST;
     ctx->output.output_items[0].tag = FLOAT_TAG;
     strcpy(ctx->output.output_items[0].name, "COS_THETA");
 
     tmp = cb.set_rot_coeff_cb.sin_theta_r << 2;
-    ctx->output.output_items[1].data.f = ((int16_t)tmp)/32768.0f;
+    ctx->output.output_items[1].data.f = ((int16_t)tmp)/ROTATION_CONST;
     ctx->output.output_items[1].tag = FLOAT_TAG;
     strcpy(ctx->output.output_items[1].name, "SIN_THETA");
 
@@ -285,19 +415,25 @@ int cmd_set_rotation(cmd_ctx_t* ctx)
     return PDH_OK;
 }
 
-
+#define DMA_BURST_CONST 330 //ceil10(16384 * 2.5) / 125)
+#define BRAM_DEC_CONST 140 //ceil10(16384 / 125)
 int cmd_get_frame(cmd_ctx_t* ctx)
 {
 
 	DEBUG_INFO("Executing command: %s...\n", __func__);
 
+    int return_code = DMA_OK;
+
     uint32_t decimation_code = ctx->uint_args[0];
-    if(decimation_code < 1) decimation_code = 1; //TODO: Proper error code handling
+    if(decimation_code < 1) decimation_code = 1; //TODO: Proper handling of invalid frame and decimation codes
+    
+    uint32_t frame_code = ctx->uint_args[1];
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
     cmd.get_frame_cmd.decimation = decimation_code;
+    cmd.get_frame_cmd.frame_code = frame_code;
     pdh_send_cmd(cmd);
     cmd.get_frame_cmd.strobe = 1;
     pdh_send_cmd(cmd);
@@ -311,14 +447,62 @@ int cmd_get_frame(cmd_ctx_t* ctx)
     strcpy(ctx->output.output_items[0].name, "DMA_ENGAGED");
 
     ctx->output.output_items[1].data.u = cb.get_frame_cb.decimation;
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "DECIMATION_CODE_REGISTERED");
+    ctx->output.output_items[1].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[1].name, "DECIMATION_CODE_REGISTERED");
 
-    ctx->output.output_items[2].data.u = cb.get_frame_cb.cmd;
+    ctx->output.output_items[2].data.u = cb.get_frame_cb.frame_code;
     ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "cmd_sig");
+    strcpy(ctx->output.output_items[2].name, "FRAME_CODE");
 
-    return PDH_OK;
+    ctx->output.output_items[3].data.u = cb.get_frame_cb.cmd;
+    ctx->output.output_items[3].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[3].name, "cmd_sig");
+
+    usleep(DMA_BURST_CONST + (BRAM_DEC_CONST * decimation_code)); //TODO: Handle waiting for DMA finish better
+
+
+    //TODO: Look into implementing this via arena stream
+    FILE* f = fopen("dma_log.csv", "w");
+    if (!f) return_code = DMA_FOPEN_ERR;
+
+    //TODO: Make this more efficient
+    if (return_code == DMA_OK)
+    {
+
+        for(size_t offset = HP0_BASE_ADDR; offset < HP0_BASE_ADDR + HP0_RANGE; offset += 8)
+        {
+            dma_frame_t frame;
+            frame.raw = dma_get_frame(offset);
+
+            switch(frame_code) 
+            {
+                case ANGLES_AND_ESIGS:
+                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, frame.angles_and_esigs_frame.i_feed_w, frame.angles_and_esigs_frame.q_feed_w); 
+                    break;
+
+                case PID_ERR_TAPS:
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.pid_err_taps_frame.err_tap_w, (int16_t)frame.pid_err_taps_frame.perr_tap_w, (int16_t)frame.pid_err_taps_frame.derr_tap_w, (int16_t)frame.pid_err_taps_frame.ierr_tap_w);
+                    break;
+
+                case IO_SUM_ERR:
+                    fprintf(f, "%d, %u, %d\n", (int16_t)frame.io_sum_err_frame.err_tap_w, (uint16_t)frame.io_sum_err_frame.pid_out_w, (int32_t)frame.io_sum_err_frame.sum_err_tap_w);
+
+                default:
+                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, frame.angles_and_esigs_frame.i_feed_w, frame.angles_and_esigs_frame.q_feed_w); 
+                    break;
+            }
+        }
+
+        fclose(f);
+    }
+
+    ctx->output.output_items[4].data.u = return_code; 
+    ctx->output.output_items[4].tag = UINT_TAG;
+    strcpy(ctx->output.output_items[4].name, "return_code");
+
+    ctx->output.num_outputs = 5;
+
+    return return_code;
 }
 
 
@@ -329,19 +513,19 @@ int cmd_test_frame(cmd_ctx_t* ctx)
     dma_frame_t frame;
     frame.raw = dma_get_frame(byte_offset);
 
-    ctx->output.output_items[0].data.i = (int16_t)frame.data.sin_theta_r;
+    ctx->output.output_items[0].data.i = (int16_t)frame.angles_and_esigs_frame.sin_theta_r;
     ctx->output.output_items[0].tag = INT_TAG;
     strcpy(ctx->output.output_items[0].name, "sin_theta_r");
     
-    ctx->output.output_items[1].data.i = (int16_t)frame.data.cos_theta_r;
+    ctx->output.output_items[1].data.i = (int16_t)frame.angles_and_esigs_frame.cos_theta_r;
     ctx->output.output_items[1].tag = INT_TAG;
     strcpy(ctx->output.output_items[1].name, "cos_theta_r");
 
-    ctx->output.output_items[2].data.i = (int16_t)frame.data.q_feed_w;
+    ctx->output.output_items[2].data.i = (int16_t)frame.angles_and_esigs_frame.q_feed_w;
     ctx->output.output_items[2].tag = INT_TAG;
     strcpy(ctx->output.output_items[2].name, "q_feed_w");
     
-    ctx->output.output_items[3].data.i = (int16_t)frame.data.i_feed_w;
+    ctx->output.output_items[3].data.i = (int16_t)frame.angles_and_esigs_frame.i_feed_w;
     ctx->output.output_items[3].tag = INT_TAG;
     strcpy(ctx->output.output_items[3].name, "i_feed_w");
 

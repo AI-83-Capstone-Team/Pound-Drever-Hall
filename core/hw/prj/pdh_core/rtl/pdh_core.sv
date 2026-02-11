@@ -1,5 +1,7 @@
 `timescale 1 ns / 1 ps
 
+//TODO: Synchronous reset sig out to DMA block + DMA_RDY 2ff callback
+////TODO: See if 3-ff sync is worth it
 module pdh_core #
 (
     parameter ADC_DATA_WIDTH = 14, //To account for padding
@@ -24,7 +26,7 @@ module pdh_core #
     output logic [7:0] led_o,
     output logic rst_o,
 
-    output logic [25:0] dma_decimation_code_o,
+    output logic [21:0] dma_decimation_code_o,
 
     output logic dma_enable_o,
     output logic [63:0] dma_data_o,
@@ -128,7 +130,7 @@ module pdh_core #
     logic [4:0] satwidth_r, satwidth_w;
     logic pid_enable_w, pid_enable_r;
     
-    logic [15:0] pid_out_w;
+    logic [13:0] pid_out_w;
 
 
 
@@ -195,17 +197,17 @@ module pdh_core #
         endcase
     end
 
-    logic [25:0] dma_decimation_code_r, next_dma_decimation_code_w; //TODO: Add this as CS option
+    logic [21:0] dma_decimation_code_r, next_dma_decimation_code_w; //TODO: Add this as CS option
 
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_w[15:2], i_feed_w[15:2]};
-    assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, dma_decimation_code_r, dma_engaged_r};
-    assign set_kp_cb_w = {CMD_SET_KP, kp_r};
-    assign set_kd_cb_w = {CMD_SET_KD, kd_r};
-    assign set_ki_cb_w = {CMD_SET_KI, ki_r};
-    assign set_dec_cb_w = {CMD_SET_DEC, 2'b0, dec_r};
-    assign set_sp_cb_w = {CMD_SET_SP, {2{sp_r[13]}}, sp_r};
-    assign set_alpha_sat_en_cb_w = {CMD_SET_ALPHA_SAT_EN, 6'b0, alpha_r, satwidth_r, pid_enable_r};
+    assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_engaged_r};
+    assign set_kp_cb_w = {CMD_SET_KP, 12'd0, kp_r};
+    assign set_kd_cb_w = {CMD_SET_KD,12'd0, kd_r};
+    assign set_ki_cb_w = {CMD_SET_KI, 12'd0, ki_r};
+    assign set_dec_cb_w = {CMD_SET_DEC, 14'b0, dec_r};
+    assign set_sp_cb_w = {CMD_SET_SP, 12'd0, {2{sp_r[13]}}, sp_r};
+    assign set_alpha_sat_en_cb_w = {CMD_SET_ALPHA_SAT_EN, 18'b0, alpha_r, satwidth_r, pid_enable_r};
 
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
@@ -216,7 +218,8 @@ module pdh_core #
 
 
     
-        
+    logic signed [15:0] err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w;
+    logic signed [31:0] sum_err_tap_w;
     pid_core u_pid(
         .clk(clk),
         .rst(rst_r),
@@ -229,10 +232,32 @@ module pdh_core #
         .satwidth_i(satwidth_r),
         .dat_i(i_feed_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
-        .pid_out(pid_out_w)
+        .pid_out(pid_out_w),
+
+        .err_tap(err_tap_w),
+        .perr_tap(perr_tap_w),
+        .derr_tap(derr_tap_w),
+        .ierr_tap(ierr_tap_w),
+        .sum_err_tap(sum_err_tap_w)
     );
 
-    
+    typedef enum logic [3:0]
+    {
+        ANGLES_AND_ESIGS = 4'b0000,
+        PID_ERR_TAPS = 4'b0001,
+        IO_SUM_ERR = 4'b0010
+    }   frame_code_t;
+    logic [3:0] frame_code_r, next_frame_code_w;
+
+    always_comb begin
+        unique case(frame_code_r)
+            ANGLES_AND_ESIGS: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
+            PID_ERR_TAPS: dma_data_o = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
+            IO_SUM_ERR: dma_data_o = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
+            default: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
+        endcase
+    end
+
 
     //TODO: Make this more concise 
     always_comb begin
@@ -245,6 +270,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = idle_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -266,6 +292,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = led_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -287,6 +314,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = dac_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = data_w[15]; //TODO: Pass this as an arg
                 next_dac_sel_w = data_w[14];
                 next_dac_dat_w = data_w[13:0];
@@ -308,6 +336,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = adc_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -329,6 +358,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = cs_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -350,6 +380,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_rot_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -371,6 +402,7 @@ module pdh_core #
                 next_rot_cos_theta_w = cos_theta_r;
                 next_callback_w = commit_rot_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -391,7 +423,8 @@ module pdh_core #
                 next_rot_sin_theta_w = rot_sin_theta_r;
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = get_frame_cb_w;
-                next_dma_decimation_code_w = data_w[25:0];
+                next_dma_decimation_code_w = data_w[21:0];
+                next_frame_code_w = data_w[25:22];
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -414,6 +447,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_kp_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -435,6 +469,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_kd_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -456,6 +491,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_ki_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -477,6 +513,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_dec_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -498,6 +535,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_sp_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = dac_wrt_r;
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = dac_dat_r;
@@ -519,6 +557,7 @@ module pdh_core #
                 next_rot_cos_theta_w = rot_cos_theta_r;
                 next_callback_w = set_alpha_sat_en_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
+                next_frame_code_w = frame_code_r;
                 next_dac_wrt_w = data_w[0];
                 next_dac_sel_w = dac_sel_r;
                 next_dac_dat_w = pid_out_w;
@@ -575,13 +614,13 @@ module pdh_core #
     assign dac_rst_o = 1'b0; //rst_i; //TODO: rst_r async set sync release
 
     assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
-    assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
+    //assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
 
     assign dma_decimation_code_o = dma_decimation_code_r;
     
 
     always_ff @(posedge clk or posedge rst_i) begin
-        if(rst_i || rst_r)begin
+        if(rst_i)begin
             {strobe_sync_r, strobe_pipe1_r} <= {1'b0, 1'b0};
             axi_from_ps_r <= 0;
             led_r <= 0;
@@ -590,6 +629,7 @@ module pdh_core #
             rot_sin_theta_r <= 0;
             rot_cos_theta_r <= 16'sh7FFF;
             dma_decimation_code_r <= 26'd1;
+            frame_code_r <= ANGLES_AND_ESIGS;
             kp_r <= '0;
             kd_r <= '0;
             ki_r <= '0;
@@ -609,6 +649,7 @@ module pdh_core #
             rot_sin_theta_r <= next_rot_sin_theta_w;
             rot_cos_theta_r <= next_rot_cos_theta_w;
             dma_decimation_code_r <= next_dma_decimation_code_w;
+            frame_code_r <= next_frame_code_w;
             kp_r <= kp_w;
             kd_r <= kd_w;
             ki_r <= ki_w;

@@ -6,7 +6,7 @@ module tb_bram_controller;
     always #4 clk = ~clk;
 
     logic enable;
-    logic [25:0] divcode;
+    logic [21:0] divcode;
     logic rst;
 
     bram_controller dut (

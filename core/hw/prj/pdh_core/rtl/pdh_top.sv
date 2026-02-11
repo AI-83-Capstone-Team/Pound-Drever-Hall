@@ -200,7 +200,7 @@ module pdh_top
 
     logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w;
     logic [63:0] dma_data_w;
-    logic [25:0] decimation_code_w;
+    logic [21:0] decimation_code_w;
 
 
     pdh_core #(

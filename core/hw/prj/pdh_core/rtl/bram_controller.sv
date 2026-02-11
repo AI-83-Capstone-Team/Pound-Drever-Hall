@@ -13,7 +13,7 @@ module bram_controller
     input logic enable_i,
     output logic dma_enable,
     input logic dma_termination_sig,
-    input logic [25:0] decimation_code_i,
+    input logic [21:0] decimation_code_i,
     output logic transaction_complete
 );
 
@@ -21,8 +21,8 @@ module bram_controller
     logic bram_we_w;
     logic[AW-1:0] addr_r, next_addr_w;
 
-    logic [25:0] decimation_code_r, next_decimation_code_w;
-    logic [25:0] count_r, next_count_w;
+    logic [21:0] decimation_code_r, next_decimation_code_w;
+    logic [21:0] count_r, next_count_w;
 
     dc_bram 
     #(

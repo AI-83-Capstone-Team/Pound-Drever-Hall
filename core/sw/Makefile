@@ -1,6 +1,5 @@
 CFLAGS  := -std=gnu11 -Wall -Werror
-CFLAGS += -I/opt/redpitaya/include -Icontrol/inc  -I/opt/redpitaya/include/api250-12 -DDEBUG
-LDFLAGS := -L/opt/redpitaya/lib
+CFLAGS += -Icontrol/inc -DDEBUG
 LDLIBS := -static -lm -lstdc++ -lpthread #-lsocketc
 
 SRC_DIRS := control 
@@ -22,7 +21,7 @@ all:
 
 
 server: server.c $(OBJS)
-	$(CC) $(CFLAGS) $< $(OBJS) $(LDFLAGS) $(LDLIBS) -o $(BUILDDIR)/$@
+	$(CC) $(CFLAGS) $< $(OBJS) $(LDLIBS) -o $(BUILDDIR)/$@
 
 
 

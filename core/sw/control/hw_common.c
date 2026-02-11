@@ -10,17 +10,6 @@
 float gAdcMirror[ADC_BUFFER_SIZE];
 sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
 
-#define AXI_BUS_OFFSET 0x42000000
-#define AXI_BUS_DEVBIND "/dev/mem"
-#define AXI_WRITE_OFFSET    8   //TODO: Check these
-#define AXI_READ_OFFSET     0
-
-//#define HP0_BASE_ADDR 0x1F000000
-#define HP0_BASE_ADDR 0x10000000
-#define HP0_RANGE 0xC3500
-#define MAP_LEN 0x000C4000 //DMA region size rounded up to the nearest 4096-byte chunk, also seems to allocate 0x1000 past this as well (4096 byte padding)
-#define DMA_WRITE_OFFSET 0
-#define DMA_READ_OFFSET 0
 
 static void* gAxiMap;
 static void* gDmaMap;
@@ -34,7 +23,7 @@ int dma_Init()
         return 1;
     }
     
-    gDmaMap = mmap(NULL, MAP_LEN, PROT_READ, MAP_SHARED, fd, HP0_BASE_ADDR); 
+    gDmaMap = mmap(NULL, HP0_RANGE, PROT_READ, MAP_SHARED, fd, HP0_BASE_ADDR); 
     close(fd);
     
     return PDH_OK;
@@ -42,7 +31,7 @@ int dma_Init()
 
 int dma_Release()
 {
-    munmap(gDmaMap, MAP_LEN);
+    munmap(gDmaMap, HP0_RANGE);
     return PDH_OK;
 }
 

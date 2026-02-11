@@ -22,7 +22,13 @@ module pid_core
 
     input logic enable_i,
 
-    output logic [13:0] pid_out
+    output logic [13:0] pid_out,
+
+    output logic signed [15:0] err_tap,
+    output logic signed [15:0] perr_tap,
+    output logic signed [15:0] derr_tap,
+    output logic signed [15:0] ierr_tap,
+    output logic signed [31:0] sum_err_tap
 );
 
 
@@ -146,5 +152,11 @@ module pid_core
 
     assign pid_out = sat_unsigned_from_signed(total_error_wide_w + 20'sd8191);
 
+    assign err_tap = error_pipe1_r;
+    assign perr_tap = p_error_shifted_w;
+    assign derr_tap = d_error_shifted_w;
+    assign ierr_tap = i_error_shifted_w;
+    assign sum_err_tap = sum_error2_w;
+    
 
 endmodule

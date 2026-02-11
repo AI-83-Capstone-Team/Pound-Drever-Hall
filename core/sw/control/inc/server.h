@@ -39,7 +39,7 @@ typedef enum
     FLOAT_ARGS = 10,
     INT_ARGS = 10,
     UINT_ARGS = 10,
-    OUTPUT_ITEMS
+    OUTPUT_ITEMS = 16,
 }   cmd_dims_e;
 
 

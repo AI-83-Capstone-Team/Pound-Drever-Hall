@@ -36,6 +36,12 @@ typedef struct
 	uint32_t 		num_readings;
 } 	lock_in_ctx_t;
 
+typedef enum
+{
+    DMA_OK = 0,
+    DMA_FOPEN_ERR = 1,
+    DMA_INVALID_FRAME_CODE = 2,
+}   dma_return_codes_e;
 
 typedef enum
 {
@@ -64,3 +70,4 @@ int cmd_set_led(cmd_ctx_t* ctx);
 int cmd_set_rotation(cmd_ctx_t* ctx);
 int cmd_get_frame(cmd_ctx_t* ctx);
 int cmd_test_frame(cmd_ctx_t* ctx);
+int cmd_configure_pid(cmd_ctx_t* ctx);
