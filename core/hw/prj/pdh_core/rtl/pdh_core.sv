@@ -228,7 +228,7 @@ module pdh_core #
         .kp_i(kp_r),
         .kd_i(kd_r),
         .ki_i(ki_r),
-        .decimate_i(decimate_r),
+        .decimate_i(dec_r),
         .sp_i(sp_r),
         .alpha_i(alpha_r),
         .satwidth_i(satwidth_r),

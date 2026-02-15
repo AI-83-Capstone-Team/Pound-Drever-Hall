@@ -161,9 +161,9 @@ if __name__ == "__main__":
     get_adc()
 
     set_rotation(0)
-    set_pid(kp=0.0, kd=0.0, ki=0.48, sp=-0.7367, dec=100, alpha = 6, sat=18, en=1)
+    set_pid(kp=0.5, kd=0.1, ki=0.2, sp=0.7367, dec=1000, alpha = 2, sat=28, en=1)
     # time.sleep(0.1)
-    get_frame(100, 1)
+    get_frame(10, 1)
     time.sleep(0.1)
     get_adc()
     # set_dac(0.69, 0)
