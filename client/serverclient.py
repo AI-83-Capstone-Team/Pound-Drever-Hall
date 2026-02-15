@@ -66,7 +66,7 @@ def set_dac(value: float, dac_sel: bool):
     cmds = [
     (
         "CMD:set_dac\n"
-        f"U:{dac_sel},1\n"
+        f"U:{dac_sel}\n"
         f"F:{value}\n"
     )
     ]
@@ -80,7 +80,7 @@ def get_adc():
     ]
     execute_cmd_seq(cmds)
 
-def check_signed(adc_sel: bool):
+def check_signed(adc_sel):
     cmds = [
     (
         "CMD:check_signed\n"
@@ -113,15 +113,17 @@ def get_frame(decimation, frame_code):
     csv = fetch_remote_csv(ssh, f"dma_{frame_code}.csv")
     ssh.close()
     data = np.loadtxt(csv, delimiter=",")
-    x = np.arrange(0, 0x20000/8, 1)
+    x = np.arange(16384)
     y1 = data[:, 0]
     y2 = data[:, 1]
     y3 = data[:, 2]
-    y4 = data[:, 3]
+    if frame_code != 2:
+        y4 = data[:, 3]
     plt.plot(x, y1, label="y1")
     plt.plot(x, y2, label="y2")
     plt.plot(x, y3, label="y3")
-    plt.plot(x, y4, label="y4")
+    if frame_code != 2:
+        plt.plot(x, y4, label="y4")
     plt.legend()
     plt.grid(True)
     plt.show()
@@ -138,34 +140,34 @@ def test_frame(byte_offset):
     ]
     execute_cmd_seq(cmds)
 
+def set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
+    cmds = [
+    (
+        "CMD:set_pid\n"
+        f"F:{kp},{kd},{ki},{sp}\n"
+        f"U:{dec},{alpha},{sat},{en}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
 
 if __name__ == "__main__":
     reset_fpga()
+    time.sleep(0.01)
     ##while True:
 
-    #get_adc()
-    #set_led(67)
-    set_dac(1.0, 0)
-    set_dac(-1.0, 1)
-    get_frame(1000, 0)
-
-    #check_signed(8)
-    #check_signed(9)
-
-    test_frame(0x00000) #garbage until 0X80000 sharp idk why
-    test_frame(0x000001FFF8) #garbage until 0X80000 sharp idk why
-
-    #get_adc()
-
-
-
-    #set_rotation(0)
-    check_signed(6)
-    check_signed(7)
+    set_dac(0.0, 0)
+    set_dac(1.0,1)
     get_adc()
 
-    #set_rotation(180)
-    #check_signed(6)
-    #check_signed(7)
+    set_rotation(0)
+    set_pid(kp=0.0, kd=0.0, ki=0.48, sp=-0.7367, dec=100, alpha = 6, sat=18, en=1)
+    # time.sleep(0.1)
+    get_frame(100, 1)
+    time.sleep(0.1)
+    get_adc()
+    # set_dac(0.69, 0)
+    # get_frame(1,0)
 
 
+    check_signed(6)

@@ -155,7 +155,6 @@ int cmd_set_dac(cmd_ctx_t* ctx)
 {
     float val = ctx->float_args[0];
     bool dac_sel = (bool)ctx->uint_args[0];
-    bool dac_enable = (bool)ctx->uint_args[1];
 
     val *= -1.0f;
 
@@ -175,7 +174,6 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     cmd.raw = 0;
     cmd.dac_cmd.dac_code = code;
     cmd.dac_cmd.dac_sel = dac_sel;
-    cmd.dac_cmd.dac_enable = dac_enable;
     cmd.dac_cmd.cmd = CMD_SET_DAC;
     pdh_send_cmd(cmd);
     cmd.dac_cmd.strobe = 1;
@@ -185,13 +183,13 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_cb.dac_code;
+    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_cb.dac1_code;
     ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "DAC_CODE");
+    strcpy(ctx->output.output_items[0].name, "DAC1_CODE");
 
-    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_cb.dac_sel;
+    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_cb.dac2_code;
     ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "DAC_SELECT");
+    strcpy(ctx->output.output_items[1].name, "DAC2_CODE");
 
     ctx->output.output_items[2].data.u = callback.dac_cb.cmd;
     ctx->output.output_items[2].tag = UINT_TAG;
@@ -218,7 +216,7 @@ static inline int16_t float_to_q15(float x)
 #define MAX_DEC 0x3FFF
 #define MAX_ALPHA 15
 #define MAX_SAT 31
-int cmd_configure_pid(cmd_ctx_t* ctx)
+int cmd_set_pid(cmd_ctx_t* ctx)
 {
     float kp_f = ctx->float_args[0];
     float kd_f = ctx->float_args[1];
@@ -232,10 +230,14 @@ int cmd_configure_pid(cmd_ctx_t* ctx)
     int16_t kp_i = float_to_q15(kp_f);
     int16_t kd_i = float_to_q15(kd_f);
     int16_t ki_i = float_to_q15(ki_f);
-    int16_t sp_i = float_to_q15(sp_f);
+    //int16_t sp_i = float_to_q15(sp_f);
 
-    if(sp_i > 8191) sp_i = 8191;
-    else if(sp_i < -8192) sp_i = -8192;
+    int32_t sp_inter = (int32_t)lrintf(sp_f * 8192.0f);
+    if(sp_inter > 8191) sp_inter = 8191;
+    else if(sp_inter < -8192) sp_inter = -8192;
+
+    int16_t sp_i = (int16_t)sp_inter;
+
     if(dec > MAX_DEC) dec = MAX_DEC;
     if(alpha > MAX_ALPHA) alpha = MAX_ALPHA; 
     if(sat > MAX_SAT) alpha = MAX_SAT;
@@ -298,7 +300,7 @@ int cmd_configure_pid(cmd_ctx_t* ctx)
     pdh_send_cmd(cmd);
     cb.raw = 0;
     pdh_get_callback(&cb);
-    ctx->output.output_items[4].data.f = ((int16_t)cb.set_sp_cb.sp_r) / 32768.0;
+    ctx->output.output_items[4].data.f = ((int16_t)cb.set_sp_cb.sp_r) / 8192.0;
     ctx->output.output_items[4].tag = FLOAT_TAG;
     strcpy(ctx->output.output_items[4].name, "sp_r");
 
@@ -469,7 +471,7 @@ int cmd_get_frame(cmd_ctx_t* ctx)
     if (return_code == DMA_OK)
     {
 
-        for(size_t offset = HP0_BASE_ADDR; offset < HP0_BASE_ADDR + HP0_RANGE; offset += 8)
+        for(size_t offset = 0; offset < HP0_RANGE; offset += 8)
         {
             dma_frame_t frame;
             frame.raw = dma_get_frame(offset);
@@ -477,7 +479,7 @@ int cmd_get_frame(cmd_ctx_t* ctx)
             switch(frame_code) 
             {
                 case ANGLES_AND_ESIGS:
-                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, frame.angles_and_esigs_frame.i_feed_w, frame.angles_and_esigs_frame.q_feed_w); 
+                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
                     break;
 
                 case PID_ERR_TAPS:
@@ -486,6 +488,11 @@ int cmd_get_frame(cmd_ctx_t* ctx)
 
                 case IO_SUM_ERR:
                     fprintf(f, "%d, %u, %d\n", (int16_t)frame.io_sum_err_frame.err_tap_w, (uint16_t)frame.io_sum_err_frame.pid_out_w, (int32_t)frame.io_sum_err_frame.sum_err_tap_w);
+                    break;
+
+                case GATE_CHECK:
+                    fprintf(f, "%u, %u, %u, %u\n", (uint16_t)frame.gate_check_frame.dac1_gate_r, (uint16_t)frame.gate_check_frame.dac1_dat_r, (uint16_t)frame.gate_check_frame.dac2_gate_r, (uint16_t)frame.gate_check_frame.dac2_dat_r);
+                    break;
 
                 default:
                     fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, frame.angles_and_esigs_frame.i_feed_w, frame.angles_and_esigs_frame.q_feed_w); 

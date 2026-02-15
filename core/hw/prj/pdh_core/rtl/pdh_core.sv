@@ -153,7 +153,7 @@ module pdh_core #
 
     assign idle_cb_w    = 32'b0;
     assign led_cb_w     = {CMD_SET_LED, 20'd0, led_r};
-    assign dac_cb_w     = {CMD_SET_DAC, 12'b0, dac_wrt_r, dac_sel_r, dac_dat_r};
+    assign dac_cb_w     = {CMD_SET_DAC, dac1_dat_r, dac2_dat_r};
     assign adc_cb_w     = {CMD_GET_ADC, adc_dat_b_i, adc_dat_a_i};
 
     logic [15:0] base_bus;
@@ -188,9 +188,11 @@ module pdh_core #
 
             5'b01101: cs_cb_w = {base_bus, 2'b0, dec_r};
             
-            5'b01110: cs_cb_w = {base_bus, 2'b0, sp_r};
+            5'b01110: cs_cb_w = {base_bus, {2{sp_r[13]}}, sp_r};
             
             5'b01111: cs_cb_w = {base_bus, 6'b0, satwidth_r, alpha_r, pid_enable_r};
+
+            5'b10000: cs_cb_w = {base_bus, 13'b0, dac1_gate_r};
 
             default: cs_cb_w = {base_bus, 16'd0};
             
@@ -213,8 +215,8 @@ module pdh_core #
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
     assign axi_to_ps_o = callback_r;
 
-    logic [13:0] dac_dat_r, next_dac_dat_w;
-    logic dac_sel_r, next_dac_sel_w, dac_wrt_r, next_dac_wrt_w;
+    logic [13:0] dac1_dat_r, next_dac1_dat_w, dac2_dat_r, next_dac2_dat_w;
+    logic dac_sel_r, next_dac_sel_w;
 
 
     
@@ -230,7 +232,7 @@ module pdh_core #
         .sp_i(sp_r),
         .alpha_i(alpha_r),
         .satwidth_i(satwidth_r),
-        .dat_i(i_feed_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
+        .dat_i(adc_dat_a_16s_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
         .pid_out(pid_out_w),
 
@@ -245,7 +247,8 @@ module pdh_core #
     {
         ANGLES_AND_ESIGS = 4'b0000,
         PID_ERR_TAPS = 4'b0001,
-        IO_SUM_ERR = 4'b0010
+        IO_SUM_ERR = 4'b0010,
+        GATE_CHECK = 4'b0011 
     }   frame_code_t;
     logic [3:0] frame_code_r, next_frame_code_w;
 
@@ -254,6 +257,7 @@ module pdh_core #
             ANGLES_AND_ESIGS: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
             PID_ERR_TAPS: dma_data_o = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
             IO_SUM_ERR: dma_data_o = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
+            GATE_CHECK: dma_data_o = {26'b0, dac1_gate_r, dac2_gate_r, dac1_dat_r, 4'b0, dac2_dat_r};
             default: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
         endcase
     end
@@ -271,9 +275,6 @@ module pdh_core #
                 next_callback_w = idle_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -293,9 +294,6 @@ module pdh_core #
                 next_callback_w = led_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -315,9 +313,6 @@ module pdh_core #
                 next_callback_w = dac_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = data_w[15]; //TODO: Pass this as an arg
-                next_dac_sel_w = data_w[14];
-                next_dac_dat_w = data_w[13:0];
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -337,9 +332,6 @@ module pdh_core #
                 next_callback_w = adc_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -359,9 +351,6 @@ module pdh_core #
                 next_callback_w = cs_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -381,9 +370,6 @@ module pdh_core #
                 next_callback_w = set_rot_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -403,9 +389,6 @@ module pdh_core #
                 next_callback_w = commit_rot_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -425,9 +408,6 @@ module pdh_core #
                 next_callback_w = get_frame_cb_w;
                 next_dma_decimation_code_w = data_w[21:0];
                 next_frame_code_w = data_w[25:22];
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -448,9 +428,6 @@ module pdh_core #
                 next_callback_w = set_kp_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = data_w[15:0];
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -470,9 +447,6 @@ module pdh_core #
                 next_callback_w = set_kd_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = data_w[15:0];
                 ki_w = ki_r;
@@ -492,9 +466,6 @@ module pdh_core #
                 next_callback_w = set_ki_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = data_w[15:0];
@@ -514,9 +485,6 @@ module pdh_core #
                 next_callback_w = set_dec_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -536,9 +504,6 @@ module pdh_core #
                 next_callback_w = set_sp_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = dac_wrt_r;
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = dac_dat_r;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -558,9 +523,6 @@ module pdh_core #
                 next_callback_w = set_alpha_sat_en_cb_w;
                 next_dma_decimation_code_w = dma_decimation_code_r;
                 next_frame_code_w = frame_code_r;
-                next_dac_wrt_w = data_w[0];
-                next_dac_sel_w = dac_sel_r;
-                next_dac_dat_w = pid_out_w;
                 kp_w = kp_r;
                 kd_w = kd_r;
                 ki_w = ki_r;
@@ -579,14 +541,11 @@ module pdh_core #
                 next_rot_cos_theta_w = 16'sh7FFF;
                 next_callback_w = 32'b0;
                 next_dma_decimation_code_w = 26'd1;
-                next_dac_wrt_w = 1'b0;
-                next_dac_sel_w = 1'b0;
-                next_dac_dat_w = 14'h2000;
                 kp_w = '0;
                 kd_w = '0;
                 ki_w = '0;
                 dec_w = 14'd1;
-                sp_w = 16'sh7FFF;
+                sp_w = 14'd0;
                 alpha_w = 4'd4;
                 satwidth_w = 5'd31;
                 pid_enable_w = 1'b0;
@@ -611,7 +570,7 @@ module pdh_core #
 
     assign led_o = led_r; 
     
-    assign dac_rst_o = 1'b0; //rst_i; //TODO: rst_r async set sync release
+    assign dac_rst_o = rst_r; //rst_i; //TODO: rst_r async set sync release
 
     assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
     //assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
@@ -639,6 +598,8 @@ module pdh_core #
             satwidth_r <= 5'd31;
             pid_enable_r <= 1'b0;
             callback_r <= 0;
+            dac1_gate_r <= HOLD_REG; 
+            dac2_gate_r <= HOLD_REG;
 
         end else begin
             {strobe_sync_r, strobe_pipe1_r} <= {strobe_pipe1_r, strobe_meta_w};
@@ -659,19 +620,96 @@ module pdh_core #
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
             callback_r <= next_callback_w;
+            dac1_gate_r <= next_dac1_gate_w;
+            dac2_gate_r <= next_dac2_gate_w;
         end
 
         rst_r <= rst_i;
     end
+    
+    assign next_dac_sel_w = ~dac_sel_r;
 
-    always_ff @(negedge clk) begin
-        dac_wrt_r <= next_dac_wrt_w;
-        dac_sel_r <= next_dac_sel_w;
-        dac_dat_r <= next_dac_dat_w;
+    typedef enum logic [2:0]
+    {
+        HOLD_REG = 3'b000,
+        TAKE_DATA = 3'b001,
+        TAKE_PID = 3'b010
+    }   dac_gate_t;
+    logic [2:0] dac1_gate_r, next_dac1_gate_w, dac2_gate_r, next_dac2_gate_w;
+
+
+    always_comb begin
+        case(cmd_w)
+            CMD_SET_DAC: begin
+                next_dac1_gate_w = data_w[14]? dac1_gate_r : TAKE_DATA;
+                next_dac2_gate_w = data_w[14]? TAKE_DATA : dac2_gate_r;
+            end
+
+            CMD_SET_ALPHA_SAT_EN: begin
+                next_dac1_gate_w = TAKE_PID;
+                next_dac2_gate_w = dac2_gate_r;
+            end
+
+            default: begin
+                next_dac1_gate_w = dac1_gate_r;
+                next_dac2_gate_w = dac2_gate_r; 
+            end
+        endcase
+
+
+        case(next_dac1_gate_w)
+            HOLD_REG: begin
+                next_dac1_dat_w = dac1_dat_r;
+            end
+
+            TAKE_DATA: begin
+                next_dac1_dat_w = (cmd_w == CMD_SET_DAC && ~data_w[14])? data_w[13:0] : dac1_dat_r;
+            end
+
+            TAKE_PID: begin
+                next_dac1_dat_w = pid_out_w;
+            end
+
+            default: begin
+                next_dac1_dat_w = dac1_dat_r;
+            end
+        endcase
+
+        case(next_dac2_gate_w)
+            HOLD_REG: begin
+                next_dac2_dat_w = dac2_dat_r;
+            end
+
+            TAKE_DATA: begin
+                next_dac2_dat_w = (cmd_w == CMD_SET_DAC && data_w[14])? data_w[13:0] : dac2_dat_r;
+            end
+
+            TAKE_PID: begin
+                next_dac2_dat_w = pid_out_w;
+            end
+
+            default: begin
+                next_dac2_dat_w = dac2_dat_r;
+            end
+        endcase
     end
 
-    assign dac_wrt_o = dac_wrt_r;
+    always_ff @(negedge clk or posedge rst_i) begin
+        if(rst_i) begin
+            dac_sel_r <= 1'b0;
+            dac1_dat_r <= 14'h2000;
+            dac2_dat_r <= 14'h2000;
+
+        end else begin
+            dac_sel_r <= next_dac_sel_w;
+            dac1_dat_r <= next_dac1_dat_w; //next_dac1_dat_w;
+            dac2_dat_r <= next_dac2_dat_w;
+
+        end
+    end
+
+    assign dac_wrt_o = clk; //1'b1; //dac_wrt_r;
     assign dac_sel_o = dac_sel_r;
-    assign dac_dat_o = dac_dat_r;
+    assign dac_dat_o = dac_sel_r? dac2_dat_r : dac1_dat_r; 
 
 endmodule

@@ -112,6 +112,7 @@ typedef enum
     ANGLES_AND_ESIGS = 0b0000,
     PID_ERR_TAPS = 0b0001,
     IO_SUM_ERR = 0b0010,
+    GATE_CHECK = 0b0011,
 }   frame_code_e;
 
 
@@ -136,8 +137,7 @@ typedef union __attribute__((packed))
     {
         uint32_t dac_code   : 14;
         uint32_t dac_sel    : 1;
-        uint32_t dac_enable : 1;
-        uint32_t _padding   : 10; 
+        uint32_t _padding   : 11; 
         uint32_t cmd        : 4;
         uint32_t strobe     : 1; 
         uint32_t _padding2  : 1;
@@ -228,8 +228,8 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
 
-        uint32_t sp         : 14;
-        uint32_t _padding   : 12;
+        uint32_t sp         : 16;
+        uint32_t _padding   : 10;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
         uint32_t _padding_2 : 1;
@@ -262,10 +262,8 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
 
-        uint32_t dac_code       : 14;
-        uint32_t dac_sel        : 1;
-        uint32_t dac_enable     : 1;
-        uint32_t _padding       : 12;
+        uint32_t dac2_code      : 14;
+        uint32_t dac1_code      : 14;
         uint32_t cmd            : 4; //Bits 31:28
     }   dac_cb;
 
@@ -377,9 +375,20 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
         uint64_t sum_err_tap_w  : 32;
-        uint64_t pid_out_w      : 16;
+        uint64_t pid_out_w      : 14;
+        uint64_t _padding       : 2;
         uint64_t err_tap_w      : 16;
     }   io_sum_err_frame;
+
+    struct __attribute__((packed))
+    {
+        uint64_t dac2_dat_r     : 14;
+        uint64_t _padding       : 4;
+        uint64_t dac1_dat_r     : 14;
+        uint64_t dac2_gate_r    : 3;
+        uint64_t dac1_gate_r    : 3;
+        uint64_t _padding2      : 26;
+    }   gate_check_frame;
 
     uint64_t raw;
 }   dma_frame_t;

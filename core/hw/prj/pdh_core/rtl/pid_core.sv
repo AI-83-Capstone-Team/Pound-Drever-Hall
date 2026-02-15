@@ -13,7 +13,7 @@ module pid_core
     input logic signed [S16_W-1:0] ki_i,
     input logic [DEC_W-1:0] decimate_i,
 
-    input logic signed [13:0] sp_i,
+    input logic signed [S16_W-1:0] sp_i,
     input logic [3:0] alpha_i,
     input logic [4:0] satwidth_i, //assume shift range of 15 to 31
 
@@ -33,7 +33,7 @@ module pid_core
 
 
     logic signed [S16_W-1:0] kp_r, kd_r, ki_r;
-    logic signed [13:0] sp_r;
+    logic signed [S16_W-1:0] sp_r;
     logic [3:0] alpha_r;
     logic [4:0] satwidth_r;
 
@@ -65,7 +65,7 @@ module pid_core
     endfunction
 
 
-
+    logic signed [S16_W:0] error_wide_w;
     logic signed [S16_W-1:0] error_w, error_pipe1_r;
 
     logic signed [S32_W-1:0] sum_error1_w, sum_error2_w, sum_error_r;
@@ -84,7 +84,10 @@ module pid_core
 
 
     always_comb begin
-        error_w = dat_i - sp_r; //We dont worry about the overflow here because our core data feed is nominally a 14-bit signed int extended into s16 so there should be enough room at 16 bits as-is
+        error_wide_w = dat_i - sp_r; //We dont worry about the overflow here because our core data feed is nominally a 14-bit signed int extended into s16 so there should be enough room at 16 bits as-is
+
+        error_w = (error_wide_w[16] ^ error_wide_w[15])? (error_wide_w[15]? {1'b0, 15'b1} : {1'b1, 15'b0}) : error_wide_w[15:0];
+
         sat_threshold_w = 1 << satwidth_r;
         
         sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_w[S16_W-1]}}, error_w});
