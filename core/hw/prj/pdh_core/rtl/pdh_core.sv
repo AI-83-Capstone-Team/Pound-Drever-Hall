@@ -51,7 +51,7 @@ module pdh_core #
 /////////////////////////////////////////////////////////
 
 
-    logic rst_i, rst_r, strobe_meta_w, strobe_sync_r, strobe_pipe1_r, strobe_edge_w;
+    logic rst_i, rst_r;
     assign rst_i = axi_from_ps_i[31];
     assign rst_o = rst_r;
     
@@ -75,16 +75,19 @@ module pdh_core #
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
     logic [CMD_BITS-1:0] cmd_w;
     
-    assign strobe_meta_w = axi_from_ps_i[30];
+    logic strobe_bit_w, strobe_edge_w;
+    logic [31:0] axi_1ff_r, axi_2ff_r, axi_3ff_r;
+
+    assign strobe_bit_w = axi_3ff_r[30];
     posedge_detector u_strobe_edge_detector(
-        .D(strobe_sync_r),
+        .D(strobe_bit_w),
         .clk(clk),
         .rst(rst_i),
         .Q(strobe_edge_w)
     );
 
     always_comb begin
-        next_axi_from_ps_w = strobe_edge_w? axi_from_ps_i : axi_from_ps_r;
+        next_axi_from_ps_w = strobe_edge_w? axi_3ff_r : axi_from_ps_r;
     end
 
 
@@ -359,7 +362,7 @@ module pdh_core #
 
     always_ff @(posedge clk or posedge rst_i) begin
         if(rst_i)begin
-            {strobe_sync_r, strobe_pipe1_r} <= {1'b0, 1'b0};
+            {axi_3ff_r, axi_2ff_r, axi_1ff_r} <= '0;
             axi_from_ps_r <= 0;
             led_r <= 0;
             sin_theta_r <= 0; 
@@ -386,7 +389,7 @@ module pdh_core #
             callback_r <= 0;
 
         end else begin
-            {strobe_sync_r, strobe_pipe1_r} <= {strobe_pipe1_r, strobe_meta_w};
+            {axi_3ff_r, axi_2ff_r, axi_1ff_r} <= {axi_2ff_r, axi_1ff_r, axi_from_ps_i};
             axi_from_ps_r <= next_axi_from_ps_w;
             led_r <= next_led_w;
             sin_theta_r <= next_sin_theta_w; 
