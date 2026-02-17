@@ -97,16 +97,7 @@ module pdh_core #
     
 
 
-    logic signed [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w;
-    logic signed [14:0] tmp_s_a, tmp_s_b;
-    always_comb begin
-        tmp_s_a = -($signed({1'b0, adc_dat_a_i}) - ADC_OFFSET);
-        tmp_s_b = -($signed({1'b0, adc_dat_b_i}) - ADC_OFFSET);
-        adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
-        adc_dat_b_16s_w = {tmp_s_b[14], tmp_s_b};
-    end
-
-    logic signed [15:0] i_feed_w, q_feed_w;
+    logic signed [15:0] i_feed_w, q_feed_w, i_feed_r, q_feed_r;
 
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
@@ -172,9 +163,9 @@ module pdh_core #
 
             5'b00101: cs_cb_w = {base_bus, rot_sin_theta_r};
            
-            5'b00110: cs_cb_w = {base_bus, i_feed_w};
+            5'b00110: cs_cb_w = {base_bus, i_feed_r};
 
-            5'b00111: cs_cb_w = {base_bus, q_feed_w};
+            5'b00111: cs_cb_w = {base_bus, q_feed_r};
 
             5'b01000: cs_cb_w = {base_bus, 15'b0, dma_finished_r};
 
@@ -202,7 +193,7 @@ module pdh_core #
     logic [21:0] dma_decimation_code_r, next_dma_decimation_code_w; //TODO: Add this as CS option
 
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
-    assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_w[15:2], i_feed_w[15:2]};
+    assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_r[15:2], i_feed_r[15:2]};
     assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_engaged_r};
     assign set_kp_cb_w = {CMD_SET_KP, 12'd0, kp_r};
     assign set_kd_cb_w = {CMD_SET_KD,12'd0, kd_r};
@@ -232,7 +223,7 @@ module pdh_core #
         .sp_i(sp_r),
         .alpha_i(alpha_r),
         .satwidth_i(satwidth_r),
-        .dat_i(adc_dat_a_16s_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
+        .dat_i(i_feed_r), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
         .pid_out(pid_out_w),
 
@@ -254,11 +245,11 @@ module pdh_core #
 
     always_comb begin
         unique case(frame_code_r)
-            ANGLES_AND_ESIGS: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
+            ANGLES_AND_ESIGS: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
             PID_ERR_TAPS: dma_data_o = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
             IO_SUM_ERR: dma_data_o = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
             GATE_CHECK: dma_data_o = {26'b0, dac1_gate_r, dac2_gate_r, dac1_dat_r, 4'b0, dac2_dat_r};
-            default: dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r}; 
+            default: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
         endcase
     end
 
@@ -555,13 +546,26 @@ module pdh_core #
 
 
 //////////////////  IQ FEED LOGIC /////////////////////
-
-    logic signed [31:0] i_rot_w, q_rot_w;
+    logic signed [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w, adc_dat_a_16s_r, adc_dat_b_16s_r;
+    logic signed [14:0] tmp_s_a, tmp_s_b;
+    logic signed [32:0] i_rot_w, q_rot_w;
+    logic signed [31:0] i_rot_sat_w, q_rot_sat_w;
     always_comb begin
-        i_rot_w = $signed(rot_cos_theta_r)*$signed(adc_dat_a_16s_w) - $signed(rot_sin_theta_r)*$signed(adc_dat_b_16s_w);
-        q_rot_w = $signed(rot_sin_theta_r)*$signed(adc_dat_a_16s_w) + $signed(rot_cos_theta_r)*$signed(adc_dat_b_16s_w);
-        i_feed_w = i_rot_w >>> 15;
-        q_feed_w = q_rot_w >>> 15;
+        tmp_s_a = -($signed({1'b0, adc_dat_a_i}) - ADC_OFFSET);
+        tmp_s_b = -($signed({1'b0, adc_dat_b_i}) - ADC_OFFSET);
+        adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
+        adc_dat_b_16s_w = {tmp_s_b[14], tmp_s_b};
+    end
+
+    always_comb begin
+        i_rot_w = $signed(rot_cos_theta_r)*$signed(adc_dat_a_16s_r) - $signed(rot_sin_theta_r)*$signed(adc_dat_b_16s_r);
+        q_rot_w = $signed(rot_sin_theta_r)*$signed(adc_dat_a_16s_r) + $signed(rot_cos_theta_r)*$signed(adc_dat_b_16s_r);
+        
+        i_rot_sat_w = i_rot_w[32] ^ i_rot_w[31]? (i_rot_w[31]? {1'b1, {31{1'b0}}} : {1'b0, {31{1'b1}}}) : i_rot_w[31:0];
+        q_rot_sat_w = q_rot_w[32] ^ q_rot_w[31]? (q_rot_w[31]? {1'b1, {31{1'b0}}} : {1'b0, {31{1'b1}}}) : q_rot_w[31:0];
+
+        i_feed_w = i_rot_sat_w >>> 15;
+        q_feed_w = q_rot_sat_w >>> 15;
     end
 
 
@@ -572,9 +576,9 @@ module pdh_core #
     
     assign dac_rst_o = rst_r; //rst_i; //TODO: rst_r async set sync release
 
-    assign dma_enable_o = (cmd_w==CMD_GET_FRAME);
-    //assign dma_data_o = {i_feed_w, q_feed_w, cos_theta_r, sin_theta_r};
-
+    logic dma_enable_r, next_dma_enable_w;
+    assign next_dma_enable_w = cmd_w == CMD_GET_FRAME;
+    assign dma_enable_o = dma_enable_r; //(cmd_w==CMD_GET_FRAME);
     assign dma_decimation_code_o = dma_decimation_code_r;
     
 
@@ -587,7 +591,12 @@ module pdh_core #
             cos_theta_r <= 16'sh7FFF;
             rot_sin_theta_r <= 0;
             rot_cos_theta_r <= 16'sh7FFF;
+            adc_dat_a_16s_r <= '0;
+            adc_dat_b_16s_r <= '0;
+            i_feed_r <= '0;
+            q_feed_r <= '0;
             dma_decimation_code_r <= 26'd1;
+            dma_enable_r <= 1'b0;
             frame_code_r <= ANGLES_AND_ESIGS;
             kp_r <= '0;
             kd_r <= '0;
@@ -609,7 +618,12 @@ module pdh_core #
             cos_theta_r <= next_cos_theta_w;
             rot_sin_theta_r <= next_rot_sin_theta_w;
             rot_cos_theta_r <= next_rot_cos_theta_w;
+            adc_dat_a_16s_r <= adc_dat_a_16s_w;
+            adc_dat_b_16s_r <= adc_dat_b_16s_w;
+            i_feed_r <= i_feed_w;
+            q_feed_r <= q_feed_w;
             dma_decimation_code_r <= next_dma_decimation_code_w;
+            dma_enable_r <= next_dma_enable_w;
             frame_code_r <= next_frame_code_w;
             kp_r <= kp_w;
             kd_r <= kd_w;

@@ -11,7 +11,7 @@ module tb_bram_controller;
 
     bram_controller dut (
         .pdh_clk(clk),
-        .divcode_i(divcode),
+        .decimation_code_i(divcode),
         .enable_i(enable),
         .rst_i(rst)
     );

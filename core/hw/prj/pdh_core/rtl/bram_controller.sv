@@ -79,7 +79,7 @@ module bram_controller
                 transaction_complete = 1'b0;
                 next_addr_w = {AW{1'd0}};
                 bram_we_w = 1'b0;
-                next_decimation_code_w = enable_sync_edge_w? decimation_code_i : 26'd1;
+                next_decimation_code_w = enable_sync_edge_w? decimation_code_i : decimation_code_r;
                 next_count_w = 26'd0;
             end
 
@@ -106,7 +106,7 @@ module bram_controller
                 transaction_complete = 1'b1;
                 next_addr_w = {AW{1'd0}};
                 bram_we_w = 1'b0;
-                next_decimation_code_w = enable_sync_edge_w? decimation_code_i : 26'd1;
+                next_decimation_code_w = enable_sync_edge_w? decimation_code_i : decimation_code_r;
                 next_count_w = 26'd0;
             end
 

@@ -7,12 +7,12 @@ if __name__ == "__main__":
     ##while True:
 
     api_set_dac(0.0, 0)
-    api_set_dac(1.0,1)
+    api_set_dac(0.0,1)
     api_get_adc()
 
     api_set_rotation(0)
-    api_set_pid(kp=0.5, kd=0.1, ki=0.2, sp=-0.7367, dec=1000, alpha = 2, sat=28, en=1)
-    api_get_frame(10, 1)
+    api_set_pid(kp=0.5, kd=0.1, ki=0.2, sp=-0.3367, dec=100, alpha = 2, sat=18, en=1)
+    api_get_frame(10000, 1)
     api_get_adc()
 
 
