@@ -92,7 +92,7 @@ module tb_dma_controller;
 
         .enable_i(enable_i),
         .data_i(data_i),
-        .finished_o(finished_o)
+        .dma_ready_o(finished_o)
     );
 
     // -----------------------------
@@ -305,8 +305,6 @@ module tb_dma_controller;
                 aw_stall_countdown = 0;
             end
 
-            // Force your internal enable_meta_w (since your DUT expects external drive)
-            force dut.enable_meta_w = enable_i;
 
             // Flip switch
             pulse_enable();
@@ -353,7 +351,6 @@ module tb_dma_controller;
             else      $display("=== %s: FAIL (errors=%0d) ===", name, err);
 
             // release force so we don't lock sim if you edit things later
-            release dut.enable_meta_w;
 
             // breathe
             repeat(5) @(posedge aclk);

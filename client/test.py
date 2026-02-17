@@ -17,3 +17,4 @@ if __name__ == "__main__":
 
 
     api_check_signed(6)
+    api_get_frame(5, 1)

@@ -198,7 +198,7 @@ module pdh_top
         // are intentionally left unconnected.
     );
 
-    logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w;
+    logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w, dma_ready_w, bram_ready_w, bram_enable_w;
     logic [63:0] dma_data_w;
     logic [21:0] decimation_code_w;
 
@@ -221,18 +221,18 @@ module pdh_top
         .adc_dat_b_i(adc_dat_b_i),
         .adc_csn_o(adc_csn_o),
         .rst_o(core_rst),
-        .dma_enable_o(dma_enable_w),
-        .dma_data_o(dma_data_w),
-        .dma_finished_i(dma_finished_w),
-        .dma_engaged_i(dma_engaged_w),
-        .dma_decimation_code_o(decimation_code_w)
-    );
 
+        .dma_enable_o(dma_enable_w),
+        .bram_enable_o(bram_enable_w),
+        .dma_ready_i(dma_ready_w),
+        .bram_ready_i(bram_ready_w),
+        .dma_decimation_code_o(decimation_code_w),
+        .dma_data_o(dma_data_w)
+    );
 
     
     logic [31:0] bram_addr_w;
     logic [63:0] bram_out_w;
-    logic dma_controller_enable_w, dma_controller_finished_w;
     bram_controller u_bram(
         .pdh_clk(pdh_clk),
         .axi_clk(fclk0),
@@ -240,11 +240,9 @@ module pdh_top
         .addr_i(bram_addr_w),
         .din(dma_data_w),
         .dout(bram_out_w),
-        .enable_i(dma_enable_w),
-        .dma_enable(dma_controller_enable_w),
-        .dma_termination_sig(dma_controller_finished_w),
-        .transaction_complete(dma_finished_w),
-        .decimation_code_i(decimation_code_w)
+        .enable_i(bram_enable_w),
+        .decimation_code_i(decimation_code_w),
+        .bram_ready_o(bram_ready_w)
     );
 
 
@@ -265,10 +263,9 @@ module pdh_top
         .m_axi_bresp(m_axi_bresp),
         .m_axi_wstrb(m_axi_wstrb),
         .m_axi_wlast(m_axi_wlast),
-        .enable_i(dma_controller_enable_w),
+        .enable_i(dma_enable_w),
         .data_i(bram_out_w),
-        .finished_o(dma_controller_finished_w),
-        .dma_engaged_o(dma_engaged_w),
+        .dma_ready_o(dma_ready_w),
         .bram_addr_o(bram_addr_w)
     );
 

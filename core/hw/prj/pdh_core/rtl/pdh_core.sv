@@ -26,12 +26,12 @@ module pdh_core #
     output logic [7:0] led_o,
     output logic rst_o,
 
-    output logic [21:0] dma_decimation_code_o,
-
     output logic dma_enable_o,
-    output logic [63:0] dma_data_o,
-    input  logic dma_finished_i,
-    input  logic dma_engaged_i
+    output logic bram_enable_o,
+    input  logic dma_ready_i,
+    input  logic bram_ready_i,
+    output logic [21:0] dma_decimation_code_o,    
+    output logic [63:0] dma_data_o
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
@@ -82,7 +82,7 @@ module pdh_core #
     posedge_detector u_strobe_edge_detector(
         .D(strobe_bit_w),
         .clk(clk),
-        .rst(rst_i),
+        .rst(rst_i || rst_r),
         .Q(strobe_edge_w)
     );
 
@@ -104,10 +104,6 @@ module pdh_core #
 
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
-    logic dma_engaged_r, dma_finished_r;
-    
-
-    
     logic signed [15:0] kp_r, kd_r, ki_r, kp_w, kd_w, ki_w;
     logic signed [13:0] sp_w, sp_r;
     logic [13:0] dec_w, dec_r;
@@ -159,9 +155,7 @@ module pdh_core #
 
             5'b00111: cs_cb_w = {base_bus, q_feed_r};
 
-            5'b01000: cs_cb_w = {base_bus, 15'b0, dma_finished_r};
-
-            5'b01001: cs_cb_w = {base_bus, 15'b0, dma_engaged_r};
+            5'b01000: cs_cb_w = {base_bus, 15'b0, dma_ready_3ff};
 
             5'b01010: cs_cb_w = {base_bus, kp_r};
 
@@ -185,7 +179,7 @@ module pdh_core #
 
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_r[15:2], i_feed_r[15:2]};
-    assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_engaged_r};
+    assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_ready_3ff};
     assign set_kp_cb_w = {CMD_SET_KP, 12'd0, kp_r};
     assign set_kd_cb_w = {CMD_SET_KD,12'd0, kd_r};
     assign set_ki_cb_w = {CMD_SET_KI, 12'd0, ki_r};
@@ -323,9 +317,6 @@ module pdh_core #
     assign satwidth_w = (cmd_w == CMD_SET_ALPHA_SAT_EN)? data_w[5:1] : satwidth_r;
     assign pid_enable_w = (cmd_w == CMD_SET_ALPHA_SAT_EN)? data_w[0] : pid_enable_r;
 
-    logic dma_enable_r, next_dma_enable_w;
-    assign next_dma_enable_w = cmd_w == CMD_GET_FRAME;
-
 //////////////////  IQ FEED LOGIC /////////////////////
 
     logic signed [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w, adc_dat_a_16s_r, adc_dat_b_16s_r;
@@ -353,15 +344,92 @@ module pdh_core #
 ////////////////////////////////////////////////////////
 
     assign led_o = led_r; 
-    
-    assign dac_rst_o = rst_r; //rst_i; //TODO: rst_r async set sync release
+    assign dac_rst_o = rst_r;
 
-    assign dma_enable_o = dma_enable_r; //(cmd_w==CMD_GET_FRAME);
+
+
     assign dma_decimation_code_o = dma_decimation_code_r;
-    
+   
+
+///////////////////////// DMA ORCHESTRATOR ///////////////////////////
+
+    logic dma_ready_edge_w, dma_ready_1ff, dma_ready_2ff, dma_ready_3ff;
+    logic bram_ready_edge_w, bram_ready_r, bram_edge_acquired_r, next_bram_edge_acquired_w;
+
+    posedge_detector u_dma_edge_detector(
+       .D(dma_ready_3ff),
+       .Q(dma_ready_edge_w),
+       .rst(rst_i || rst_r),
+       .clk(clk)
+    );
+
+    posedge_detector u_bram_edge_detector(
+       .D(bram_ready_r),
+       .Q(bram_ready_edge_w),
+       .rst(rst_i || rst_r),
+       .clk(clk)
+    );
+
+
+    logic dma_enable_r, next_dma_enable_w, bram_enable_r, next_bram_enable_w;
+
+
+    typedef enum logic [1:0]
+    {
+        DMA_ARMED = 2'b00,
+        DMA_RUN_BRAM = 2'b01,
+        DMA_RUN_AXI = 2'b10,
+        DMA_STALE = 2'b11
+    }   dma_control_state_t;
+
+    dma_control_state_t dma_state_r, next_dma_state_w;
+
+    always_comb begin
+        unique case(dma_state_r)
+            DMA_ARMED: begin
+                next_dma_state_w = bram_ready_r && (cmd_w == CMD_GET_FRAME)? DMA_RUN_BRAM : DMA_ARMED;
+                next_dma_enable_w = 1'b0;
+                next_bram_enable_w = 1'b0;
+                next_bram_edge_acquired_w = 1'b0;
+            end
+
+            DMA_RUN_BRAM: begin
+                next_dma_state_w = (bram_edge_acquired_r && dma_ready_3ff)? DMA_RUN_AXI : DMA_RUN_BRAM;
+                next_dma_enable_w = 1'b0;
+                next_bram_enable_w = 1'b1;
+                next_bram_edge_acquired_w = bram_ready_edge_w? 1'b1 : bram_edge_acquired_r;
+            end
+
+            DMA_RUN_AXI: begin
+                next_dma_state_w = dma_ready_edge_w? DMA_STALE : DMA_RUN_AXI;
+                next_dma_enable_w = 1'b1;
+                next_bram_enable_w = 1'b0;
+                next_bram_edge_acquired_w = 1'b0;
+            end
+
+            DMA_STALE: begin
+                next_dma_state_w = (cmd_w != CMD_GET_FRAME)? DMA_ARMED : DMA_STALE;
+                next_dma_enable_w = 1'b0;
+                next_bram_enable_w = 1'b0;
+                next_bram_edge_acquired_w = 1'b0;
+            end
+        endcase
+    end
+
+
+
+    assign dma_enable_o = dma_enable_r;
+    assign bram_enable_o = bram_enable_r;
+
+
+
+/////////////////////////////////////////////////////////////////////
+
+
+
 
     always_ff @(posedge clk or posedge rst_i) begin
-        if(rst_i)begin
+        if(rst_i || rst_r)begin
             {axi_3ff_r, axi_2ff_r, axi_1ff_r} <= '0;
             axi_from_ps_r <= 0;
             led_r <= 0;
@@ -373,11 +441,17 @@ module pdh_core #
             adc_dat_b_16s_r <= '0;
             i_feed_r <= '0;
             q_feed_r <= '0;
+
             dma_decimation_code_r <= 26'd1;
-            dma_enable_r <= 1'b0;
             frame_code_r <= ANGLES_AND_ESIGS;
-            dma_engaged_r <= '0;
-            dma_finished_r <= '0;
+            dma_enable_r <= 1'b0;
+            bram_enable_r <= 1'b0;
+            bram_edge_acquired_r <= 1'b0;
+
+            {dma_ready_3ff, dma_ready_2ff, dma_ready_1ff} <= '0;
+            bram_ready_r <= '0;
+            dma_state_r <= DMA_ARMED;
+
             kp_r <= '0;
             kd_r <= '0;
             ki_r <= '0;
@@ -386,6 +460,7 @@ module pdh_core #
             alpha_r <= 4'd4;
             satwidth_r <= 5'd31;
             pid_enable_r <= 1'b0;
+            
             callback_r <= 0;
 
         end else begin
@@ -400,11 +475,17 @@ module pdh_core #
             adc_dat_b_16s_r <= adc_dat_b_16s_w;
             i_feed_r <= i_feed_w;
             q_feed_r <= q_feed_w;
+
             dma_decimation_code_r <= next_dma_decimation_code_w;
-            dma_enable_r <= next_dma_enable_w;
             frame_code_r <= next_frame_code_w;
-            dma_engaged_r <= dma_engaged_i; //TODO: 3FF sync these
-            dma_finished_r <= dma_finished_i;
+            dma_enable_r <= next_dma_enable_w;
+            bram_enable_r <= next_bram_enable_w;
+            bram_edge_acquired_r <= next_bram_edge_acquired_w;
+
+            {dma_ready_3ff, dma_ready_2ff, dma_ready_1ff} <= {dma_ready_2ff, dma_ready_1ff, dma_ready_i};
+            bram_ready_r <= bram_ready_i;
+            dma_state_r <= next_dma_state_w;
+
             kp_r <= kp_w;
             kd_r <= kd_w;
             ki_r <= ki_w;
@@ -413,6 +494,7 @@ module pdh_core #
             alpha_r <= alpha_w;
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
+
             callback_r <= next_callback_w;
         end
 
@@ -422,7 +504,7 @@ module pdh_core #
     assign next_dac_sel_w = ~dac_sel_r;
 
     always_ff @(negedge clk or posedge rst_i) begin
-        if(rst_i) begin
+        if(rst_i || rst_r) begin
             dac_sel_r <= 1'b0;
             dac1_dat_r <= 14'h2000;
             dac2_dat_r <= 14'h2000;
