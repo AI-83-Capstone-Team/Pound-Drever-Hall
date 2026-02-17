@@ -41,6 +41,12 @@ static inline int push_ctx_cb(cmd_ctx_t* ctx, size_t* index, void* value, int ta
             strcpy(ctx->output.output_items[*index].name, name);
             break;
 
+        case INT16_TAG:
+            ctx->output.output_items[*index].data.i = *(int16_t*)value;
+            ctx->output.output_items[*index].tag = INT_TAG;
+            strcpy(ctx->output.output_items[*index].name, name);
+            break;
+
         case UINT_TAG:
             ctx->output.output_items[*index].data.u = *(uint32_t*)value;
             ctx->output.output_items[*index].tag = UINT_TAG;
@@ -75,6 +81,14 @@ static inline int validate_cb(void* cb, void* expected, int tag, const char* fun
             if(*(int32_t*)cb != *(int32_t*)expected) 
             {
                 DEBUG_INFO("%s::ERROR: Expected %d for %s but got %d", func,*(int32_t*)expected, name, *(int32_t*)cb);
+                return_code = fail_code;
+            }
+            break;
+
+        case INT16_TAG:
+            if(*(int16_t*)cb != *(int16_t*)expected) 
+            {
+                DEBUG_INFO("%s::ERROR: Expected %d for %s but got %d", func,*(int16_t*)expected, name, *(int16_t*)cb);
                 return_code = fail_code;
             }
             break;
@@ -301,7 +315,6 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     int16_t kp_i = float_to_q15(kp_f);
     int16_t kd_i = float_to_q15(kd_f);
     int16_t ki_i = float_to_q15(ki_f);
-    //int16_t sp_i = float_to_q15(sp_f);
 
     int32_t sp_inter = (int32_t)lrintf(sp_f * 8192.0f);
     if(sp_inter > 8191) sp_inter = 8191;
@@ -320,7 +333,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     pdh_callback_t cb = pdh_execute_cmd(cmd);
     int16_t echo_kp = (int16_t)cb.set_kp_cb.kp_r;
     float kp_converted = echo_kp / 32768.0f;
-    int return_code = validate_cb(&echo_kp, &kp_i, INT_TAG, __func__, "KP_CB", SET_PID_OK, SET_PID_INVALID_KP);
+    int return_code = validate_cb(&echo_kp, &kp_i, INT16_TAG, __func__, "KP_CB", SET_PID_OK, SET_PID_INVALID_KP);
     push_ctx_cb(ctx, &index, &kp_converted, FLOAT_TAG, "KP_CB");
 
     cmd.raw = 0;
@@ -329,7 +342,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     cb = pdh_execute_cmd(cmd);
     int16_t echo_kd = (int16_t)cb.set_kd_cb.kd_r;
     float kd_converted = echo_kd / 32768.0f;
-    return_code = validate_cb(&echo_kd, &kd_i, INT_TAG, __func__, "KD_CB", return_code, SET_PID_INVALID_KD);
+    return_code = validate_cb(&echo_kd, &kd_i, INT16_TAG, __func__, "KD_CB", return_code, SET_PID_INVALID_KD);
     push_ctx_cb(ctx, &index, &kd_converted, FLOAT_TAG, "KD_CB");
 
     cmd.raw = 0;
@@ -338,7 +351,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     cb = pdh_execute_cmd(cmd);
     int16_t echo_ki = (int16_t)cb.set_ki_cb.ki_r;
     float ki_converted = echo_ki / 32768.0f;
-    return_code = validate_cb(&echo_ki, &ki_i, INT_TAG, __func__, "KI_CB", return_code, SET_PID_INVALID_KI);
+    return_code = validate_cb(&echo_ki, &ki_i, INT16_TAG, __func__, "KI_CB", return_code, SET_PID_INVALID_KI);
     push_ctx_cb(ctx, &index, &ki_converted, FLOAT_TAG, "KI_CB");
 
     cmd.raw = 0;
@@ -353,9 +366,9 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     cmd.set_sp_cmd.cmd = CMD_SET_SP;
     cmd.set_sp_cmd.sp = sp_i;
     cb = pdh_execute_cmd(cmd);
-    int16_t echo_sp = (int16_t)cb.set_sp_cb.sp_r;
+    int16_t echo_sp = (int16_t)(((uint16_t)cb.set_sp_cb.sp_r) << 2)>>2;
     float sp_converted = echo_sp / 8192.0f;
-    return_code = validate_cb(&echo_sp, &sp_i, INT_TAG, __func__, "SP_CB", return_code, SET_PID_INVALID_SP);
+    return_code = validate_cb(&echo_sp, &sp_i, INT16_TAG, __func__, "SP_CB", return_code, SET_PID_INVALID_SP);
     push_ctx_cb(ctx, &index, &sp_converted, FLOAT_TAG, "SP_CB");
 
     cmd.raw = 0;
@@ -426,17 +439,17 @@ int cmd_set_rot(cmd_ctx_t* ctx)
     cb.raw = 0;
     pdh_get_callback(&cb);
 
-   // int16_t approx_cos_i = (int32_t)((int16_t)((((uint16_t)c_q15) >> 2) << 2));
-   // int16_t approx_sin_i = (int32_t)((int16_t)((((uint16_t)s_q15) >> 2) << 2));
+    int16_t approx_cos_i = (int16_t)((((uint16_t)c_q15) >> 2) << 2);
+    int16_t approx_sin_i = (int16_t)((((uint16_t)s_q15) >> 2) << 2);
     
-    int16_t approx_cos_r = (int32_t)((int16_t)((uint16_t)cb.set_rot_coeff_cb.cos_theta_r << 2));
-    int16_t approx_sin_r = (int32_t)((int16_t)((uint16_t)cb.set_rot_coeff_cb.sin_theta_r << 2));
+    int16_t approx_cos_r = (int16_t)((uint16_t)cb.set_rot_coeff_cb.cos_theta_r << 2);
+    int16_t approx_sin_r = (int16_t)((uint16_t)cb.set_rot_coeff_cb.sin_theta_r << 2);
 
     float cos_r_converted = approx_cos_r / ROTATION_CONST;
     float sin_r_converted = approx_sin_r / ROTATION_CONST;
 
-//    return_code = validate_cb(&approx_cos_r, &approx_cos_i, INT_TAG, __func__, "COS_CB", return_code, SET_ROT_INVALID_COS);
-//    return_code = validate_cb(&approx_sin_r, &approx_sin_i, INT_TAG, __func__, "SIN_CB", return_code, SET_ROT_INVALID_SIN); SIN check is slightly off not sure why
+    return_code = validate_cb(&approx_cos_r, &approx_cos_i, INT16_TAG, __func__, "COS_CB", return_code, SET_ROT_INVALID_COS);
+    return_code = validate_cb(&approx_sin_r, &approx_sin_i, INT16_TAG, __func__, "SIN_CB", return_code, SET_ROT_INVALID_SIN); 
 
     push_ctx_cb(ctx, &index, &cos_r_converted, FLOAT_TAG, "COS_CB");
     push_ctx_cb(ctx, &index, &sin_r_converted, FLOAT_TAG, "SIN_CB");

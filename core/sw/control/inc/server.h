@@ -11,6 +11,7 @@ typedef enum
     FLOAT_TAG,
     INT_TAG,
     UINT_TAG,
+    INT16_TAG,
 }   output_tags_e;
 
 
