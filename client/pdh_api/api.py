@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 import re
-import time
 import os
 import socket
 import math
@@ -9,16 +7,56 @@ import numpy as np
 import matplotlib
 matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
-
+import re
+import io
+from functools import wraps
+from contextlib import redirect_stdout
 SERVER_IP = "10.42.0.62"
 SERVER_PORT = 5555
-RP_CH_1 = 0
-NUM_SAMPLES = 100
+
+
+
+__all__ = [
+    'api_reset_fpga',
+    'api_set_led',
+    'api_get_adc',
+    'api_set_dac',
+    'api_set_pid',
+    'api_set_rotation',
+    'api_get_frame',
+    'api_check_signed'
+]
+
+
 
 
 REMOTE_BUILD_DIR = "sw/build"
 REMOTE_CSV_NAME = "dma_log.csv"
 LOCAL_DATA_DIR = "data"
+
+
+_STATUS = re.compile(r'(?mi)^\s*status\s*:\s*(-?\d+)\s*$')
+
+def _st(s: str):
+    m = _STATUS.search(s)
+    return int(m.group(1)) if m else None
+
+def api_cmd(fn):
+    @wraps(fn)
+    def w(*a, **k):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            r = fn(*a, **k)
+        out = buf.getvalue()
+        st = _st(out)
+        if st is None:
+            raise RuntimeError(f"{fn.__name__}: no status")
+        if st != 0:
+            raise RuntimeError(f"{fn.__name__}: status {st}")
+        print(out, end="")  # preserve original prints
+        return r
+    return w
+
 
 def fetch_remote_csv(ssh: paramiko.SSHClient, local_name: str) -> str:
     os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
@@ -45,7 +83,8 @@ def execute_cmd_seq(cmds):
         print(data.decode("ascii", errors="replace"))
 
 
-def reset_fpga():
+@api_cmd
+def api_reset_fpga():
     cmds = [
     (
         "CMD:reset_fpga\n"
@@ -53,7 +92,9 @@ def reset_fpga():
     ]
     execute_cmd_seq(cmds)
 
-def set_led(value: int):
+
+@api_cmd
+def api_set_led(value: int):
     cmds = [
     (
         "CMD:set_led\n"
@@ -62,7 +103,9 @@ def set_led(value: int):
     ]
     execute_cmd_seq(cmds)
 
-def set_dac(value: float, dac_sel: bool):
+
+@api_cmd
+def api_set_dac(value: float, dac_sel: bool):
     cmds = [
     (
         "CMD:set_dac\n"
@@ -72,7 +115,9 @@ def set_dac(value: float, dac_sel: bool):
     ]
     execute_cmd_seq(cmds)
 
-def get_adc():
+
+@api_cmd
+def api_get_adc():
     cmds = [
     (
         "CMD:get_adc\n"
@@ -80,7 +125,9 @@ def get_adc():
     ]
     execute_cmd_seq(cmds)
 
-def check_signed(adc_sel):
+
+@api_cmd
+def api_check_signed(adc_sel):
     cmds = [
     (
         "CMD:check_signed\n"
@@ -89,7 +136,9 @@ def check_signed(adc_sel):
     ]
     execute_cmd_seq(cmds)
 
-def set_rotation(theta_deg: float):
+
+@api_cmd
+def api_set_rotation(theta_deg: float):
     theta_rad = math.pi * theta_deg / 180.0
     cmds = [
     (
@@ -99,7 +148,9 @@ def set_rotation(theta_deg: float):
     ]
     execute_cmd_seq(cmds)
 
-def get_frame(decimation, frame_code):
+
+@api_cmd
+def api_get_frame(decimation, frame_code):
     cmds = [
     (
         "CMD:get_frame\n"
@@ -129,9 +180,8 @@ def get_frame(decimation, frame_code):
     plt.show()
 
 
-
-
-def test_frame(byte_offset):
+@api_cmd
+def api_test_frame(byte_offset):
     cmds = [
     (
         "CMD:test_frame\n"
@@ -140,7 +190,9 @@ def test_frame(byte_offset):
     ]
     execute_cmd_seq(cmds)
 
-def set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
+
+@api_cmd
+def api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
     cmds = [
     (
         "CMD:set_pid\n"
@@ -149,25 +201,3 @@ def set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
     )
     ]
     execute_cmd_seq(cmds)
-
-
-if __name__ == "__main__":
-    reset_fpga()
-    time.sleep(0.01)
-    ##while True:
-
-    set_dac(0.0, 0)
-    set_dac(1.0,1)
-    get_adc()
-
-    set_rotation(0)
-    set_pid(kp=0.5, kd=0.1, ki=0.2, sp=0.7367, dec=1000, alpha = 2, sat=28, en=1)
-    # time.sleep(0.1)
-    get_frame(10, 1)
-    time.sleep(0.1)
-    get_adc()
-    # set_dac(0.69, 0)
-    # get_frame(1,0)
-
-
-    check_signed(6)

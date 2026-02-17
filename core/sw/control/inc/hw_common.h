@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define PDH_OK 0
 
 #define ABS(V) ((V > 0)? V : -V)
 #define SWEEP_BUFFER_SIZE 2000
@@ -106,6 +105,65 @@ typedef enum
     CMD_SET_ALPHA_SAT_EN = 0b1101,
 }   pdh_cmd_e;   
 
+typedef enum
+{
+    PDH_OK,
+    PDH_INVALID_CMD,
+}   pdh_generic_e;
+
+typedef enum
+{
+    SET_LED_OK,
+    SET_LED_INVALID_LED,
+    SET_LED_INVALID_LED_CB,
+}   set_led_e;
+
+typedef enum
+{
+    GET_ADC_OK,
+}   get_adc_e;
+
+typedef enum
+{
+
+    CHECK_SIGNED_OK,
+    CHECK_SIGNED_INVALID_REG_SEL_CB,
+}   check_signed_e;
+
+typedef enum
+{
+    SET_DAC_OK,
+    SET_DAC_INVALID_CODE,
+}   set_dac_e;
+
+
+typedef enum
+{
+    SET_PID_OK,
+    SET_PID_INVALID_KP,
+    SET_PID_INVALID_KD,
+    SET_PID_INVALID_KI,
+    SET_PID_INVALID_SP,
+    SET_PID_INVALID_DEC,
+    SET_PID_INVALID_ALPHA,
+    SET_PID_INVALID_SAT,
+    SET_PID_INVALID_EN,
+}   set_pid_e;
+
+typedef enum
+{
+    SET_ROT_OK,
+    SET_ROT_INVALID_COS,
+    SET_ROT_INVALID_SIN,
+}   set_rot_e;
+
+typedef enum
+{
+    GET_FRAME_OK,
+    GET_FRAME_NOT_ENGAGED,
+    GET_FRAME_INVALID_DEC,
+    GET_FRAME_INVALID_CODE,
+}   get_frame_e;
 
 typedef enum
 {
@@ -228,8 +286,8 @@ typedef union __attribute__((packed))
     struct __attribute__((packed))
     {
 
-        uint32_t sp         : 16;
-        uint32_t _padding   : 10;
+        uint32_t sp         : 14;
+        uint32_t _padding   : 12;
         uint32_t cmd        : 4;
         uint32_t strobe     : 1;
         uint32_t _padding_2 : 1;
@@ -245,6 +303,20 @@ typedef union __attribute__((packed))
         uint32_t strobe     : 1;
         uint32_t _padding2  : 1;
     }   set_alpha_sat_en_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 26;
+        uint32_t val        : 4;
+        uint32_t _padding2  : 2;
+    }   cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 30;
+        uint32_t val        : 1;
+        uint32_t _padding2  : 1;
+    }   strobe;
 
     uint32_t raw;
 }   pdh_cmd_t; //TODO: Check again to see if we can bring strobe and rst out of individual commands
@@ -336,8 +408,8 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t sp_r           : 16;
-        uint32_t _padding       : 12;
+        uint32_t sp_r           : 14;
+        uint32_t _padding       : 14;
         uint32_t cmd            : 4;
     }   set_sp_cb;
 
@@ -349,6 +421,13 @@ typedef union __attribute__((packed))
         uint32_t _padding       : 18;
         uint32_t cmd            : 4;
     }   set_alpha_sat_en_cb;
+
+    struct __attribute__((packed))
+    {
+        uint32_t _padding   : 26;
+        uint32_t val        : 4;
+        uint32_t _padding2  : 2;
+    }   cmd;
 
     uint32_t raw;
 }   pdh_callback_t;

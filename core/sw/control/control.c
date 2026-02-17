@@ -10,17 +10,96 @@
 #define RESET_OFF 0
 #define LOCK_POINT_FLAG "lock_point"
 #define DERIVED_SLOPE_FLAG "derived_slope"
+#define RETURN_CODE "RETURN_CODE"
+#define CMD "CMD_CB"
 
-
-
-
-
-//TODO: Better error handling for invalid inputs
-
-
-int cmd_reset_fpga(cmd_ctx_t* ctx)
+static inline pdh_callback_t pdh_execute_cmd(pdh_cmd_t cmd)
 {
-	DEBUG_INFO("Loading command context for: %s...\n", __func__);
+    cmd.strobe.val = 0;
+    pdh_send_cmd(cmd);
+    cmd.strobe.val = 1;
+    pdh_send_cmd(cmd);
+
+    pdh_callback_t cb = { 0 };
+    pdh_get_callback(&cb);
+    return cb;
+}
+
+static inline int push_ctx_cb(cmd_ctx_t* ctx, size_t* index, void* value, int tag, const char* name) //Value should always be an echo
+{
+    switch(tag)
+    {
+        case FLOAT_TAG:
+            ctx->output.output_items[*index].data.f = *(float*)value;
+            ctx->output.output_items[*index].tag = FLOAT_TAG;
+            strcpy(ctx->output.output_items[*index].name, name);
+            break;
+
+        case INT_TAG:
+            ctx->output.output_items[*index].data.i = *(int32_t*)value;
+            ctx->output.output_items[*index].tag = INT_TAG;
+            strcpy(ctx->output.output_items[*index].name, name);
+            break;
+
+        case UINT_TAG:
+            ctx->output.output_items[*index].data.u = *(uint32_t*)value;
+            ctx->output.output_items[*index].tag = UINT_TAG;
+            strcpy(ctx->output.output_items[*index].name, name);
+            break;
+
+        default:
+            DEBUG_INFO("INVALID TAG CODE: %d", tag); 
+            return 1;
+    }
+
+    ctx->output.num_outputs = ++*index;
+    return 0;
+ }
+
+
+static inline int validate_cb(void* cb, void* expected, int tag, const char* func, const char* name, int success_code, int fail_code)
+{
+    int return_code = success_code;
+
+    switch(tag)
+    {
+        case FLOAT_TAG:
+            if(*(float*)cb != *(float*)expected) 
+            {
+                DEBUG_INFO("%s::ERROR: Expected %f for %s but got %f", func, *(float*)expected, name, *(float*)cb);
+                return_code = fail_code;
+            }
+            break;
+
+        case INT_TAG:
+            if(*(int32_t*)cb != *(int32_t*)expected) 
+            {
+                DEBUG_INFO("%s::ERROR: Expected %d for %s but got %d", func,*(int32_t*)expected, name, *(int32_t*)cb);
+                return_code = fail_code;
+            }
+            break;
+
+        case UINT_TAG:
+            if(*(uint32_t*)cb != *(uint32_t*)expected) 
+            {
+                DEBUG_INFO("%s::ERROR: Expected %u for %s but got %u", func, *(uint32_t*)expected, name, *(uint32_t*)cb);
+                return_code = fail_code;
+            }
+            break;
+
+        default:
+            DEBUG_INFO("INVALID TAG CODE: %d", tag); 
+            return -1;
+    }
+
+    return return_code;
+}
+
+
+int cmd_reset_fpga(cmd_ctx_t* ctx) //TODO: Better rst cb verification
+{
+    int return_code = PDH_OK;
+
  
     pdh_cmd_t cmd;
     cmd.raw = 0;
@@ -34,125 +113,115 @@ int cmd_reset_fpga(cmd_ctx_t* ctx)
     callback.raw = 0;
     pdh_get_callback(&callback);
 
-    ctx->output.output_items[0].data.u = callback.raw;
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "reset callback raw");
 
-    ctx->output.num_outputs = 1;
+    uint32_t rst_raw  = callback.raw;
 
-    return PDH_OK;
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &rst_raw, UINT_TAG, "RST_RAW_CB");
+
+    return return_code;
 }
 
 
 int cmd_set_led(cmd_ctx_t* ctx)
 {
-	DEBUG_INFO("Loading command context for: %s...\n", __func__);
     
     pdh_cmd_t cmd;
     cmd.raw = 0;
 
+    int return_code = SET_LED_OK;
     uint32_t led_code = ctx->uint_args[0];
-
-    cmd.led_cmd.cmd = CMD_SET_LED;
-    cmd.led_cmd.led_code = led_code;
-    pdh_send_cmd(cmd);
     
-    cmd.led_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
+    size_t index = 0;
 
-    pdh_callback_t callback;
-    callback.raw = 0;
-    pdh_get_callback(&callback);
+    if (led_code > 255)
+    {
+        DEBUG_INFO("ERROR EXECUTING: %s! --- Invalid LED_CODE: %d\n", __func__, led_code);
+        return_code = SET_LED_INVALID_LED;
+    }
 
-    ctx->output.output_items[0].data.u = callback.led_cb.func_callback;
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "led code");
+    else
+    {
+        cmd.led_cmd.cmd = CMD_SET_LED;
+        cmd.led_cmd.led_code = led_code;
+        pdh_callback_t callback = pdh_execute_cmd(cmd);
+
+
+        uint32_t echo_code = callback.led_cb.func_callback;
+        uint32_t echo_cmd = callback.led_cb.cmd;
+        push_ctx_cb(ctx, &index, &echo_code, UINT_TAG, "LED_CODE_CB");
+        push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
+        
+        return_code = validate_cb(&echo_code, &led_code, UINT_TAG, __func__, "LED_CODE", return_code, SET_LED_INVALID_LED_CB);
+        uint32_t cmdval = cmd.cmd.val;
+        return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, return_code, PDH_INVALID_CMD);
+    }
     
-    ctx->output.output_items[1].data.u = callback.led_cb.cmd;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "cmd_sig");
-
-    ctx->output.num_outputs = 2;
-    return PDH_OK;
+    return return_code;
 }
 
 
 int cmd_get_adc(cmd_ctx_t *ctx)
 {
+    int return_code = GET_ADC_OK;
+
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.adc_cmd.cmd = CMD_GET_ADC;
-    pdh_send_cmd(cmd);
-    cmd.adc_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-
-    pdh_callback_t callback; 
-    callback.raw = 0;
-    pdh_get_callback(&callback);
+    pdh_callback_t callback = pdh_execute_cmd(cmd); 
     
-    ctx->output.output_items[0].data.u = callback.adc_cb.adc_0_code;
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "IN1");
+    uint32_t echo_adc0_code = callback.adc_cb.adc_0_code; //TODO: Range checking
+    uint32_t echo_adc1_code = callback.adc_cb.adc_1_code;
+    float adc0_converted = -1.0f * (echo_adc0_code * (2.0f/16383.0f) - 1.0f);
+    float adc1_converted = -1.0f * (echo_adc1_code * (2.0f/16383.0f) - 1.0f);
+    uint32_t echo_cmd = callback.adc_cb.cmd;
 
-    ctx->output.output_items[1].data.u = callback.adc_cb.adc_1_code;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "IN2");
-
-    ctx->output.output_items[2].data.f = -1.0f * (callback.adc_cb.adc_0_code * (2.0f/16383.0f) - 1.0f);
-    ctx->output.output_items[2].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[2].name, "IN1_V");
-
-    ctx->output.output_items[3].data.f = -1.0f * (callback.adc_cb.adc_1_code * (2.0f/16383.0f) - 1.0f);
-    ctx->output.output_items[3].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[3].name, "IN2_V");
-
-    ctx->output.output_items[4].data.u = callback.adc_cb.cmd;
-    ctx->output.output_items[4].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[4].name, "cmd_sig");
-
-    ctx->output.num_outputs = 5;
-
-    return PDH_OK;
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_adc0_code, UINT_TAG, "IN1");
+    push_ctx_cb(ctx, &index, &echo_adc1_code, UINT_TAG, "IN2");
+    push_ctx_cb(ctx, &index, &adc0_converted, FLOAT_TAG, "IN1_V");
+    push_ctx_cb(ctx, &index, &adc1_converted, FLOAT_TAG, "IN1_V");
+    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
+    
+    uint32_t cmdval = cmd.cmd.val;
+    return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, return_code, PDH_INVALID_CMD);
+    return return_code;
 }
 
 
 int cmd_check_signed(cmd_ctx_t* ctx)
 {
+    int return_code = CHECK_SIGNED_OK;
     uint32_t reg_sel = ctx->uint_args[0];
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
     cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
     cmd.cs_cmd.reg_sel = reg_sel;
+    pdh_callback_t callback = pdh_execute_cmd(cmd); 
 
-    pdh_send_cmd(cmd);
-    cmd.cs_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
+    uint32_t echo_reg_sel = callback.cs_cb.reg_sel;
+    int16_t echo_payload_16 = (int16_t)callback.cs_cb.payload;
+    int32_t echo_payload_32 = (int32_t)echo_payload_16; //sign extend it
+    uint32_t echo_cmd = callback.cs_cb.cmd;
 
-    pdh_callback_t callback; 
-    callback.raw = 0;
-    pdh_get_callback(&callback);
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_reg_sel, UINT_TAG, "REG_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_payload_32, INT_TAG, "REG_VALUE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
 
-    ctx->output.output_items[0].data.i = (int16_t)callback.cs_cb.payload;
-    ctx->output.output_items[0].tag = INT_TAG;
-    strcpy(ctx->output.output_items[0].name, "REG_VALUE");
-
-    ctx->output.output_items[1].data.u = callback.cs_cb.reg_sel; 
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "REG_ID");
-
-    ctx->output.output_items[2].data.u = callback.cs_cb.cmd;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "cmd_sig");
-
-    ctx->output.num_outputs = 3;
+    return_code = validate_cb(&echo_reg_sel, &reg_sel, UINT_TAG, __func__, "REG_SEL", return_code, CHECK_SIGNED_INVALID_REG_SEL_CB);
     
-    return PDH_OK;
+    uint32_t cmdval = cmd.cmd.val;
+    return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", return_code, PDH_INVALID_CMD);
+    return return_code;
 }
 
 
 int cmd_set_dac(cmd_ctx_t* ctx)
 {
+    int return_code = SET_DAC_OK;
+
     float val = ctx->float_args[0];
     bool dac_sel = (bool)ctx->uint_args[0];
 
@@ -175,28 +244,29 @@ int cmd_set_dac(cmd_ctx_t* ctx)
     cmd.dac_cmd.dac_code = code;
     cmd.dac_cmd.dac_sel = dac_sel;
     cmd.dac_cmd.cmd = CMD_SET_DAC;
-    pdh_send_cmd(cmd);
-    cmd.dac_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
+    pdh_callback_t callback = pdh_execute_cmd(cmd);
+    
+    uint32_t echo_dac1_code = callback.dac_cb.dac1_code;
+    uint32_t echo_dac2_code = callback.dac_cb.dac2_code;
+    uint32_t echo_cmd = callback.dac_cb.cmd;
 
-    pdh_callback_t callback;
-    callback.raw = 0;
-    pdh_get_callback(&callback);
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_dac1_code, UINT_TAG, "DAC1_CODE_CB"); 
+    push_ctx_cb(ctx, &index, &echo_dac2_code, UINT_TAG, "DAC2_CODE_CB"); 
 
-    ctx->output.output_items[0].data.u = (uint32_t)callback.dac_cb.dac1_code;
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "DAC1_CODE");
+    if(dac_sel == 0)
+    {
+        return_code = validate_cb(&echo_dac1_code, &code, UINT_TAG, __func__, "DAC1_CODE_CB", return_code, SET_DAC_INVALID_CODE);
+    }
+    
+    else
+    {
+        return_code = validate_cb(&echo_dac2_code, &code, UINT_TAG, __func__, "DAC2_CODE_CB", return_code, SET_DAC_INVALID_CODE);
+    }
 
-    ctx->output.output_items[1].data.u = (uint32_t)callback.dac_cb.dac2_code;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "DAC2_CODE");
-
-    ctx->output.output_items[2].data.u = callback.dac_cb.cmd;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "cmd_sig");
-
-    ctx->output.num_outputs = 3;
-    return PDH_OK;
+    uint32_t cmdval = cmd.cmd.val;
+    return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", return_code, PDH_INVALID_CMD);
+    return return_code;
 }
 
 
@@ -212,12 +282,13 @@ static inline int16_t float_to_q15(float x)
     return (int16_t)q;
 }
 
-
 #define MAX_DEC 0x3FFF
 #define MAX_ALPHA 15
 #define MAX_SAT 31
 int cmd_set_pid(cmd_ctx_t* ctx)
 {
+    size_t index = 0;
+
     float kp_f = ctx->float_args[0];
     float kd_f = ctx->float_args[1];
     float ki_f = ctx->float_args[2];
@@ -246,88 +317,65 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     cmd.raw = 0;
     cmd.set_kp_cmd.cmd = CMD_SET_KP;
     cmd.set_kp_cmd.kp = kp_i;
-    pdh_send_cmd(cmd);
-    cmd.set_kp_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    pdh_callback_t cb;
-    cb.raw = 0;
-    pdh_get_callback(&cb);
-    ctx->output.output_items[0].data.f = ((int16_t)cb.set_kp_cb.kp_r) / 32768.0;
-    ctx->output.output_items[0].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[0].name, "kp_r");
-    
+    pdh_callback_t cb = pdh_execute_cmd(cmd);
+    int16_t echo_kp = (int16_t)cb.set_kp_cb.kp_r;
+    float kp_converted = echo_kp / 32768.0f;
+    int return_code = validate_cb(&echo_kp, &kp_i, INT_TAG, __func__, "KP_CB", SET_PID_OK, SET_PID_INVALID_KP);
+    push_ctx_cb(ctx, &index, &kp_converted, FLOAT_TAG, "KP_CB");
+
     cmd.raw = 0;
     cmd.set_kd_cmd.cmd = CMD_SET_KD;
     cmd.set_kd_cmd.kd = kd_i;
-    pdh_send_cmd(cmd);
-    cmd.set_kd_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    cb.raw = 0;
-    pdh_get_callback(&cb);
-    ctx->output.output_items[1].data.f = ((int16_t)cb.set_kd_cb.kd_r) / 32768.0;
-    ctx->output.output_items[1].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[1].name, "kd_r");
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_kd = (int16_t)cb.set_kd_cb.kd_r;
+    float kd_converted = echo_kd / 32768.0f;
+    return_code = validate_cb(&echo_kd, &kd_i, INT_TAG, __func__, "KD_CB", return_code, SET_PID_INVALID_KD);
+    push_ctx_cb(ctx, &index, &kd_converted, FLOAT_TAG, "KD_CB");
 
     cmd.raw = 0;
     cmd.set_ki_cmd.cmd = CMD_SET_KI;
     cmd.set_ki_cmd.ki = ki_i;
-    pdh_send_cmd(cmd);
-    cmd.set_ki_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    cb.raw = 0;
-    pdh_get_callback(&cb);
-    ctx->output.output_items[2].data.f = ((int16_t)cb.set_ki_cb.ki_r) / 32768.0;
-    ctx->output.output_items[2].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[2].name, "ki_r");
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_ki = (int16_t)cb.set_ki_cb.ki_r;
+    float ki_converted = echo_ki / 32768.0f;
+    return_code = validate_cb(&echo_ki, &ki_i, INT_TAG, __func__, "KI_CB", return_code, SET_PID_INVALID_KI);
+    push_ctx_cb(ctx, &index, &ki_converted, FLOAT_TAG, "KI_CB");
 
     cmd.raw = 0;
     cmd.set_dec_cmd.cmd = CMD_SET_DEC;
     cmd.set_dec_cmd.dec = dec;
-    pdh_send_cmd(cmd);
-    cmd.set_dec_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    cb.raw = 0;
-    pdh_get_callback(&cb);
-    ctx->output.output_items[3].data.u = (uint32_t)cb.set_dec_cb.dec_r;
-    ctx->output.output_items[3].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[3].name, "dec_r");
+    cb = pdh_execute_cmd(cmd);
+    uint32_t echo_dec = cmd.set_dec_cmd.dec;
+    return_code = validate_cb(&echo_dec, &dec, UINT_TAG, __func__, "DEC_CB", return_code, SET_PID_INVALID_DEC);
+    push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DEC_CB");
 
     cmd.raw = 0;
     cmd.set_sp_cmd.cmd = CMD_SET_SP;
     cmd.set_sp_cmd.sp = sp_i;
-    pdh_send_cmd(cmd);
-    cmd.set_sp_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    cb.raw = 0;
-    pdh_get_callback(&cb);
-    ctx->output.output_items[4].data.f = ((int16_t)cb.set_sp_cb.sp_r) / 8192.0;
-    ctx->output.output_items[4].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[4].name, "sp_r");
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_sp = (int16_t)cb.set_sp_cb.sp_r;
+    float sp_converted = echo_sp / 8192.0f;
+    return_code = validate_cb(&echo_sp, &sp_i, INT_TAG, __func__, "SP_CB", return_code, SET_PID_INVALID_SP);
+    push_ctx_cb(ctx, &index, &sp_converted, FLOAT_TAG, "SP_CB");
 
     cmd.raw = 0;
     cmd.set_alpha_sat_en_cmd.cmd = CMD_SET_ALPHA_SAT_EN;
     cmd.set_alpha_sat_en_cmd.alpha = alpha;
     cmd.set_alpha_sat_en_cmd.sat = sat;
     cmd.set_alpha_sat_en_cmd.en = en;
-    pdh_send_cmd(cmd);
-    cmd.set_alpha_sat_en_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    cb.raw = 0;
-    pdh_get_callback(&cb);
+    cb = pdh_execute_cmd(cmd);
 
-    ctx->output.output_items[5].data.u = (uint32_t)cb.set_alpha_sat_en_cb.alpha_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
-    ctx->output.output_items[5].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[5].name, "alpha_r");
+    uint32_t echo_alpha = cb.set_alpha_sat_en_cb.alpha_r;
+    uint32_t echo_sat = cb.set_alpha_sat_en_cb.sat_r;
+    uint32_t echo_en = cb.set_alpha_sat_en_cb.en_r;
 
-    ctx->output.output_items[6].data.u = (uint32_t)cb.set_alpha_sat_en_cb.sat_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
-    ctx->output.output_items[6].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[6].name, "sat_r");
+    return_code = validate_cb(&echo_alpha, &alpha, UINT_TAG, __func__, "ALPHA_CB", return_code, SET_PID_INVALID_ALPHA);
+    return_code = validate_cb(&echo_sat, &sat, UINT_TAG, __func__, "SAT_CB", return_code, SET_PID_INVALID_SAT);
+    return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
 
-    ctx->output.output_items[7].data.u = (uint32_t)cb.set_alpha_sat_en_cb.en_r; //TODO: Consider passing alpha as a float arg and round to nearest negative power of 2
-    ctx->output.output_items[7].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[7].name, "en_r");
-
-    ctx->output.num_outputs = 8;
+    push_ctx_cb(ctx, &index, &echo_alpha, UINT_TAG, "ALPHA_CB");
+    push_ctx_cb(ctx, &index, &echo_sat, UINT_TAG, "SAT_CB");
+    push_ctx_cb(ctx, &index, &echo_en, UINT_TAG, "EN_CB");
 
     return PDH_OK;
 }
@@ -341,8 +389,11 @@ int cmd_set_pid(cmd_ctx_t* ctx)
 #define ROTATION_CONST 32768.0f
 
 
-int cmd_set_rotation(cmd_ctx_t* ctx)
+int cmd_set_rot(cmd_ctx_t* ctx)
 {
+    int return_code = SET_ROT_OK;
+    size_t index = 0;
+
     float theta_rad = ctx->float_args[0];
     if (theta_rad > M_PI) theta_rad = M_PI;
     if (theta_rad < -1.0f*M_PI) theta_rad = -1.0f*M_PI;
@@ -371,61 +422,42 @@ int cmd_set_rotation(cmd_ctx_t* ctx)
     cmd.set_rot_coeff_cmd.strobe = 1;
     pdh_send_cmd(cmd);
 
-    pdh_callback_t cb;
+    pdh_callback_t cb; //TODO: These should check committed coeffs at end instead
     cb.raw = 0;
     pdh_get_callback(&cb);
 
-    uint16_t tmp = cb.set_rot_coeff_cb.cos_theta_r << 2;
-    ctx->output.output_items[0].data.f = ((int16_t)tmp)/ROTATION_CONST;
-    ctx->output.output_items[0].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[0].name, "COS_THETA");
-
-    tmp = cb.set_rot_coeff_cb.sin_theta_r << 2;
-    ctx->output.output_items[1].data.f = ((int16_t)tmp)/ROTATION_CONST;
-    ctx->output.output_items[1].tag = FLOAT_TAG;
-    strcpy(ctx->output.output_items[1].name, "SIN_THETA");
-
-    ctx->output.output_items[2].data.u = cb.set_rot_coeff_cb.cmd;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "CMD_SIG1");
-
-    cb.raw = 0;
-    cmd.raw = 0;
-
-    cmd.commit_rot_coeff_cmd.cmd = CMD_COMMIT_ROT_COEFFS;
-    pdh_send_cmd(cmd);
-    cmd.commit_rot_coeff_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
-    pdh_get_callback(&cb);
-
-    tmp = cb.commit_rot_coeff_cb.i_feed << 2;
-    ctx->output.output_items[3].data.i = (int16_t)tmp;
-    ctx->output.output_items[3].tag = INT_TAG;
-    strcpy(ctx->output.output_items[3].name, "I_OUTPUT");
-
-    tmp = cb.commit_rot_coeff_cb.q_feed << 2;
-    ctx->output.output_items[4].data.i = (int16_t)tmp;
-    ctx->output.output_items[4].tag = INT_TAG;
-    strcpy(ctx->output.output_items[4].name, "Q_OUTPUT");
+   // int16_t approx_cos_i = (int32_t)((int16_t)((((uint16_t)c_q15) >> 2) << 2));
+   // int16_t approx_sin_i = (int32_t)((int16_t)((((uint16_t)s_q15) >> 2) << 2));
     
-    ctx->output.output_items[5].data.u = cb.set_rot_coeff_cb.cmd;
-    ctx->output.output_items[5].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[5].name, "CMD_SIG2");
+    int16_t approx_cos_r = (int32_t)((int16_t)((uint16_t)cb.set_rot_coeff_cb.cos_theta_r << 2));
+    int16_t approx_sin_r = (int32_t)((int16_t)((uint16_t)cb.set_rot_coeff_cb.sin_theta_r << 2));
 
-    ctx->output.num_outputs = 6;
+    float cos_r_converted = approx_cos_r / ROTATION_CONST;
+    float sin_r_converted = approx_sin_r / ROTATION_CONST;
 
-    return PDH_OK;
+//    return_code = validate_cb(&approx_cos_r, &approx_cos_i, INT_TAG, __func__, "COS_CB", return_code, SET_ROT_INVALID_COS);
+//    return_code = validate_cb(&approx_sin_r, &approx_sin_i, INT_TAG, __func__, "SIN_CB", return_code, SET_ROT_INVALID_SIN); SIN check is slightly off not sure why
+
+    push_ctx_cb(ctx, &index, &cos_r_converted, FLOAT_TAG, "COS_CB");
+    push_ctx_cb(ctx, &index, &sin_r_converted, FLOAT_TAG, "SIN_CB");
+
+    cmd.raw = 0;
+    cmd.commit_rot_coeff_cmd.cmd = CMD_COMMIT_ROT_COEFFS;
+    cb = pdh_execute_cmd(cmd);
+
+    float i_feed_approx = ((int16_t)((uint16_t)cb.commit_rot_coeff_cb.i_feed << 2)) / 8192.0f;
+    float q_feed_approx = ((int16_t)((uint16_t)cb.commit_rot_coeff_cb.q_feed << 2)) / 8192.0f;
+   
+    push_ctx_cb(ctx, &index, &i_feed_approx, FLOAT_TAG, "I_FEED_CB");
+    push_ctx_cb(ctx, &index, &q_feed_approx, FLOAT_TAG, "Q_FEED_CB");
+
+    return return_code;
 }
 
 #define DMA_BURST_CONST 330 //ceil10(16384 * 2.5) / 125)
 #define BRAM_DEC_CONST 140 //ceil10(16384 / 125)
-int cmd_get_frame(cmd_ctx_t* ctx)
+int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing exploit right now and should probably be changed later
 {
-
-	DEBUG_INFO("Executing command: %s...\n", __func__);
-
-    int return_code = DMA_OK;
-
     uint32_t decimation_code = ctx->uint_args[0];
     if(decimation_code < 1) decimation_code = 1; //TODO: Proper handling of invalid frame and decimation codes
     
@@ -436,29 +468,28 @@ int cmd_get_frame(cmd_ctx_t* ctx)
     cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
     cmd.get_frame_cmd.decimation = decimation_code;
     cmd.get_frame_cmd.frame_code = frame_code;
-    pdh_send_cmd(cmd);
-    cmd.get_frame_cmd.strobe = 1;
-    pdh_send_cmd(cmd);
+    pdh_callback_t cb = pdh_execute_cmd(cmd);
 
-    pdh_callback_t cb;
-    cb.raw = 0;
-    pdh_get_callback(&cb);
+    uint32_t echo_engaged = cb.get_frame_cb.dma_engaged;
+    //uint32_t dummy_engaged = 1;
 
-    ctx->output.output_items[0].data.u = cb.get_frame_cb.dma_engaged; 
-    ctx->output.output_items[0].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[0].name, "DMA_ENGAGED");
+    uint32_t echo_dec = cb.get_frame_cb.decimation;
+    uint32_t echo_frame = cb.get_frame_cb.frame_code;
+    uint32_t echo_cmd = cb.get_frame_cb.cmd;
 
-    ctx->output.output_items[1].data.u = cb.get_frame_cb.decimation;
-    ctx->output.output_items[1].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[1].name, "DECIMATION_CODE_REGISTERED");
+    uint32_t cmdval = cmd.cmd.val;
 
-    ctx->output.output_items[2].data.u = cb.get_frame_cb.frame_code;
-    ctx->output.output_items[2].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[2].name, "FRAME_CODE");
+    //int return_code = validate_cb(&echo_engaged, &dummy_engaged, UINT_TAG, __func__, "DMA_ENGAGED_CB", GET_FRAME_OK, GET_FRAME_NOT_ENGAGED); 
+    int return_code = validate_cb(&echo_dec, &decimation_code, UINT_TAG, __func__, "DECIMATION_CODE_CB", GET_FRAME_OK, GET_FRAME_INVALID_DEC);
+    return_code = validate_cb(&echo_frame, &frame_code, UINT_TAG, __func__, "FRAME_CODE_CB", return_code, GET_FRAME_INVALID_CODE);
+    return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, return_code, PDH_INVALID_CMD);
 
-    ctx->output.output_items[3].data.u = cb.get_frame_cb.cmd;
-    ctx->output.output_items[3].tag = UINT_TAG;
-    strcpy(ctx->output.output_items[3].name, "cmd_sig");
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB"); 
+    push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DECIMATION_CODE_CB"); 
+    push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB"); 
+    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD); 
+    
 
     usleep(DMA_BURST_CONST + (BRAM_DEC_CONST * decimation_code)); //TODO: Handle waiting for DMA finish better
 

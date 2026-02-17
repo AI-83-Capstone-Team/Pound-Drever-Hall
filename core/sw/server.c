@@ -32,7 +32,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_dac", cmd_set_dac, 1, 0, 1},
     {"get_adc", cmd_get_adc, 0, 0, 0},
     {"check_signed", cmd_check_signed, 0, 0, 1},
-    {"set_rotation", cmd_set_rotation, 1, 0, 0},
+    {"set_rotation", cmd_set_rot, 1, 0, 0},
     {"get_frame", cmd_get_frame, 0, 0, 2},
     {"test_frame", cmd_test_frame, 0, 0, 1},
     {"set_pid", cmd_set_pid, 4, 0, 4}

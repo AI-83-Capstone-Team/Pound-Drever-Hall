@@ -67,7 +67,7 @@ int cmd_check_signed(cmd_ctx_t* ctx);
 int cmd_reset_fpga(cmd_ctx_t* ctx);
 int cmd_strobe_fpga(cmd_ctx_t* ctx);
 int cmd_set_led(cmd_ctx_t* ctx);
-int cmd_set_rotation(cmd_ctx_t* ctx);
+int cmd_set_rot(cmd_ctx_t* ctx);
 int cmd_get_frame(cmd_ctx_t* ctx);
 int cmd_test_frame(cmd_ctx_t* ctx);
 int cmd_set_pid(cmd_ctx_t* ctx);
