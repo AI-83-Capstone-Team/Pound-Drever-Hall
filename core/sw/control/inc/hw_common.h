@@ -97,12 +97,7 @@ typedef enum
     CMD_SET_ROT_COEFFS = 0b0101,
     CMD_COMMIT_ROT_COEFFS = 0b0110,
     CMD_GET_FRAME = 0b0111,
-    CMD_SET_KP = 0b1000,
-    CMD_SET_KD = 0b1001,
-    CMD_SET_KI = 0b1010,
-    CMD_SET_DEC = 0b1011,
-    CMD_SET_SP = 0b1100,
-    CMD_SET_ALPHA_SAT_EN = 0b1101,
+    CMD_SET_PID_COEFFS = 0b1000,
     CMD_CONFIG_IO = 0b1110
 }   pdh_cmd_e;   
 
@@ -150,6 +145,22 @@ typedef enum
     SET_PID_INVALID_SAT,
     SET_PID_INVALID_EN,
 }   set_pid_e;
+
+
+typedef enum
+{
+    SELECT_KP = 0b0000,
+    SELECT_KD = 0b0001,
+    SELECT_KI = 0b0010,
+    SELECT_DEC = 0b0011,
+    SELECT_SP = 0b0100,
+    SELECT_ALPHA = 0b0101,
+    SELECT_SAT = 0b0110,
+    SELECT_EN = 0b0111,
+}   pid_coeff_sel_e;
+
+
+
 
 typedef enum
 {
@@ -259,62 +270,12 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-
-        uint32_t kp         : 16;
-        uint32_t _padding   : 10;
+        uint32_t payload    : 16;
+        uint32_t coeff_sel  : 4;
+        uint32_t _padding   : 6;
         uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
-    }   set_kp_cmd;
-
-    struct __attribute__((packed))
-    {
-        uint32_t kd         : 16;
-        uint32_t _padding   : 10;
-        uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
-    }   set_kd_cmd;
-
-    struct __attribute__((packed))
-    {
-        uint32_t ki         : 16;
-        uint32_t _padding   : 10;
-        uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
-    }   set_ki_cmd;
-
-    struct __attribute__((packed))
-    {
-
-        uint32_t dec        : 14;
-        uint32_t _padding   : 12;
-        uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
-    }   set_dec_cmd;
-
-    struct __attribute__((packed))
-    {
-
-        uint32_t sp         : 14;
-        uint32_t _padding   : 12;
-        uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding_2 : 1;
-    }   set_sp_cmd;
-
-    struct __attribute__((packed))
-    {
-        uint32_t en         : 1;
-        uint32_t sat        : 5;
-        uint32_t alpha      : 4;
-        uint32_t _padding   : 16;
-        uint32_t cmd        : 4;
-        uint32_t strobe     : 1;
-        uint32_t _padding2  : 1;
-    }   set_alpha_sat_en_cmd;
+        uint32_t _padding_2 : 2;                        
+    }   set_pid_cmd;
 
     struct __attribute__((packed))
     {
@@ -402,47 +363,11 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t kp_r           : 16;
-        uint32_t _padding       : 12;
+        uint32_t payload_r      : 16;
+        uint32_t coeff_sel_r    : 4;
+        uint32_t _padding       : 8;
         uint32_t cmd            : 4;
-    }   set_kp_cb;
-    
-    struct __attribute__((packed))
-    {
-        uint32_t kd_r           : 16;
-        uint32_t _padding       : 12;
-        uint32_t cmd            : 4;
-    }   set_kd_cb;
-
-    struct __attribute__((packed))
-    {
-        uint32_t ki_r           : 16;
-        uint32_t _padding       : 12;
-        uint32_t cmd            : 4;
-    }   set_ki_cb;
-
-    struct __attribute__((packed))
-    {
-        uint32_t dec_r          : 16;
-        uint32_t _padding       : 12;
-        uint32_t cmd            : 4;
-    }   set_dec_cb;
-
-    struct __attribute__((packed))
-    {
-        uint32_t sp_r           : 14;
-        uint32_t _padding       : 14;
-        uint32_t cmd            : 4;
-    }   set_sp_cb;
-
-    struct __attribute__((packed))
-    {
-        uint32_t en_r           : 1;
-        uint32_t sat_r          : 5;
-        uint32_t alpha_r        : 4;
-        uint32_t _padding       : 18;
-        uint32_t cmd            : 4;
-    }   set_alpha_sat_en_cb;
+    }   set_pid_cb;
 
     struct __attribute__((packed))
     {

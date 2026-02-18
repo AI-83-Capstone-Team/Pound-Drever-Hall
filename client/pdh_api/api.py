@@ -29,9 +29,6 @@ __all__ = [
 ]
 
 
-
-
-REMOTE_BUILD_DIR = "sw/build"
 REMOTE_CSV_NAME = "dma_log.csv"
 LOCAL_DATA_DIR = "data"
 
@@ -59,9 +56,9 @@ def api_cmd(fn):
     return w
 
 
-def fetch_remote_csv(ssh: paramiko.SSHClient, local_name: str) -> str:
+def fetch_remote_csv(ssh: paramiko.SSHClient, csv_dir, local_name: str) -> str:
     os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
-    remote_csv = f"{REMOTE_BUILD_DIR}/{REMOTE_CSV_NAME}"
+    remote_csv = f"{csv_dir}/{REMOTE_CSV_NAME}"
     local_csv = os.path.join(LOCAL_DATA_DIR, local_name)
 
     sftp = ssh.open_sftp()
@@ -151,7 +148,7 @@ def api_set_rotation(theta_deg: float):
 
 
 @api_cmd
-def api_get_frame(decimation, frame_code):
+def api_get_frame(decimation, frame_code, csv_dir):
     cmds = [
     (
         "CMD:get_frame\n"
@@ -162,7 +159,7 @@ def api_get_frame(decimation, frame_code):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect("10.42.0.62", username="root", password="root")
-    csv = fetch_remote_csv(ssh, f"dma_{frame_code}.csv")
+    csv = fetch_remote_csv(ssh, csv_dir, f"dma_{frame_code}.csv")
     ssh.close()
     data = np.loadtxt(csv, delimiter=",")
     x = np.arange(16384)
@@ -204,7 +201,7 @@ def api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
     execute_cmd_seq(cmds)
 
 
-# @api_cmd
+@api_cmd
 def api_config_io(dac1_dat_sel, dac2_dat_sel, pid_dat_sel):
     cmds = [
     (

@@ -328,66 +328,66 @@ int cmd_set_pid(cmd_ctx_t* ctx)
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
-    cmd.set_kp_cmd.cmd = CMD_SET_KP;
-    cmd.set_kp_cmd.kp = kp_i;
+    cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
+        
+    cmd.set_pid_cmd.payload = kp_i;
+    cmd.set_pid_cmd.coeff_sel = SELECT_KP;
     pdh_callback_t cb = pdh_execute_cmd(cmd);
-    int16_t echo_kp = (int16_t)cb.set_kp_cb.kp_r;
+    int16_t echo_kp = (int16_t)cb.set_pid_cb.payload_r;
     float kp_converted = echo_kp / 32768.0f;
     int return_code = validate_cb(&echo_kp, &kp_i, INT16_TAG, __func__, "KP_CB", SET_PID_OK, SET_PID_INVALID_KP);
     push_ctx_cb(ctx, &index, &kp_converted, FLOAT_TAG, "KP_CB");
 
-    cmd.raw = 0;
-    cmd.set_kd_cmd.cmd = CMD_SET_KD;
-    cmd.set_kd_cmd.kd = kd_i;
+    cmd.set_pid_cmd.payload = kd_i;
+    cmd.set_pid_cmd.coeff_sel = SELECT_KD;
     cb = pdh_execute_cmd(cmd);
-    int16_t echo_kd = (int16_t)cb.set_kd_cb.kd_r;
+    int16_t echo_kd = (int16_t)cb.set_pid_cb.payload_r;
     float kd_converted = echo_kd / 32768.0f;
     return_code = validate_cb(&echo_kd, &kd_i, INT16_TAG, __func__, "KD_CB", return_code, SET_PID_INVALID_KD);
     push_ctx_cb(ctx, &index, &kd_converted, FLOAT_TAG, "KD_CB");
 
-    cmd.raw = 0;
-    cmd.set_ki_cmd.cmd = CMD_SET_KI;
-    cmd.set_ki_cmd.ki = ki_i;
+    cmd.set_pid_cmd.payload = ki_i;
+    cmd.set_pid_cmd.coeff_sel = SELECT_KI;
     cb = pdh_execute_cmd(cmd);
-    int16_t echo_ki = (int16_t)cb.set_ki_cb.ki_r;
+    int16_t echo_ki = (int16_t)cb.set_pid_cb.payload_r;
     float ki_converted = echo_ki / 32768.0f;
     return_code = validate_cb(&echo_ki, &ki_i, INT16_TAG, __func__, "KI_CB", return_code, SET_PID_INVALID_KI);
     push_ctx_cb(ctx, &index, &ki_converted, FLOAT_TAG, "KI_CB");
 
-    cmd.raw = 0;
-    cmd.set_dec_cmd.cmd = CMD_SET_DEC;
-    cmd.set_dec_cmd.dec = dec;
+    cmd.set_pid_cmd.payload = dec;
+    cmd.set_pid_cmd.coeff_sel = SELECT_DEC;
     cb = pdh_execute_cmd(cmd);
-    uint32_t echo_dec = cmd.set_dec_cmd.dec;
+    uint32_t echo_dec = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_dec, &dec, UINT_TAG, __func__, "DEC_CB", return_code, SET_PID_INVALID_DEC);
     push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DEC_CB");
 
-    cmd.raw = 0;
-    cmd.set_sp_cmd.cmd = CMD_SET_SP;
-    cmd.set_sp_cmd.sp = sp_i;
+    cmd.set_pid_cmd.payload = sp_i;
+    cmd.set_pid_cmd.coeff_sel = SELECT_SP;
     cb = pdh_execute_cmd(cmd);
-    int16_t echo_sp = (int16_t)(((uint16_t)cb.set_sp_cb.sp_r) << 2)>>2;
+    int16_t echo_sp = (int16_t)cb.set_pid_cb.payload_r;
     float sp_converted = echo_sp / 8192.0f;
     return_code = validate_cb(&echo_sp, &sp_i, INT16_TAG, __func__, "SP_CB", return_code, SET_PID_INVALID_SP);
     push_ctx_cb(ctx, &index, &sp_converted, FLOAT_TAG, "SP_CB");
 
-    cmd.raw = 0;
-    cmd.set_alpha_sat_en_cmd.cmd = CMD_SET_ALPHA_SAT_EN;
-    cmd.set_alpha_sat_en_cmd.alpha = alpha;
-    cmd.set_alpha_sat_en_cmd.sat = sat;
-    cmd.set_alpha_sat_en_cmd.en = en;
+    cmd.set_pid_cmd.payload = alpha;
+    cmd.set_pid_cmd.coeff_sel = SELECT_ALPHA;
     cb = pdh_execute_cmd(cmd);
-
-    uint32_t echo_alpha = cb.set_alpha_sat_en_cb.alpha_r;
-    uint32_t echo_sat = cb.set_alpha_sat_en_cb.sat_r;
-    uint32_t echo_en = cb.set_alpha_sat_en_cb.en_r;
-
+    uint32_t echo_alpha = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_alpha, &alpha, UINT_TAG, __func__, "ALPHA_CB", return_code, SET_PID_INVALID_ALPHA);
-    return_code = validate_cb(&echo_sat, &sat, UINT_TAG, __func__, "SAT_CB", return_code, SET_PID_INVALID_SAT);
-    return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
-
     push_ctx_cb(ctx, &index, &echo_alpha, UINT_TAG, "ALPHA_CB");
+
+    cmd.set_pid_cmd.payload = sat;
+    cmd.set_pid_cmd.coeff_sel = SELECT_SAT;
+    cb = pdh_execute_cmd(cmd);
+    uint32_t echo_sat = cb.set_pid_cb.payload_r;
+    return_code = validate_cb(&echo_sat, &sat, UINT_TAG, __func__, "SAT_CB", return_code, SET_PID_INVALID_SAT);
     push_ctx_cb(ctx, &index, &echo_sat, UINT_TAG, "SAT_CB");
+
+    cmd.set_pid_cmd.payload = en;
+    cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+    cb = pdh_execute_cmd(cmd);
+    uint32_t echo_en = cb.set_pid_cb.payload_r;
+    return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
     push_ctx_cb(ctx, &index, &echo_en, UINT_TAG, "EN_CB");
 
     return PDH_OK;

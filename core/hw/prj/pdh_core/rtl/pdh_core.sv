@@ -65,12 +65,7 @@ module pdh_core #
         CMD_SET_ROT_COEFFS = 4'b0101,
         CMD_COMMIT_ROT_COEFFS = 4'b0110,
         CMD_GET_FRAME = 4'b0111,
-        CMD_SET_KP = 4'b1000,
-        CMD_SET_KD = 4'b1001,
-        CMD_SET_KI = 4'b1010,
-        CMD_SET_DEC = 4'b1011,
-        CMD_SET_SP = 4'b1100,
-        CMD_SET_ALPHA_SAT_EN = 4'b1101,
+        CMD_SET_PID_COEFFS = 4'b1000,
         CMD_CONFIG_IO = 4'b1110
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
@@ -121,12 +116,7 @@ module pdh_core #
         set_rot_cb_w, 
         commit_rot_cb_w, 
         get_frame_cb_w,
-        set_kp_cb_w,
-        set_kd_cb_w,
-        set_ki_cb_w,
-        set_dec_cb_w,
-        set_sp_cb_w,
-        set_alpha_sat_en_cb_w,
+        set_pid_cb_w,
         config_io_cb_w;
 
         
@@ -169,7 +159,6 @@ module pdh_core #
             
             5'b01111: cs_cb_w = {base_bus, 6'b0, satwidth_r, alpha_r, pid_enable_r};
 
-
             default: cs_cb_w = {base_bus, 16'd0};
             
         endcase
@@ -177,15 +166,71 @@ module pdh_core #
 
     logic [21:0] dma_decimation_code_r, next_dma_decimation_code_w; //TODO: Add this as CS option
 
+
+    typedef enum logic [3:0]
+    {
+        SELECT_KP = 4'b0000,
+        SELECT_KD = 4'b0001,
+        SELECT_KI = 4'b0010,
+        SELECT_DEC = 4'b0011,
+        SELECT_SP = 4'b0100,
+        SELECT_ALPHA = 4'b0101,
+        SELECT_SAT = 4'b0110,
+        SELECT_EN = 4'b0111
+    }   pid_coeff_sel_t;
+
+
+    logic [3:0] pid_coeff_select_w;
+    assign pid_coeff_select_w = data_w[19:16];
+
+
+    logic [15:0] pid_payload_w;
+
+    always_comb begin
+        case(pid_coeff_select_w)
+            SELECT_KP: begin
+                pid_payload_w = kp_r;
+            end
+
+            SELECT_KD: begin
+                pid_payload_w = kd_r;
+            end
+       
+            SELECT_KI: begin
+                pid_payload_w = ki_r;
+            end
+            
+            SELECT_SP: begin
+                pid_payload_w = {{2{sp_r[13]}}, sp_r};
+            end
+
+            SELECT_DEC: begin
+                pid_payload_w = {2'b0, dec_r};
+            end
+
+            SELECT_ALPHA: begin
+                pid_payload_w = {12'b0, alpha_r};
+            end
+            SELECT_SAT: begin
+                pid_payload_w = {11'b0, satwidth_r};
+            end
+            SELECT_EN: begin
+                pid_payload_w = {15'b0, pid_enable_r};
+            end
+
+            default: begin
+                pid_payload_w = 16'd0;
+            end
+        endcase
+    end
+
+
+
+
     assign set_rot_cb_w = {CMD_SET_ROT_COEFFS, sin_theta_r[15:2], cos_theta_r[15:2]};
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_r[15:2], i_feed_r[15:2]};
     assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_ready_3ff};
-    assign set_kp_cb_w = {CMD_SET_KP, 12'd0, kp_r};
-    assign set_kd_cb_w = {CMD_SET_KD,12'd0, kd_r};
-    assign set_ki_cb_w = {CMD_SET_KI, 12'd0, ki_r};
-    assign set_dec_cb_w = {CMD_SET_DEC, 14'b0, dec_r};
-    assign set_sp_cb_w = {CMD_SET_SP, 12'd0, {2{sp_r[13]}}, sp_r};
-    assign set_alpha_sat_en_cb_w = {CMD_SET_ALPHA_SAT_EN, 18'b0, alpha_r, satwidth_r, pid_enable_r};
+    assign set_pid_cb_w = {CMD_SET_PID_COEFFS, 8'd0, pid_coeff_select_w, pid_payload_w};
     assign config_io_cb_w = {CMD_CONFIG_IO, 23'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
 
@@ -232,15 +277,15 @@ module pdh_core #
             end
             
             SAT_A_16S: begin
-                pid_in_w = adc_dat_a_16s_w;
+                pid_in_w = adc_dat_a_16s_r;
             end 
 
             SAT_B_16S: begin
-                pid_in_w = adc_dat_b_16s_w;
+                pid_in_w = adc_dat_b_16s_r;
             end
 
             default begin
-                pid_in_w = adc_dat_a_16s_w;
+                pid_in_w = adc_dat_a_16s_r;
             end
         endcase
     end
@@ -327,28 +372,8 @@ module pdh_core #
                 next_callback_w = get_frame_cb_w;
             end
 
-            CMD_SET_KP: begin
-                next_callback_w = set_kp_cb_w;
-            end
-
-            CMD_SET_KD: begin
-                next_callback_w = set_kd_cb_w;
-            end
-
-            CMD_SET_KI: begin
-                next_callback_w = set_ki_cb_w;
-            end
-
-            CMD_SET_DEC: begin
-                next_callback_w = set_dec_cb_w;
-            end
-
-            CMD_SET_SP: begin
-                next_callback_w = set_sp_cb_w;
-            end
-
-            CMD_SET_ALPHA_SAT_EN: begin
-                next_callback_w = set_alpha_sat_en_cb_w;
+            CMD_SET_PID_COEFFS: begin
+                next_callback_w = set_pid_cb_w;
             end
 
             CMD_CONFIG_IO: begin
@@ -370,14 +395,15 @@ module pdh_core #
     assign next_rot_cos_theta_w = (cmd_w == CMD_COMMIT_ROT_COEFFS)? cos_theta_r : rot_cos_theta_r;
     assign next_dma_decimation_code_w = (cmd_w == CMD_GET_FRAME)? data_w[21:0] : dma_decimation_code_r;
     assign next_frame_code_w = (cmd_w == CMD_GET_FRAME)? data_w[25:22] : frame_code_r;
-    assign kp_w = (cmd_w == CMD_SET_KP)? data_w[15:0] : kp_r;
-    assign kd_w = (cmd_w == CMD_SET_KD)? data_w[15:0] : kd_r;
-    assign ki_w = (cmd_w == CMD_SET_KI)? data_w[15:0] : ki_r;
-    assign dec_w = (cmd_w == CMD_SET_DEC)? data_w[13:0] : dec_r;
-    assign sp_w = (cmd_w == CMD_SET_SP)? data_w[13:0] : sp_r;
-    assign alpha_w = (cmd_w == CMD_SET_ALPHA_SAT_EN)? data_w[9:6] : alpha_r;
-    assign satwidth_w = (cmd_w == CMD_SET_ALPHA_SAT_EN)? data_w[5:1] : satwidth_r;
-    assign pid_enable_w = (cmd_w == CMD_SET_ALPHA_SAT_EN)? data_w[0] : pid_enable_r;
+
+    assign kp_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KP))? data_w[15:0] : kp_r;
+    assign kd_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KD))? data_w[15:0] : kd_r;
+    assign ki_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KI))? data_w[15:0] : ki_r;
+    assign dec_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_DEC))? data_w[13:0] : dec_r;
+    assign sp_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_SP))? data_w[13:0] : sp_r;
+    assign alpha_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_ALPHA))? data_w[3:0] : alpha_r;
+    assign satwidth_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_SAT))? data_w[4:0] : satwidth_r;
+    assign pid_enable_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_EN))? data_w[0] : pid_enable_r;
 
 //////////////////  IQ FEED LOGIC /////////////////////
 
