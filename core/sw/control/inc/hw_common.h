@@ -103,6 +103,7 @@ typedef enum
     CMD_SET_DEC = 0b1011,
     CMD_SET_SP = 0b1100,
     CMD_SET_ALPHA_SAT_EN = 0b1101,
+    CMD_CONFIG_IO = 0b1110
 }   pdh_cmd_e;   
 
 typedef enum
@@ -164,6 +165,17 @@ typedef enum
     GET_FRAME_INVALID_DEC,
     GET_FRAME_INVALID_CODE,
 }   get_frame_e;
+
+typedef enum
+{
+    CONFIG_IO_OK,
+    CONFIG_IO_INVALID_DAC1,
+    CONFIG_IO_INVALID_DAC2,
+    CONFIG_IO_INVALID_PID,
+    CONFIG_IO_DAC1_CB_FAIL,
+    CONFIG_IO_DAC2_CB_FAIL,
+    CONFIG_IO_PID_CB_FAIL,
+}   config_io_e;
 
 typedef enum
 {
@@ -306,6 +318,16 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
+        uint32_t dac1_dat_sel : 1;
+        uint32_t dac2_dat_sel : 1;
+        uint32_t pid_dat_sel  : 3;
+        uint32_t _padding     : 21;
+        uint32_t cmd          : 4;
+        uint32_t _padding2    : 2;
+    }   config_io_cmd;
+
+    struct __attribute__((packed))
+    {
         uint32_t _padding   : 26;
         uint32_t val        : 4;
         uint32_t _padding2  : 2;
@@ -421,6 +443,15 @@ typedef union __attribute__((packed))
         uint32_t _padding       : 18;
         uint32_t cmd            : 4;
     }   set_alpha_sat_en_cb;
+
+    struct __attribute__((packed))
+    {
+        uint32_t dac1_dat_sel_r : 1;
+        uint32_t dac2_dat_sel_r : 1;
+        uint32_t pid_dat_sel_r  : 3;
+        uint32_t _padding       : 23;
+        uint32_t cmd            : 4;
+    }   config_io_cb;
 
     struct __attribute__((packed))
     {

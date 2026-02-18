@@ -71,3 +71,4 @@ int cmd_set_rot(cmd_ctx_t* ctx);
 int cmd_get_frame(cmd_ctx_t* ctx);
 int cmd_test_frame(cmd_ctx_t* ctx);
 int cmd_set_pid(cmd_ctx_t* ctx);
+int cmd_config_io(cmd_ctx_t* ctx);

@@ -70,7 +70,8 @@ module pdh_core #
         CMD_SET_KI = 4'b1010,
         CMD_SET_DEC = 4'b1011,
         CMD_SET_SP = 4'b1100,
-        CMD_SET_ALPHA_SAT_EN = 4'b1101
+        CMD_SET_ALPHA_SAT_EN = 4'b1101,
+        CMD_CONFIG_IO = 4'b1110
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
     logic [CMD_BITS-1:0] cmd_w;
@@ -99,9 +100,7 @@ module pdh_core #
     logic [7:0] led_r, next_led_w;
     
 
-
     logic signed [15:0] i_feed_w, q_feed_w, i_feed_r, q_feed_r;
-
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
     logic signed [15:0] kp_r, kd_r, ki_r, kp_w, kd_w, ki_w;
@@ -127,7 +126,8 @@ module pdh_core #
         set_ki_cb_w,
         set_dec_cb_w,
         set_sp_cb_w,
-        set_alpha_sat_en_cb_w;
+        set_alpha_sat_en_cb_w,
+        config_io_cb_w;
 
         
     assign idle_cb_w    = 32'b0;
@@ -186,6 +186,7 @@ module pdh_core #
     assign set_dec_cb_w = {CMD_SET_DEC, 14'b0, dec_r};
     assign set_sp_cb_w = {CMD_SET_SP, 12'd0, {2{sp_r[13]}}, sp_r};
     assign set_alpha_sat_en_cb_w = {CMD_SET_ALPHA_SAT_EN, 18'b0, alpha_r, satwidth_r, pid_enable_r};
+    assign config_io_cb_w = {CMD_CONFIG_IO, 23'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
@@ -196,6 +197,63 @@ module pdh_core #
 
 
     
+/////////////////////// IO ROUTING ///////////////////////////////////////    
+
+    typedef enum logic [2:0]
+    {
+        I_FEED_W = 3'b000,
+        Q_FEED_W = 3'b001,
+        SAT_A_16S = 3'b010,
+        SAT_B_16S = 3'b011
+        //SQUARED_SIGN_I = 3'b100, TODO: Implement these
+        //SQUARED_SIGN_Q = 3'b101
+    }   pid_sel_t;
+    logic [2:0] pid_sel_r, next_pid_sel_w;
+
+    typedef enum logic
+    {
+        SELECT_DAC = 1'b0,
+        SELECT_PID = 1'b1
+    }   dac_sel_t;
+
+    logic dac1_dat_sel_r, next_dac1_dat_sel_w, dac2_dat_sel_r, next_dac2_dat_sel_w;
+    assign dac_dat_o = dac_sel_r? ((dac2_dat_sel_r == SELECT_PID)? pid_out_w : dac2_dat_r) : ((dac1_dat_sel_r == SELECT_PID)? pid_out_w : dac1_dat_r);
+
+
+    logic signed [15:0] pid_in_w;
+    always_comb begin
+        unique case(pid_sel_r)
+            I_FEED_W: begin
+                pid_in_w = i_feed_r;
+            end
+
+            Q_FEED_W: begin
+                pid_in_w = q_feed_r;
+            end
+            
+            SAT_A_16S: begin
+                pid_in_w = adc_dat_a_16s_w;
+            end 
+
+            SAT_B_16S: begin
+                pid_in_w = adc_dat_b_16s_w;
+            end
+
+            default begin
+                pid_in_w = adc_dat_a_16s_w;
+            end
+        endcase
+    end
+
+
+    assign next_dac1_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[0] : dac1_dat_sel_r;
+    assign next_dac2_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[1] : dac2_dat_sel_r;
+    assign next_pid_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[4:2] : pid_sel_r;
+
+
+///////////////////////////////////////////////////////////////////////////
+
+
     logic signed [15:0] err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w;
     logic signed [31:0] sum_err_tap_w;
     pid_core u_pid(
@@ -208,7 +266,7 @@ module pdh_core #
         .sp_i(sp_r),
         .alpha_i(alpha_r),
         .satwidth_i(satwidth_r),
-        .dat_i(i_feed_r), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
+        .dat_i(pid_in_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
         .pid_out(pid_out_w),
         .err_tap(err_tap_w),
@@ -293,6 +351,10 @@ module pdh_core #
                 next_callback_w = set_alpha_sat_en_cb_w;
             end
 
+            CMD_CONFIG_IO: begin
+                next_callback_w = config_io_cb_w;
+            end
+
             default: begin
                 next_callback_w = '0;
             end
@@ -345,9 +407,6 @@ module pdh_core #
 
     assign led_o = led_r; 
     assign dac_rst_o = rst_sync_r;
-
-
-
     assign dma_decimation_code_o = dma_decimation_code_r;
    
 
@@ -478,6 +537,10 @@ module pdh_core #
             satwidth_r <= 5'd31;
             pid_enable_r <= 1'b0;
             
+            dac1_dat_sel_r <= '0;
+            dac2_dat_sel_r <= '0;
+            pid_sel_r <= '0;
+
             callback_r <= 0;
 
         end else begin
@@ -512,6 +575,10 @@ module pdh_core #
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
 
+            dac1_dat_sel_r <= next_dac1_dat_sel_w;
+            dac2_dat_sel_r <= next_dac2_dat_sel_w;
+            pid_sel_r <= next_pid_sel_w;
+
             callback_r <= next_callback_w;
         end
     end
@@ -533,13 +600,13 @@ module pdh_core #
             dac2_dat_r <= 14'h2000;
         end else begin
             dac_sel_r <= next_dac_sel_w;
-            dac1_dat_r <= pid_out_w; //next_dac1_dat_w;
+            dac1_dat_r <= next_dac1_dat_w; //next_dac1_dat_w;
             dac2_dat_r <= next_dac2_dat_w;
         end
     end
 
     assign dac_wrt_o = clk; //1'b1; //dac_wrt_r;
     assign dac_sel_o = dac_sel_r;
-    assign dac_dat_o = dac_sel_r? dac2_dat_r : dac1_dat_r; 
+    //assign dac_dat_o = dac_sel_r? dac2_dat_r : dac1_dat_r; 
 
 endmodule

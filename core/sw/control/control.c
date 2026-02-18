@@ -194,7 +194,7 @@ int cmd_get_adc(cmd_ctx_t *ctx)
     push_ctx_cb(ctx, &index, &echo_adc0_code, UINT_TAG, "IN1");
     push_ctx_cb(ctx, &index, &echo_adc1_code, UINT_TAG, "IN2");
     push_ctx_cb(ctx, &index, &adc0_converted, FLOAT_TAG, "IN1_V");
-    push_ctx_cb(ctx, &index, &adc1_converted, FLOAT_TAG, "IN1_V");
+    push_ctx_cb(ctx, &index, &adc1_converted, FLOAT_TAG, "IN2_V");
     push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
     
     uint32_t cmdval = cmd.cmd.val;
@@ -478,6 +478,10 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
+    cmd.cmd.val = CMD_IDLE;
+    pdh_execute_cmd(cmd);
+
+    cmd.raw = 0;
     cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
     cmd.get_frame_cmd.decimation = decimation_code;
     cmd.get_frame_cmd.frame_code = frame_code;
@@ -555,6 +559,72 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
 
     return return_code;
 }
+
+
+int cmd_config_io(cmd_ctx_t* ctx)
+{
+    int return_code = CONFIG_IO_OK;
+    size_t index = 0; 
+
+    uint32_t dac1_code = ctx->uint_args[0];
+    uint32_t dac2_code = ctx->uint_args[1];
+    uint32_t pid_code = ctx->uint_args[2];
+
+    if(dac1_code > 1) return_code = CONFIG_IO_INVALID_DAC1;
+    if(dac2_code > 1) return_code = CONFIG_IO_INVALID_DAC2;
+    if(pid_code > 3) return_code = CONFIG_IO_INVALID_PID;
+
+    if(return_code == CONFIG_IO_OK)
+    {
+        pdh_cmd_t cmd;
+        cmd.config_io_cmd.cmd = CMD_CONFIG_IO;
+        cmd.config_io_cmd.dac1_dat_sel = dac1_code;
+        cmd.config_io_cmd.dac2_dat_sel = dac2_code;
+        cmd.config_io_cmd.pid_dat_sel = pid_code;
+
+        pdh_callback_t cb = pdh_execute_cmd(cmd);
+        uint32_t echo_dac1 = cb.config_io_cb.dac1_dat_sel_r;
+        uint32_t echo_dac2 = cb.config_io_cb.dac2_dat_sel_r;
+        uint32_t echo_pid = cb.config_io_cb.pid_dat_sel_r;
+        uint32_t echo_cmd = cb.config_io_cb.cmd;
+        uint32_t cmdval = cmd.cmd.val;
+
+        return_code = validate_cb(&echo_dac1, &dac1_code, UINT_TAG, __func__, "DAC1_DAT_SEL_CB", return_code, CONFIG_IO_DAC1_CB_FAIL);
+        return_code = validate_cb(&echo_dac2, &dac2_code, UINT_TAG, __func__, "DAC2_DAT_SEL_CB", return_code, CONFIG_IO_DAC2_CB_FAIL);
+        return_code = validate_cb(&echo_pid, &pid_code, UINT_TAG, __func__, "PID_DAT_SEL_CB", return_code, CONFIG_IO_PID_CB_FAIL);
+        return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, return_code, PDH_INVALID_CMD);
+        
+        push_ctx_cb(ctx, &index, &echo_dac1, UINT_TAG, "DAC1_DAT_SEL_CB"); 
+        push_ctx_cb(ctx, &index, &echo_dac2, UINT_TAG, "DAC2_DAT_SEL_CB"); 
+        push_ctx_cb(ctx, &index, &echo_pid, UINT_TAG, "PID_DAT_SEL_CB");
+    }
+
+    return return_code;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 int cmd_test_frame(cmd_ctx_t* ctx)

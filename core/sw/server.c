@@ -15,7 +15,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 9
+#define NUM_CMDS 10
 
 /*
 "CMD:ex_cmd'\n'
@@ -35,7 +35,8 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_rotation", cmd_set_rot, 1, 0, 0},
     {"get_frame", cmd_get_frame, 0, 0, 2},
     {"test_frame", cmd_test_frame, 0, 0, 1},
-    {"set_pid", cmd_set_pid, 4, 0, 4}
+    {"set_pid", cmd_set_pid, 4, 0, 4},
+    {"config_io", cmd_config_io, 0, 0, 3}
 };
 
 
@@ -373,6 +374,7 @@ int main(void)
                 if(dispatch != DISPATCH_CMD_OK)
                 {
                     DEBUG_INFO("DISPATCH FAILURE: %d", dispatch);
+                    send_response(client_fd, func_status, ctx);
                 }
                 else
                 {

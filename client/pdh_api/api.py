@@ -24,7 +24,8 @@ __all__ = [
     'api_set_pid',
     'api_set_rotation',
     'api_get_frame',
-    'api_check_signed'
+    'api_check_signed',
+    'api_config_io'
 ]
 
 
@@ -201,3 +202,15 @@ def api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
     )
     ]
     execute_cmd_seq(cmds)
+
+
+# @api_cmd
+def api_config_io(dac1_dat_sel, dac2_dat_sel, pid_dat_sel):
+    cmds = [
+    (
+        "CMD:config_io\n"
+        f"U:{dac1_dat_sel},{dac2_dat_sel},{pid_dat_sel}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
