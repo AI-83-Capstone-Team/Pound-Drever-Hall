@@ -94,9 +94,17 @@ module bram_controller
         endcase
     end
     
-    logic rst_r;
+    logic rst_sync_r, rst_pipe1_r;
     always_ff @(posedge pdh_clk or posedge rst_i) begin
-        if (rst_i || rst_r) begin
+        if(rst_i) begin
+            {rst_sync_r, rst_pipe1_r} <= {1'b1, 1'b1};
+        end else begin
+            {rst_sync_r, rst_pipe1_r} <= {rst_pipe1_r, 1'b0};
+        end
+    end
+
+    always_ff @(posedge pdh_clk) begin
+        if (rst_sync_r) begin
             state_r <= ST_IDLE;
             addr_r <= {AW{1'd0}};
             decimation_code_r <= 26'd1;
@@ -107,8 +115,6 @@ module bram_controller
             decimation_code_r <= next_decimation_code_w;
             count_r <= next_count_w;
         end
-        rst_r <= rst_i;
     end
-
 
  endmodule

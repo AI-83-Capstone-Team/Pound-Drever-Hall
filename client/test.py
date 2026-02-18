@@ -11,7 +11,7 @@ if __name__ == "__main__":
     api_get_adc()
 
     api_set_rotation(0)
-    api_set_pid(kp=0.5, kd=0.2, ki=0.2, sp=-0.807, dec=50, alpha = 2, sat=18, en=1)
+    api_set_pid(kp=0.5, kd=0.2, ki=0.2, sp=0.657, dec=50, alpha = 2, sat=18, en=1)
     api_get_frame(50, 1)
     api_get_adc()
 

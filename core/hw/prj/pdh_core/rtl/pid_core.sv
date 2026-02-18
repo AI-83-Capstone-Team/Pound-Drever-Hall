@@ -109,7 +109,7 @@ module pid_core
     assign next_satwidth_w = ((satwidth_i <= 5'd31) && (satwidth_i >= 5'd15))? satwidth_i : 5'd31;
 
     //assume rst, enable are synchronous with feeder block (pdh_core)
-    always_ff @(posedge clk or posedge rst) begin
+    always_ff @(posedge clk) begin
         if(rst) begin
             {kp_r, kd_r, ki_r, sp_r} <= '0; 
             alpha_r <= '0;
@@ -138,7 +138,7 @@ module pid_core
             {kp_r, kd_r, ki_r, sp_r} <= {kp_r, kd_r, ki_r, sp_r};
             alpha_r <= alpha_r;
             decimate_r <= decimate_r;
-            satwidth_r <= next_satwidth_w;
+            satwidth_r <= satwidth_r;
 
             sum_error_r <= '0;
             error_pipe1_r <= '0;

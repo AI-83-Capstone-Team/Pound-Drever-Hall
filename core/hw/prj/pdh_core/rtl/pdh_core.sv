@@ -51,9 +51,9 @@ module pdh_core #
 /////////////////////////////////////////////////////////
 
 
-    logic rst_i, rst_r;
+    wire rst_i;
     assign rst_i = axi_from_ps_i[31];
-    assign rst_o = rst_r;
+    assign rst_o = rst_i;
     
     typedef enum logic [CMD_BITS-1:0] 
     {
@@ -82,7 +82,7 @@ module pdh_core #
     posedge_detector u_strobe_edge_detector(
         .D(strobe_bit_w),
         .clk(clk),
-        .rst(rst_i || rst_r),
+        .rst(rst_sync_r),
         .Q(strobe_edge_w)
     );
 
@@ -200,7 +200,7 @@ module pdh_core #
     logic signed [31:0] sum_err_tap_w;
     pid_core u_pid(
         .clk(clk),
-        .rst(rst_r),
+        .rst(rst_sync_r),
         .kp_i(kp_r),
         .kd_i(kd_r),
         .ki_i(ki_r),
@@ -344,7 +344,7 @@ module pdh_core #
 ////////////////////////////////////////////////////////
 
     assign led_o = led_r; 
-    assign dac_rst_o = rst_r;
+    assign dac_rst_o = rst_sync_r;
 
 
 
@@ -359,14 +359,14 @@ module pdh_core #
     posedge_detector u_dma_edge_detector(
        .D(dma_ready_3ff),
        .Q(dma_ready_edge_w),
-       .rst(rst_i || rst_r),
+       .rst(rst_sync_r),
        .clk(clk)
     );
 
     posedge_detector u_bram_edge_detector(
        .D(bram_ready_r),
        .Q(bram_ready_edge_w),
-       .rst(rst_i || rst_r),
+       .rst(rst_sync_r),
        .clk(clk)
     );
 
@@ -413,6 +413,13 @@ module pdh_core #
                 next_bram_enable_w = 1'b0;
                 next_bram_edge_acquired_w = 1'b0;
             end
+
+            default: begin
+                next_dma_state_w = DMA_ARMED;
+                next_dma_enable_w = 1'b0;
+                next_bram_enable_w = 1'b0;
+                next_bram_edge_acquired_w = 1'b0;
+            end
         endcase
     end
 
@@ -427,9 +434,19 @@ module pdh_core #
 
 
 
+    logic rst_sync_r, rst_pipe1_r, rst_sync_ne_r, rst_pipe1_ne_r;    
 
     always_ff @(posedge clk or posedge rst_i) begin
-        if(rst_i || rst_r)begin
+        if(rst_i) begin
+            {rst_sync_r, rst_pipe1_r} <= {1'b1, 1'b1};
+        end else begin
+            {rst_sync_r, rst_pipe1_r} <= {rst_pipe1_r, 1'b0};
+        end
+    end
+
+
+    always_ff @(posedge clk) begin
+        if(rst_sync_r)begin
             {axi_3ff_r, axi_2ff_r, axi_1ff_r} <= '0;
             axi_from_ps_r <= 0;
             led_r <= 0;
@@ -497,18 +514,23 @@ module pdh_core #
 
             callback_r <= next_callback_w;
         end
-
-        rst_r <= rst_i;
     end
     
     assign next_dac_sel_w = ~dac_sel_r;
 
     always_ff @(negedge clk or posedge rst_i) begin
-        if(rst_i || rst_r) begin
+        if(rst_i) begin
+            {rst_sync_ne_r, rst_pipe1_ne_r} <= {1'b1, 1'b1}; 
+        end else begin
+            {rst_sync_ne_r, rst_pipe1_ne_r} <= {rst_pipe1_ne_r, 1'b0};
+        end
+    end
+
+    always_ff @(negedge clk) begin
+        if(rst_sync_ne_r) begin
             dac_sel_r <= 1'b0;
             dac1_dat_r <= 14'h2000;
             dac2_dat_r <= 14'h2000;
-
         end else begin
             dac_sel_r <= next_dac_sel_w;
             dac1_dat_r <= pid_out_w; //next_dac1_dat_w;

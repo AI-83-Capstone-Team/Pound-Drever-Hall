@@ -164,9 +164,18 @@ module dma_controller
     assign dma_ready_o = ready_w;
 
     assign bram_addr_o = ((addr_r - HP0_BASE_ADDR)>> 3) + {27'b0, beat_r};
-    logic rst_r;
+
+    logic rst_sync_r, rst_pipe1_r;
     always_ff @(posedge aclk or posedge rst_i) begin
-        if (rst_i || rst_r) begin
+        if(rst_i) begin
+            {rst_sync_r, rst_pipe1_r} <= {1'b1, 1'b1};
+        end else begin
+            {rst_sync_r, rst_pipe1_r} <= {rst_pipe1_r, 1'b0};
+        end
+    end
+
+    always_ff @(posedge aclk) begin
+        if (rst_sync_r) begin
             {enable_3ff, enable_2ff, enable_1ff} <= '0;
             state_r <= ST_IDLE;
             addr_r <= HP0_BASE_ADDR;
@@ -179,7 +188,6 @@ module dma_controller
             beat_r <= next_beat_w;
             data_r <= next_data_w;
         end
-        rst_r <= rst_i;
     end
 
 endmodule
