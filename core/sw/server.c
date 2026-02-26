@@ -15,7 +15,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 10
+#define NUM_CMDS 11
 
 /*
 "CMD:ex_cmd'\n'
@@ -36,7 +36,8 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"get_frame", cmd_get_frame, 0, 0, 2},
     {"test_frame", cmd_test_frame, 0, 0, 1},
     {"set_pid", cmd_set_pid, 4, 0, 4},
-    {"config_io", cmd_config_io, 0, 0, 3}
+    {"config_io", cmd_config_io, 0, 0, 3},
+    {"lock_in", cmd_lock_in, 0, 0, 5}
 };
 
 
@@ -251,32 +252,9 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 		}
 	}
 
-	if(ctx.adc_count > 0)
-	{
-        offset += snprintf(buff + offset, cap - offset, "ADC::x%d:\n", ctx.adc_count);
-        buff = (char*)realloc(buff, MAX_BYTES + (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count);
-		cap += (MAX_CHARS_PER_FLOAT + 1) * ctx.adc_count;
-        for(size_t i = 0; i < ctx.adc_count; i++)
-        {
-            offset += snprintf(buff + offset, cap - offset, "%f,", gAdcMirror[i]);
-        }
-	}
-
-    if(ctx.sweep_count > 0)
-	{
-        offset += snprintf(buff + offset, cap - offset, "SWEEP::x%d:\n", ctx.sweep_count);
-        buff = (char*)realloc(buff, MAX_BYTES + 3*(MAX_CHARS_PER_FLOAT + 1) * ctx.sweep_count);
-		cap += 3*(MAX_CHARS_PER_FLOAT + 1) * ctx.sweep_count;
-        for(int i = 0; i < ctx.sweep_count; i++)
-        {
-            offset += snprintf(buff + offset, cap - offset, "%f,%f,%f\n", gSweepBuff[i].in, gSweepBuff[i].out, gSweepBuff[i].normalized);
-        }
-	}
-
     ssize_t n = write_all(client_fd, buff, offset);
     free(buff);
     (void)n;
-    
 }
 
 

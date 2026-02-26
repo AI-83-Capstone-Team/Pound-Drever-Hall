@@ -504,7 +504,7 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
     size_t index = 0;
     push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB"); 
     push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DECIMATION_CODE_CB"); 
-    push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB"); 
+push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB"); 
     push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD); 
     
 
@@ -603,30 +603,6 @@ int cmd_config_io(cmd_ctx_t* ctx)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 int cmd_test_frame(cmd_ctx_t* ctx)
 {
     uint32_t byte_offset = ctx->uint_args[0];
@@ -655,155 +631,197 @@ int cmd_test_frame(cmd_ctx_t* ctx)
 }
 
 
-static int validate_params(const lock_in_ctx_t *ctx)
-{
-	if (!ctx)
-    {
-		return NO_CONTEXT;
-	}
-
-    if (((ctx->dac_end - ctx->dac_start) / ctx->dac_step) <= 0)
-	{
-		return INVALID_STEP;
-	}
-
-	if (ctx->dac_start == ctx->dac_end)
-	{
-		return NO_RANGE;
-	}
-
-	return DAC_OK;
-}
-
-int lock_in(lock_in_ctx_t* ctx)
-{
-    DEBUG_INFO("Validating parameters\n");
-	int ret = validate_params(ctx);
-    if (ret != DAC_OK)
-    {
-		return ret;
-	}
-/*
-	float curr_out = ctx->dac_start;
-
-	uint32_t num_readings = (uint32_t)((ctx->dac_end - ctx->dac_start) / ctx->dac_step);
-	if (num_readings > SWEEP_BUFFER_SIZE) return STEP_TOO_SMALL;
-
-	DEBUG_INFO("Allocating: %d readings\n", num_readings);
-	float* readings = (float*)malloc(num_readings * sizeof(float));
-	
-	DEBUG_INFO("Begin RF sweep: %f, %f, %f\n", ctx->dac_start, ctx->dac_end, ctx->dac_step);
-	for(uint32_t index = 0; index < num_readings; index++)
-	{
-		rf_write(ctx->chout, curr_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(curr_out), 0, 0, true);
-		usleep(WR_DELAY_US);
-		rf_read(ctx->chin, 1);	
-	
-		readings[index] = gAdcMirror[0];
-		curr_out += ctx->dac_step;
-	}
-	
-	uint32_t hi = num_readings-1;
-	uint32_t lo = 0;
-	float slope = 0;
-	while(hi > lo)
-	{
-		slope += (readings[hi] - readings[lo]) / (hi - lo);
-		hi--;
-		lo++;
-	}
-	slope /= (num_readings / 2);
-
-	float best_in = readings[0];
-	float best_out = ctx->dac_start;
-
-	for(uint32_t index = 1; index < num_readings; index++)
-	{
-		float curr_in = readings[index] - (index * slope);
-		if (curr_in < best_in)
-		{
-			best_in = curr_in;
-			best_out = ctx->dac_start + (index * ctx->dac_step);
-		}
-	}
-
-	if (ctx->log_data)
-	{
-		DEBUG_INFO("Logging sweep data...\n");
-		FILE* f = fopen("lockin_log.csv", "w");
-		if (!f) return CANNOT_LOG;
-		for(uint32_t index = 0; index < num_readings; index++)
-		{
-			float normalized;
-			if (ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
-			else normalized = readings[index] - index*slope - best_out;
-			
-			fprintf(f, "%f, %f, %f\n", ctx->dac_start + index*ctx->dac_step, readings[index], normalized);
-		}
-		fclose(f);
-	}
-
-	else
-	{
-		for(uint32_t index = 0; index < num_readings; index++)
-		{
-			float normalized;
-			if (ctx->dac_step > 0) normalized = readings[index] - index*slope + best_out;
-			else normalized = readings[index] - index*slope - best_out;
-			sweep_entry_t entry = {(ctx->dac_start+index*ctx->dac_step), (readings[index]), normalized};
-			gSweepBuff[index] = entry;
-		}
-		ctx->num_readings = num_readings;
-	}
-
-	free(readings);
-
-	ctx->lock_point = best_out;
-
-	ctx->derived_slope = slope;
-	if (ctx->dac_step < 0) ctx->derived_slope *= -1;
-
-	rf_write(ctx->chout, best_out > 0? RP_WAVEFORM_DC : RP_WAVEFORM_DC_NEG, ABS(best_out), 0, 0, true);
-*/
-	return LOCKED_IN;
-}
-
+//Note that this command may be destructive towards cmd_config_io and will override the PID setpoint
+#define DAC_ZERO 8192
 int cmd_lock_in(cmd_ctx_t* ctx)
 {
-	DEBUG_INFO("Loading command context...\n");
-	lock_in_ctx_t lock_ctx = {
-		false,
-		(uint32_t)ctx->uint_args[0], 	//chin
-		(uint32_t)ctx->uint_args[1],	//chout
-		ctx->float_args[0],	//dac_end
-		ctx->float_args[1], //dac_start
-		ctx->float_args[2],	//dac_step
-		0.0,				//lock_point
-		0.0					//derived_slope
-	};
+    int return_code = LOCK_IN_OK;
+    size_t index = 0;
 
-	DEBUG_INFO("Start lock_in...\n");
+    uint32_t dac_select = ctx->uint_args[0];
+    uint32_t pid_select = ctx->uint_args[1];
+    uint32_t num_points = ctx->uint_args[2];
+    uint32_t us_delay = ctx->uint_args[3];
+    bool log_data = (bool)ctx->uint_args[4];
 
-	int return_code = lock_in(&lock_ctx);
-	ctx->output.output_items[0].data.i = return_code;
-	ctx->output.output_items[0].tag = INT_TAG;
-	strcpy(ctx->output.output_items[0].name, RETURN_STATUS_FLAG);
+    if(dac_select > 1) return_code = LOCK_IN_INVALID_DAC;
+    if(pid_select > 3) return_code = LOCK_IN_INVALID_PID_FEED;
+    
+    FILE* f;
 
-	ctx->output.output_items[1].data.f = lock_ctx.lock_point;
-	ctx->output.output_items[1].tag = FLOAT_TAG;
-	strcpy(ctx->output.output_items[1].name, LOCK_POINT_FLAG);
+    if(log_data)
+    {
+        f = fopen("lockin_log.csv", "w");
+        if (!f) return_code = LOCK_IN_FOPEN_ERR;
+    }
 
-	ctx->output.output_items[2].data.f = lock_ctx.derived_slope;
-	ctx->output.output_items[2].tag = FLOAT_TAG;
-	strcpy(ctx->output.output_items[2].name, DERIVED_SLOPE_FLAG);
+    if(return_code == LOCK_IN_OK)
+    {
+        pdh_cmd_t cmd;
+        cmd.raw = 0;
 
-	ctx->output.num_outputs = 3;
-	ctx->sweep_count = lock_ctx.num_readings;
-	return return_code;
+        /*
+        *  PROCEDURE:
+        *  1. Set register of target DAC to neutral
+        *  2. Switch target DAC to register, nontarget DAC to whatever it was before, controller feed to feed select
+        *  3. Disable PID module
+        *  4. Calculate sweep range and perform sweep, get results via selected ADC
+        *  5. Calculate new SP, reprogram controller to new SP
+        *  6. Route target DAC to controller and enable PID
+        * */
+        
+        cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
+        cmd.cs_cmd.reg_sel = CHECK_IO;
+        pdh_callback_t cb = pdh_execute_cmd(cmd);
+
+        uint8_t dac1_dat_sel = cb.check_io_cb.dac1_dat_sel_r;
+        uint8_t dac2_dat_sel = cb.check_io_cb.dac2_dat_sel_r;
+
+
+        //Set register to 0V
+        cmd.raw = 0;
+        cmd.dac_cmd.cmd = CMD_SET_DAC;
+        cmd.dac_cmd.dac_code = DAC_ZERO;
+        cmd.dac_cmd.dac_sel = dac_select;
+        cb = pdh_execute_cmd(cmd);
+
+        cmd.raw = 0;
+        cmd.config_io_cmd.cmd = CMD_CONFIG_IO;
+        if(dac_select == DAC_1)
+        {
+            cmd.config_io_cmd.dac1_dat_sel = SELECT_REGISTER;
+            cmd.config_io_cmd.dac2_dat_sel = dac2_dat_sel;
+            cmd.config_io_cmd.pid_dat_sel = pid_select;
+        }
+        else
+        {
+            cmd.config_io_cmd.dac1_dat_sel = dac1_dat_sel;
+            cmd.config_io_cmd.dac2_dat_sel = SELECT_REGISTER;
+            cmd.config_io_cmd.pid_dat_sel = pid_select;
+        }
+        cb = pdh_execute_cmd(cmd);
+        
+        cmd.raw = 0;
+        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
+        cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+        cmd.set_pid_cmd.payload = PID_DISABLE;
+        cb = pdh_execute_cmd(cmd);
+
+        uint16_t reg_sel;
+        switch(pid_select)
+        {
+            case I_FEED_R:
+                reg_sel = CHECK_I_FEED;
+                break;
+
+            case Q_FEED_R:
+                reg_sel = CHECK_Q_FEED;
+                break;
+
+            case DAT_A_16_S:
+                reg_sel = CHECK_ADC_DAT_A_16S;
+                break;
+
+            case DAT_B_16_S:
+                reg_sel = CHECK_ADC_DAT_B_16S;
+                break;
+
+            default:
+                reg_sel = CHECK_ADC_DAT_A_16S;
+                break;
+        }
+
+        float voltage_step_f = 1.0f/num_points;
+        int16_t voltage_step_i = lrintf(voltage_step_f * 16383.0);
+        
+        if(voltage_step_i < 0) return -1;
+
+        pdh_cmd_t set_dac_cmd, get_err_cmd;
+        set_dac_cmd.raw = 0;
+        get_err_cmd.raw = 0;
+        set_dac_cmd.dac_cmd.cmd = CMD_SET_DAC;
+        set_dac_cmd.dac_cmd.dac_sel = dac_select;
+        get_err_cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
+        get_err_cmd.cs_cmd.reg_sel = reg_sel;
+
+        int16_t voltage_code_i = 16383; //start sweep at -1V
+        uint16_t dac_init_code = DAC_ZERO;
+        int16_t sp = 0; //All valid feeds are zero-centered 16-bit signed
+        uint16_t best_delta = 0xFFFF;
+
+
+        size_t step = 0;
+        while(voltage_code_i >= 0)
+        {
+            uint16_t unsigned_voltage = (uint16_t)voltage_code_i;
+
+            set_dac_cmd.dac_cmd.dac_code = unsigned_voltage;
+            pdh_execute_cmd(set_dac_cmd);
+            usleep(us_delay);
+            cb = pdh_execute_cmd(get_err_cmd);
+
+            int16_t delta = (int16_t)cb.cs_cb.payload;
+            uint16_t abs_delta = ABS(delta);
+            if(abs_delta < best_delta)
+            {
+                best_delta = abs_delta;
+                dac_init_code = unsigned_voltage;
+                sp = delta;
+            }
+
+            if(log_data)
+            {
+                float voltage_code_converted = -(voltage_code_i - DAC_ZERO)/8192.0f;
+                float delta_converted = delta/8192.0f;
+                float sp_converted = sp/8192.0f;
+                uint32_t step_converted = (uint32_t)step;
+                fprintf(f, "%f, %f, %f, %u\n", voltage_code_converted, delta_converted, sp_converted, step_converted);
+                step++;
+            }
+
+            voltage_code_i -= voltage_step_i;
+        }
+
+        set_dac_cmd.dac_cmd.dac_code = dac_init_code;
+        pdh_execute_cmd(set_dac_cmd);
+
+        cmd.raw = 0;
+        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
+        cmd.set_pid_cmd.coeff_sel = SELECT_SP; 
+        cmd.set_pid_cmd.payload = 0; //sp;
+        cb = pdh_execute_cmd(cmd);
+
+        cmd.raw = 0;
+        cmd.config_io_cmd.cmd = CMD_CONFIG_IO;
+        if(dac_select == DAC_1)
+        {
+            cmd.config_io_cmd.dac1_dat_sel = SELECT_PID;
+            cmd.config_io_cmd.dac2_dat_sel = dac2_dat_sel;
+            cmd.config_io_cmd.pid_dat_sel = pid_select;
+        }
+        else
+        {
+            cmd.config_io_cmd.dac1_dat_sel = dac1_dat_sel;
+            cmd.config_io_cmd.dac2_dat_sel = SELECT_PID;
+            cmd.config_io_cmd.pid_dat_sel = pid_select;
+        }
+        cb = pdh_execute_cmd(cmd);
+
+        cmd.raw = 0;
+        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
+        cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+        cmd.set_pid_cmd.payload = PID_ENABLE;
+        cb = pdh_execute_cmd(cmd);        
+        
+        float dac_init_converted = -((int16_t)dac_init_code - DAC_ZERO)/8192.0f;
+
+        push_ctx_cb(ctx, &index, &dac_init_converted, FLOAT_TAG, "DAC_LOCK_POINT");
+    }
+    
+    if(log_data) 
+    {
+        fclose(f);
+    }
+
+    return return_code;
 }
-
-
-
-
-
-

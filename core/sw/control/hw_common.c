@@ -7,8 +7,13 @@
 #include "hw_common.h"
 
 
-float gAdcMirror[ADC_BUFFER_SIZE];
-sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
+
+struct __attribute__((packed))
+{
+    uint8_t dac1_feed_sel;
+    uint8_t dac2_feed_sel;
+    uint16_t pid_feed_sel;
+}   gIoCfg;
 
 
 static void* gAxiMap;

@@ -43,16 +43,6 @@ typedef enum
     DMA_INVALID_FRAME_CODE = 2,
 }   dma_return_codes_e;
 
-typedef enum
-{
-	LOCKED_IN		=  0,
-	DAC_OK			=  1,
-	NO_CONTEXT 		= -1,
-	INVALID_STEP	= -2,
-	STEP_TOO_SMALL	= -3,
-	NO_RANGE		= -4,
-	CANNOT_LOG		= -5,
-}	lockin_error_codes_e;
 
 
 

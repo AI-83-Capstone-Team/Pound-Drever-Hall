@@ -25,11 +25,11 @@ __all__ = [
     'api_set_rotation',
     'api_get_frame',
     'api_check_signed',
-    'api_config_io'
+    'api_config_io',
+    'api_lock_in'
 ]
 
 
-REMOTE_CSV_NAME = "dma_log.csv"
 LOCAL_DATA_DIR = "data"
 
 
@@ -56,9 +56,9 @@ def api_cmd(fn):
     return w
 
 
-def fetch_remote_csv(ssh: paramiko.SSHClient, csv_dir, local_name: str) -> str:
+def fetch_remote_csv(ssh: paramiko.SSHClient, csv_path, local_name: str) -> str:
     os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
-    remote_csv = f"{csv_dir}/{REMOTE_CSV_NAME}"
+    remote_csv = f"{csv_path}"
     local_csv = os.path.join(LOCAL_DATA_DIR, local_name)
 
     sftp = ssh.open_sftp()
@@ -159,7 +159,7 @@ def api_get_frame(decimation, frame_code, csv_dir):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect("10.42.0.62", username="root", password="root")
-    csv = fetch_remote_csv(ssh, csv_dir, f"dma_{frame_code}.csv")
+    csv = fetch_remote_csv(ssh, f"{csv_dir}/dma_log.csv", f"dma_{frame_code}.csv")
     ssh.close()
     data = np.loadtxt(csv, delimiter=",")
     x = np.arange(16384)
@@ -210,4 +210,36 @@ def api_config_io(dac1_dat_sel, dac2_dat_sel, pid_dat_sel):
     )
     ]
     execute_cmd_seq(cmds)
+
+
+@api_cmd
+def api_lock_in(csv_dir, dac_select, pid_select, num_points, us_delay, log_data):
+    cmds = [
+    (
+        "CMD:lock_in\n"
+        f"U:{dac_select},{pid_select},{num_points},{us_delay},{log_data}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect("10.42.0.62", username="root", password="root")
+    csv = fetch_remote_csv(ssh, f"{csv_dir}/lockin_log.csv", f"lockin_log.csv")
+    ssh.close()
+    data = np.loadtxt(csv, delimiter=",")
+    vCode = data[:, 0]
+    delta = data[:, 1]
+    sp = data[:, 2]
+    step = data[:, 3]
+
+    plt.plot(step, vCode, label=f"DAC{dac_select+1} Voltage")
+    plt.plot(step, delta, label="Error Signal Received")
+    plt.plot(step, sp, label="SP")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+
 

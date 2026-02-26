@@ -71,15 +71,6 @@
 #endif
 
 
-typedef struct
-{
-	float in;
-	float out;
-	float normalized;
-} 	sweep_entry_t;
-
-extern sweep_entry_t gSweepBuff[SWEEP_BUFFER_SIZE];
-extern float gAdcMirror[ADC_BUFFER_SIZE];
 
 int dma_Init();
 int dma_Release();
@@ -103,9 +94,54 @@ typedef enum
 
 typedef enum
 {
+    PID_DISABLE = 0,
+    PID_ENABLE = 1,
+}   pid_en_e;
+
+//TODO: add the other enums in too
+typedef enum
+{
+    CHECK_IO = 0b10000,
+    CHECK_ADC_DAT_A_16S = 0b00000,
+    CHECK_ADC_DAT_B_16S = 0b00001,
+    CHECK_I_FEED = 0b00110,
+    CHECK_Q_FEED = 0b00111,
+}   cs_sel_e;
+
+
+typedef enum
+{
     PDH_OK,
     PDH_INVALID_CMD,
 }   pdh_generic_e;
+
+
+typedef enum
+{
+    DAC_1 = 0,
+    DAC_2 = 1,
+}   dac_sel_e; 
+
+typedef enum
+{
+    ADC_1 = 0,
+    ADC_2 = 1,
+}   adc_sel_e;
+
+typedef enum
+{
+    SELECT_REGISTER = 0b0,
+    SELECT_PID = 0b1,
+}   dac_dat_sel_e;
+
+typedef enum
+{
+    I_FEED_R = 0b000,
+    Q_FEED_R = 0b001,
+    DAT_A_16_S = 0b010,
+    DAT_B_16_S = 0b011,
+}   pid_dat_sel_e;
+
 
 typedef enum
 {
@@ -132,7 +168,6 @@ typedef enum
     SET_DAC_INVALID_CODE,
 }   set_dac_e;
 
-
 typedef enum
 {
     SET_PID_OK,
@@ -146,7 +181,6 @@ typedef enum
     SET_PID_INVALID_EN,
 }   set_pid_e;
 
-
 typedef enum
 {
     SELECT_KP = 0b0000,
@@ -158,9 +192,6 @@ typedef enum
     SELECT_SAT = 0b0110,
     SELECT_EN = 0b0111,
 }   pid_coeff_sel_e;
-
-
-
 
 typedef enum
 {
@@ -187,6 +218,16 @@ typedef enum
     CONFIG_IO_DAC2_CB_FAIL,
     CONFIG_IO_PID_CB_FAIL,
 }   config_io_e;
+
+typedef enum
+{
+    LOCK_IN_OK,
+    LOCK_IN_INVALID_DAC,
+    LOCK_IN_INVALID_PID_FEED,
+    LOCK_IN_FOPEN_ERR,
+
+}   lock_in_e;
+
 
 typedef enum
 {
@@ -337,6 +378,17 @@ typedef union __attribute__((packed))
         uint32_t _padding       : 7;
         uint32_t cmd            : 4;
     }   cs_cb;
+
+    struct __attribute__((packed)) //TODO: Double check that using an internal union inside cs_cb does indeed mangle data
+    {
+        uint32_t dac1_dat_sel_r : 1;
+        uint32_t dac2_dat_sel_r : 1;
+        uint32_t pid_dat_sel_r  : 3;
+        uint32_t _padding       : 11;
+        uint32_t reg_sel        : 5;
+        uint32_t _padding2      : 7;
+        uint32_t cmd            : 4;
+    }   check_io_cb;
     
     struct __attribute__((packed))
     {

@@ -129,9 +129,9 @@ module pdh_core #
     always_comb begin
         base_bus = {CMD_CHECK_SIGNED, 7'd0, axi_from_ps_r[4:0]}; 
         case(axi_from_ps_r[4:0])
-            5'b00000: cs_cb_w = {base_bus, adc_dat_a_16s_w};
+            5'b00000: cs_cb_w = {base_bus, adc_dat_a_16s_r};
            
-            5'b00001: cs_cb_w = {base_bus, adc_dat_b_16s_w};
+            5'b00001: cs_cb_w = {base_bus, adc_dat_b_16s_r};
 
             5'b00010: cs_cb_w = {base_bus, cos_theta_r};
             
@@ -158,6 +158,8 @@ module pdh_core #
             5'b01110: cs_cb_w = {base_bus, {2{sp_r[13]}}, sp_r};
             
             5'b01111: cs_cb_w = {base_bus, 6'b0, satwidth_r, alpha_r, pid_enable_r};
+
+            5'b10000: cs_cb_w = {base_bus, 11'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
             default: cs_cb_w = {base_bus, 16'd0};
             
