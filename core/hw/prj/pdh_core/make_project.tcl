@@ -27,6 +27,8 @@ create_bd_design system
 
 #################### ADD SOURCE AND CONSTRAINT FILES ###########################################################
 add_files -norecurse rtl
+add_files -norecurse rtl/sine_qtr_4096_16b.mem
+set_property file_type {Memory Initialization Files} [get_files rtl/sine_qtr_4096_16b.mem]
 
 #set_msg_config -id {HDL 9-1061} -limit 1000
 #set_msg_config -id {HDL 9-1332} -limit 1000
@@ -107,7 +109,7 @@ connect_bd_net [get_bd_ports fclk0_resetn] [get_bd_pins processing_system7_0/FCL
 
 
 
-# Using the AXI GPIO logic to route signals between RTL and the PS
+# Using the AXI GPIO logic to route signals between tTL and the PS
 apply_bd_automation -rule xilinx.com:bd_rule:axi4 -config {Master "/processing_system7_0/M_AXI_GP0" Clk "Auto" }  [get_bd_intf_pins axi_gpio_0/S_AXI]
 
 
