@@ -1,5 +1,6 @@
 #pragma once
 
+#include <asm-generic/errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -89,7 +90,8 @@ typedef enum
     CMD_COMMIT_ROT_COEFFS = 0b0110,
     CMD_GET_FRAME = 0b0111,
     CMD_SET_PID_COEFFS = 0b1000,
-    CMD_CONFIG_IO = 0b1110
+    CMD_SET_NCO = 0b1001,
+    CMD_CONFIG_IO = 0b1110,
 }   pdh_cmd_e;   
 
 typedef enum
@@ -130,8 +132,10 @@ typedef enum
 
 typedef enum
 {
-    SELECT_REGISTER = 0b0,
-    SELECT_PID = 0b1,
+    SELECT_REGISTER = 0b000,
+    SELECT_PID = 0b001,
+    SELECT_NCO_1 = 0b010,
+    SELECT_NCO_2 = 0b011,
 }   dac_dat_sel_e;
 
 typedef enum
@@ -195,6 +199,28 @@ typedef enum
 
 typedef enum
 {
+    SET_NCO_OK,
+    SET_NCO_INVALID_FREQ,
+    SET_NCO_INVALID_SHIFT,
+    SET_NCO_INVALID_STRIDE_CB,
+    SET_NCO_INVALID_SHIFT_CB,
+    SET_NCO_INVALID_SUB_CB,
+    SET_NCO_INVALID_INV_CB,
+    SET_NCO_INVALID_EN_CB,
+}   set_nco_e;
+
+
+typedef enum
+{
+    SELECT_STRIDE = 0b000,
+    SELECT_SHIFT = 0b001,
+    SELECT_INV = 0b010,
+    SELECT_SUB = 0b011,
+    NCO_SELECT_EN = 0b100,
+}   nco_coeff_sel_e;
+
+typedef enum
+{
     SET_ROT_OK,
     SET_ROT_INVALID_COS,
     SET_ROT_INVALID_SIN,
@@ -234,7 +260,7 @@ typedef enum
     ANGLES_AND_ESIGS = 0b0000,
     PID_ERR_TAPS = 0b0001,
     IO_SUM_ERR = 0b0010,
-    GATE_CHECK = 0b0011,
+    OSC_INSPECT = 0b0011,
 }   frame_code_e;
 
 
@@ -320,10 +346,19 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t dac1_dat_sel : 1;
-        uint32_t dac2_dat_sel : 1;
+        uint32_t payload    : 16;
+        uint32_t coeff_sel  : 3;
+        uint32_t _padding   : 7;
+        uint32_t cmd        : 4;
+        uint32_t _padding_2 : 2;
+    }   set_nco_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t dac1_dat_sel : 3;
+        uint32_t dac2_dat_sel : 3;
         uint32_t pid_dat_sel  : 3;
-        uint32_t _padding     : 21;
+        uint32_t _padding     : 17;
         uint32_t cmd          : 4;
         uint32_t _padding2    : 2;
     }   config_io_cmd;
@@ -381,10 +416,10 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed)) //TODO: Double check that using an internal union inside cs_cb does indeed mangle data
     {
-        uint32_t dac1_dat_sel_r : 1;
-        uint32_t dac2_dat_sel_r : 1;
+        uint32_t dac1_dat_sel_r : 3;
+        uint32_t dac2_dat_sel_r : 3;
         uint32_t pid_dat_sel_r  : 3;
-        uint32_t _padding       : 11;
+        uint32_t _padding       : 7;
         uint32_t reg_sel        : 5;
         uint32_t _padding2      : 7;
         uint32_t cmd            : 4;
@@ -423,10 +458,21 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t dac1_dat_sel_r : 1;
-        uint32_t dac2_dat_sel_r : 1;
+        uint32_t nco_en_r       : 1;
+        uint32_t nco_inv_r      : 1;
+        uint32_t nco_sub_r      : 1;
+        uint32_t nco_shift_r    : 12;
+        uint32_t nco_stride_r   : 12;
+        uint32_t _padding       : 1;
+        uint32_t cmd            : 4;
+    }   set_nco_cb;
+
+    struct __attribute__((packed))
+    {
+        uint32_t dac1_dat_sel_r : 3;
+        uint32_t dac2_dat_sel_r : 3;
         uint32_t pid_dat_sel_r  : 3;
-        uint32_t _padding       : 23;
+        uint32_t _padding       : 19;
         uint32_t cmd            : 4;
     }   config_io_cb;
 
@@ -469,13 +515,11 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint64_t dac2_dat_r     : 14;
-        uint64_t _padding       : 4;
-        uint64_t dac1_dat_r     : 14;
-        uint64_t dac2_gate_r    : 3;
-        uint64_t dac1_gate_r    : 3;
-        uint64_t _padding2      : 26;
-    }   gate_check_frame;
+        uint64_t nco_out1_w     : 16;
+        uint64_t nco_out2_w     : 16;
+        uint64_t nco_feed1_r    : 16;
+        uint64_t nco_feed2_r    : 16;
+    }   osc_inspect_frame;
 
     uint64_t raw;
 }   dma_frame_t;

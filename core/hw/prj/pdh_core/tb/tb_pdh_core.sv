@@ -25,11 +25,12 @@ module tb_pdh_core;
         CMD_SET_ROT_COEFFS = 4'b0101,
         CMD_COMMIT_ROT_COEFFS = 4'b0110,
         CMD_GET_FRAME = 4'b0111,
-        CMD_SET_KP = 4'b1000,
-        CMD_SET_KD = 4'b1001,
-        CMD_SET_KI = 4'b1010,
-        CMD_SET_DEC = 4'b1011,
-        CMD_SET_SP = 4'b1100,
+        // CMD_SET_KP = 4'b1000,
+        // CMD_SET_KD = 4'b1001,
+        // CMD_SET_KI = 4'b1010,
+        // CMD_SET_DEC = 4'b1011,
+        // CMD_SET_SP = 4'b1100,
+        CMD_SET_NCO = 4'b1001,
         CMD_SET_ALPHA_SAT_EN = 4'b1101
     } cmd_t;
 
@@ -117,25 +118,21 @@ module tb_pdh_core;
     endtask
 
 
-    task automatic config_pid(
-        input logic signed [15:0] kp, 
-        input logic signed [15:0] kd, 
-        input logic signed [15:0] ki, 
-        input logic [13:0] dec, 
-        input logic signed [13:0] sp, 
-        input logic [3:0] alpha, 
-        input logic [4:0] sat, 
-        input logic enable
+
+
+    task automatic config_nco( 
+        input logic [11:0] stride,
+        input logic [11:0] shift, 
+        input logic en, 
+        input logic inv
     );
-        begin   
-            send_cmd_two_step(CMD_SET_KP, {10'b0, kp}); 
-            send_cmd_two_step(CMD_SET_KD, {10'b0, kd}); 
-            send_cmd_two_step(CMD_SET_KI, {10'b0, ki});
-            send_cmd_two_step(CMD_SET_DEC, {12'b0, dec});
-            send_cmd_two_step(CMD_SET_SP, {12'b0, sp});
-            send_cmd_two_step(CMD_SET_ALPHA_SAT_EN, {16'b0, alpha, sat, enable});
+        begin
+            send_cmd_two_step(CMD_SET_NCO, {stride, shift, inv, en});
         end
     endtask
+
+
+
 
 
     logic signed [15:0] kp_w; 
@@ -147,6 +144,10 @@ module tb_pdh_core;
     logic [4:0] sat_w;
     logic enable_w;
 
+    logic [11:0] nco_shift = 12'd8;
+    logic [11:0] nco_stride = 12'd15;
+    logic nco_inv = 1'b1;
+    logic nco_en = 1'b1;
 
     initial begin
         $dumpfile("dumps/tb_pdh.vcd");
@@ -203,17 +204,23 @@ module tb_pdh_core;
         sp_w = 14'sd0; 
         sat_w = 5'd18;
         adc_dat_a_w = '0; //ADC is reading +1V, SP is set to 0V
-        config_pid(
-            .kp(kp_w),
-            .kd(kd_w),
-            .ki(ki_w),
-            .dec(dec_w),
-            .sp(sp_w),
-            .alpha(alpha_w),
-            .sat(sat_w),
-            .enable(enable_w)
+        // config_pid(
+        //     .kp(kp_w),
+        //     .kd(kd_w),
+        //     .ki(ki_w),
+        //     .dec(dec_w),
+        //     .sp(sp_w),
+        //     .alpha(alpha_w),
+        //     .sat(sat_w),
+        //     .enable(enable_w)
+        // );
+        config_nco(
+            .stride(nco_stride),
+            .shift(nco_shift),
+            .en(nco_en),
+            .inv(nco_inv)
         );
-        #2000;
+        #9000;
 
         $finish;
     end

@@ -66,6 +66,7 @@ module pdh_core #
         CMD_COMMIT_ROT_COEFFS = 4'b0110,
         CMD_GET_FRAME = 4'b0111,
         CMD_SET_PID_COEFFS = 4'b1000,
+        CMD_SET_NCO = 4'b1001,
         CMD_CONFIG_IO = 4'b1110
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
@@ -117,6 +118,7 @@ module pdh_core #
         commit_rot_cb_w, 
         get_frame_cb_w,
         set_pid_cb_w,
+        set_nco_cb_w,
         config_io_cb_w;
 
         
@@ -159,7 +161,7 @@ module pdh_core #
             
             5'b01111: cs_cb_w = {base_bus, 6'b0, satwidth_r, alpha_r, pid_enable_r};
 
-            5'b10000: cs_cb_w = {base_bus, 11'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
+            5'b10000: cs_cb_w = {base_bus, 7'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
             default: cs_cb_w = {base_bus, 16'd0};
             
@@ -233,7 +235,7 @@ module pdh_core #
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_r[15:2], i_feed_r[15:2]};
     assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_ready_3ff};
     assign set_pid_cb_w = {CMD_SET_PID_COEFFS, 8'd0, pid_coeff_select_w, pid_payload_w};
-    assign config_io_cb_w = {CMD_CONFIG_IO, 23'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
+    assign config_io_cb_w = {CMD_CONFIG_IO, 19'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
@@ -241,6 +243,42 @@ module pdh_core #
 
     logic [13:0] dac1_dat_r, next_dac1_dat_w, dac2_dat_r, next_dac2_dat_w;
     logic dac_sel_r, next_dac_sel_w;
+
+
+
+//////////////////////////// NCO BLOCK /////////////////////////////////
+    logic nco_en_r, nco_en_w;
+    logic nco_inv_r, nco_inv_w;
+    logic nco_sub_r, nco_sub_w;
+    logic [11:0] nco_stride_r, nco_stride_w, nco_shift_r, nco_shift_w; 
+    logic signed [15:0] nco_out1_w, nco_out2_w;
+    logic [13:0] nco_feed1_r, nco_feed2_r, nco_feed1_w, nco_feed2_w;
+
+
+    nco u_nco(
+        .clk(clk),
+        .enable_i(nco_en_r),
+        .rst_i(rst_sync_r),
+        .stride_i(nco_stride_r),
+        .shift_i(nco_shift_r),
+        .invert_i(nco_inv_r),
+        .sub_i(nco_sub_r),
+        .out1_o(nco_out1_w),
+        .out2_o(nco_out2_w)
+    );
+
+
+    assign set_nco_cb_w = {CMD_SET_NCO, 1'd0, nco_stride_r, nco_shift_r, nco_sub_r, nco_inv_r, nco_en_r};
+
+
+    function automatic logic [13:0] s16_to_u14(input logic signed [15:0] in);
+        logic signed [15:0] t1 = -(in >> 2) + 16'sd8191;
+        s16_to_u14 = t1[13:0];
+    endfunction
+
+
+    assign nco_feed1_w = s16_to_u14(nco_out1_w);
+    assign nco_feed2_w = s16_to_u14(nco_out2_w);
 
 
     
@@ -257,15 +295,67 @@ module pdh_core #
     }   pid_sel_t;
     logic [2:0] pid_sel_r, next_pid_sel_w;
 
-    typedef enum logic
+    typedef enum logic [2:0]
     {
-        SELECT_DAC = 1'b0,
-        SELECT_PID = 1'b1
+        SELECT_DAC = 3'b000,
+        SELECT_PID = 3'b001,
+        SELECT_NCO_1 = 3'b010,
+        SELECT_NCO_2 = 3'b011
     }   dac_sel_t;
 
     logic dac1_dat_sel_r, next_dac1_dat_sel_w, dac2_dat_sel_r, next_dac2_dat_sel_w;
-    assign dac_dat_o = dac_sel_r? ((dac2_dat_sel_r == SELECT_PID)? pid_out_w : dac2_dat_r) : ((dac1_dat_sel_r == SELECT_PID)? pid_out_w : dac1_dat_r);
 
+    logic [13:0] dac1_feed_w, dac2_feed_w;
+
+    always_comb begin
+        unique case(dac1_dat_sel_r) 
+            SELECT_DAC: begin
+                dac1_feed_w = dac1_dat_r;
+            end
+
+            SELECT_PID: begin
+                dac1_feed_w = pid_out_w;
+            end
+
+            SELECT_NCO_1: begin
+                dac1_feed_w = nco_feed1_r;
+            end
+             
+            SELECT_NCO_2: begin
+                dac1_feed_w = nco_feed2_r;
+            end
+
+            default: begin
+                dac1_feed_w = 14'd8192;
+            end
+        endcase
+    end
+
+    always_comb begin
+        unique case(dac2_dat_sel_r) 
+            SELECT_DAC: begin
+                dac2_feed_w = dac2_dat_r;
+            end
+
+            SELECT_PID: begin
+                dac2_feed_w = pid_out_w;
+            end
+
+            SELECT_NCO_1: begin
+                dac2_feed_w = nco_feed1_r;
+            end
+             
+            SELECT_NCO_2: begin
+                dac2_feed_w = nco_feed2_r;
+            end
+
+            default: begin
+                dac2_feed_w = 14'd8192;
+            end
+        endcase
+    end
+
+    assign dac_dat_o = dac_sel_r? dac2_feed_w : dac1_feed_w;
 
     logic signed [15:0] pid_in_w;
     always_comb begin
@@ -293,9 +383,9 @@ module pdh_core #
     end
 
 
-    assign next_dac1_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[0] : dac1_dat_sel_r;
-    assign next_dac2_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[1] : dac2_dat_sel_r;
-    assign next_pid_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[4:2] : pid_sel_r;
+    assign next_dac1_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[2:0] : dac1_dat_sel_r;
+    assign next_dac2_dat_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[5:3] : dac2_dat_sel_r;
+    assign next_pid_sel_w = (cmd_w == CMD_CONFIG_IO)? data_w[8:6] : pid_sel_r;
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -327,7 +417,8 @@ module pdh_core #
     {
         ANGLES_AND_ESIGS = 4'b0000,
         PID_ERR_TAPS = 4'b0001,
-        IO_SUM_ERR = 4'b0010
+        IO_SUM_ERR = 4'b0010,
+        OSC_INSPECT = 4'b0011
     }   frame_code_t;
     logic [3:0] frame_code_r, next_frame_code_w;
 
@@ -336,6 +427,7 @@ module pdh_core #
             ANGLES_AND_ESIGS: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
             PID_ERR_TAPS: dma_data_o = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
             IO_SUM_ERR: dma_data_o = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
+            OSC_INSPECT: dma_data_o = {2'b0, nco_feed2_r, 2'b0, nco_feed1_r, nco_out2_w, nco_out1_w};
             default: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
         endcase
     end
@@ -406,6 +498,25 @@ module pdh_core #
     assign alpha_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_ALPHA))? data_w[3:0] : alpha_r;
     assign satwidth_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_SAT))? data_w[4:0] : satwidth_r;
     assign pid_enable_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_EN))? data_w[0] : pid_enable_r;
+
+
+    typedef enum logic [2:0]
+    {
+        SELECT_STRIDE = 3'b000,
+        SELECT_SHIFT = 3'b001,
+        SELECT_INV = 3'b010,
+        SELECT_SUB = 3'b011,
+        NCO_SELECT_EN = 3'b100
+    }   nco_sel_t;
+
+    logic [2:0] nco_coeff_select_w;
+    assign nco_coeff_select_w = data_w[18:16];
+
+    assign nco_stride_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_STRIDE))? data_w[11:0] : nco_stride_r;
+    assign nco_shift_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_SHIFT))? data_w[11:0] : nco_shift_r;
+    assign nco_inv_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_INV))? data_w[0] : nco_inv_r;
+    assign nco_sub_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_SUB))? data_w[0] : nco_sub_r;
+    assign nco_en_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_EN))? data_w[0] : nco_en_r;
 
 //////////////////  IQ FEED LOGIC /////////////////////
 
@@ -564,6 +675,13 @@ module pdh_core #
             alpha_r <= 4'd4;
             satwidth_r <= 5'd31;
             pid_enable_r <= 1'b0;
+
+            nco_shift_r <= '0;
+            nco_stride_r <= 12'd1;
+            nco_en_r <= 1'b0;
+            nco_inv_r <= 1'b0;
+            nco_feed1_r <= '0;
+            nco_feed2_r <= '0;
             
             dac1_dat_sel_r <= '0;
             dac2_dat_sel_r <= '0;
@@ -602,6 +720,13 @@ module pdh_core #
             alpha_r <= alpha_w;
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
+
+            nco_shift_r <= nco_shift_w;
+            nco_stride_r <= nco_stride_w;
+            nco_en_r <= nco_en_w;
+            nco_inv_r <= nco_inv_w;
+            nco_feed1_r <= nco_feed1_w;
+            nco_feed2_r <= nco_feed2_w;
 
             dac1_dat_sel_r <= next_dac1_dat_sel_w;
             dac2_dat_sel_r <= next_dac2_dat_sel_w;

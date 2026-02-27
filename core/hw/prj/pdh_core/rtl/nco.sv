@@ -5,6 +5,7 @@ module nco(
     input logic [11:0] stride_i,
     input logic [11:0] shift_i,
     input logic invert_i,
+    input logic sub_i,
     output logic signed [15:0] out1_o,
     output logic signed [15:0] out2_o
 );
@@ -71,34 +72,35 @@ module nco(
         endcase
     end
 
+
     always_comb begin
         unique case(state2_r)
             ST_IDLE: begin
-                next_addr2_w = 12'd0;
-                next_state2_w = enable_i? ST_Q1 : ST_IDLE;
+                next_addr2_w = shift_i;
+                next_state2_w = enable_i? (sub_i? ST_Q4 : ST_Q1) : ST_IDLE;
                 rom2_signed_w = 16'sd0;
             end
 
             ST_Q1: begin
-                next_addr2_w = (addr1_r + shift_i + stride_i <= addr1_r + shift_i)? 12'd4095 - (addr1_r + shift_i + stride_i) : addr1_r + shift_i + stride_i;
+                next_addr2_w = (addr2_r + stride_i <= addr2_r)? 12'd4095 - (addr2_r + stride_i) : addr2_r + stride_i;
                 next_state2_w = (addr2_r + stride_i <= addr2_r)? ST_Q2 : ST_Q1; 
                 rom2_signed_w = invert_i? -rom2_lookup_w : rom2_lookup_w;
             end
 
             ST_Q2: begin
-                next_addr2_w = (addr1_r - shift_i - stride_i >= addr1_r - shift_i)? 12'd4095 - (addr1_r - shift_i - stride_i) : addr1_r - shift_i - stride_i; 
+                next_addr2_w = (addr2_r - stride_i >= addr2_r)? 12'd4095 - (addr2_r - stride_i) : addr2_r - stride_i;
                 next_state2_w = (addr2_r - stride_i >= addr2_r)? ST_Q3 : ST_Q2;
                 rom2_signed_w = invert_i? -rom2_lookup_w : rom2_lookup_w;
             end
 
             ST_Q3: begin
-                next_addr2_w = (addr1_r + shift_i + stride_i <= addr1_r + shift_i)? 12'd4095 - (addr1_r + shift_i + stride_i) : addr1_r + shift_i + stride_i;
+                next_addr2_w = (addr2_r + stride_i <= addr2_r)? 12'd4095 - (addr2_r + stride_i) : addr2_r + stride_i;
                 next_state2_w = (addr2_r + stride_i <= addr2_r)? ST_Q4 : ST_Q3;
                 rom2_signed_w = invert_i? rom2_lookup_w : -rom2_lookup_w;
             end
 
             ST_Q4: begin
-                next_addr2_w = (addr1_r - shift_i - stride_i >= addr1_r - shift_i)? 12'd4095 - (addr1_r - shift_i - stride_i) : addr1_r - shift_i - stride_i; 
+                next_addr2_w = (addr2_r - stride_i >= addr2_r)? 12'd4095 - (addr2_r - stride_i) : addr2_r - stride_i;
                 next_state2_w = (addr2_r - stride_i >= addr2_r)? ST_Q1 : ST_Q4;
                 rom2_signed_w = invert_i? rom2_lookup_w : -rom2_lookup_w;
             end

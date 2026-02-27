@@ -390,7 +390,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
     push_ctx_cb(ctx, &index, &echo_en, UINT_TAG, "EN_CB");
 
-    return PDH_OK;
+    return return_code;
 }
 
 
@@ -467,6 +467,133 @@ int cmd_set_rot(cmd_ctx_t* ctx)
     return return_code;
 }
 
+
+
+#define STRIDE_CONST 7629.39453125 // 125E6/(4 * 4096)
+int cmd_set_nco(cmd_ctx_t* ctx)
+{
+    int return_code = SET_NCO_OK;
+    size_t index = 0;
+
+    float freq = ctx->float_args[0];
+    float shift_deg = ctx->float_args[1];
+    uint32_t en = ctx->uint_args[0];
+
+    uint32_t stride = ABS(lrintf(freq / STRIDE_CONST));
+
+    if (stride > 1024 || stride < 1) return_code = SET_NCO_INVALID_FREQ;
+
+    //shift should be given as between 180 and -180 degrees
+    float shift_rad = shift_deg / 180.0 * M_PI;
+    if (shift_rad > M_PI || shift_rad < -M_PI) return_code = SET_NCO_INVALID_SHIFT;
+
+
+    if (return_code == SET_NCO_OK)
+    {
+        uint32_t inv = 0; 
+        uint32_t sub = 0;
+        
+        if (shift_rad > M_PI_2)
+        {
+            sub = 1;
+            inv = 1;
+            shift_rad -= M_PI_2;
+        }
+
+        else if (shift_rad < -M_PI_2)
+        {
+            sub = 0;
+            inv = 1;
+            shift_rad += M_PI;
+        }
+
+        else if (shift_rad < 0.0f)
+        {
+            sub = 1;
+        }
+
+        int32_t shift_int = lrintf(shift_rad / M_PI_2 * 4095.0);
+        uint32_t shift_int_unsigned = ABS(shift_int);
+
+        pdh_cmd_t cmd;
+        cmd.raw = 0;
+        cmd.set_nco_cmd.cmd = CMD_SET_NCO;
+        cmd.set_nco_cmd.coeff_sel = SELECT_EN;
+        pdh_execute_cmd(cmd);
+
+        cmd.set_nco_cmd.coeff_sel = SELECT_STRIDE;
+        cmd.set_nco_cmd.payload = stride;
+        pdh_execute_cmd(cmd);
+
+        cmd.set_nco_cmd.coeff_sel = SELECT_SHIFT;
+        cmd.set_nco_cmd.payload = shift_int_unsigned;
+        pdh_execute_cmd(cmd);
+
+        cmd.set_nco_cmd.coeff_sel = SELECT_INV;
+        cmd.set_nco_cmd.payload = inv;
+        pdh_execute_cmd(cmd);
+
+        cmd.set_nco_cmd.coeff_sel = SELECT_SUB;
+        cmd.set_nco_cmd.payload = sub;
+        pdh_execute_cmd(cmd);
+
+        cmd.set_nco_cmd.coeff_sel = SELECT_EN;
+        cmd.set_nco_cmd.payload = en;
+        pdh_callback_t cb = pdh_execute_cmd(cmd);
+        
+
+        uint32_t echo_stride = cb.set_nco_cb.nco_stride_r;
+        uint32_t echo_shift = cb.set_nco_cb.nco_shift_r;
+        uint32_t echo_sub = cb.set_nco_cb.nco_sub_r;
+        uint32_t echo_inv = cb.set_nco_cb.nco_inv_r;
+        uint32_t echo_en = cb.set_nco_cb.nco_en_r;
+
+        return_code = validate_cb(&echo_stride, &stride, UINT_TAG, __func__, "STRIDE_CB", return_code, SET_NCO_INVALID_STRIDE_CB);
+        push_ctx_cb(ctx, &index, &echo_stride, UINT_TAG, "STRIDE_CB");
+        
+        return_code = validate_cb(&echo_shift, &shift_int_unsigned, UINT_TAG, __func__, "SHIFT_CB", return_code, SET_NCO_INVALID_SHIFT_CB);
+        push_ctx_cb(ctx, &index, &echo_shift, UINT_TAG, "SHIFT_CB");
+        
+        return_code = validate_cb(&echo_sub, &sub, UINT_TAG, __func__, "SUB_CB", return_code, SET_NCO_INVALID_SUB_CB);
+        push_ctx_cb(ctx, &index, &echo_sub, UINT_TAG, "SUB_CB");
+        
+        return_code = validate_cb(&echo_inv, &inv, UINT_TAG, __func__, "INV_CB", return_code, SET_NCO_INVALID_INV_CB);
+        push_ctx_cb(ctx, &index, &echo_inv, UINT_TAG, "INV_CB");
+
+        return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_NCO_INVALID_EN_CB);
+        push_ctx_cb(ctx, &index, &echo_en, UINT_TAG, "EN_CB");
+
+
+        float echo_shift_fractional = M_PI_2 * echo_shift / 4095.0f;
+        if (sub) echo_shift_fractional *= -1.0f;
+        if (inv) echo_shift_fractional += M_PI;
+    
+        if (echo_shift_fractional > M_PI) echo_shift_fractional -= 2.0f * M_PI;
+
+        float echo_shift_degrees = 180.0 * echo_shift_fractional / M_PI;
+        float echo_shift_error = shift_deg - echo_shift_degrees;
+        float echo_freq = echo_stride * STRIDE_CONST;
+        float echo_freq_error = freq - echo_freq;
+
+        push_ctx_cb(ctx, &index, &echo_shift, FLOAT_TAG, "REGISTERED_PHASE_SHIFT");
+        push_ctx_cb(ctx, &index, &echo_shift_error, FLOAT_TAG, "REGISTERED_SHIFT_ERROR");
+        push_ctx_cb(ctx, &index, &echo_freq, FLOAT_TAG, "REGISTERED_FREQ");
+        push_ctx_cb(ctx, &index, &echo_freq_error, FLOAT_TAG, "REGISTERED_FREQ_ERROR");
+    }
+
+
+
+    return return_code;
+}
+
+
+
+
+
+
+
+
+
 #define DMA_BURST_CONST 330 //ceil10(16384 * 2.5) / 125)
 #define BRAM_DEC_CONST 140 //ceil10(16384 / 125)
 int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing exploit right now and should probably be changed later
@@ -538,8 +665,8 @@ push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
                     fprintf(f, "%d, %u, %d\n", (int16_t)frame.io_sum_err_frame.err_tap_w, (uint16_t)frame.io_sum_err_frame.pid_out_w, (int32_t)frame.io_sum_err_frame.sum_err_tap_w);
                     break;
 
-                case GATE_CHECK:
-                    fprintf(f, "%u, %u, %u, %u\n", (uint16_t)frame.gate_check_frame.dac1_gate_r, (uint16_t)frame.gate_check_frame.dac1_dat_r, (uint16_t)frame.gate_check_frame.dac2_gate_r, (uint16_t)frame.gate_check_frame.dac2_dat_r);
+                case OSC_INSPECT:
+                    fprintf(f, "%d, %d, %u, %u\n", (int16_t)frame.osc_inspect_frame.nco_out1_w, (int16_t)frame.osc_inspect_frame.nco_out2_w, (uint16_t)frame.osc_inspect_frame.nco_feed1_r, (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
                     break;
 
                 default:

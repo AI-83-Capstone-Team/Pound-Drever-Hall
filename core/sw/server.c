@@ -15,7 +15,7 @@
 #define MAX_BYTES    1024
 #define MAX_CHARS_PER_FLOAT 16
 
-#define NUM_CMDS 11
+#define NUM_CMDS 12
 
 /*
 "CMD:ex_cmd'\n'
@@ -36,6 +36,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"get_frame", cmd_get_frame, 0, 0, 2},
     {"test_frame", cmd_test_frame, 0, 0, 1},
     {"set_pid", cmd_set_pid, 4, 0, 4},
+    {"set_nco", cmd_set_nco, 2, 0, 1},
     {"config_io", cmd_config_io, 0, 0, 3},
     {"lock_in", cmd_lock_in, 0, 0, 5}
 };

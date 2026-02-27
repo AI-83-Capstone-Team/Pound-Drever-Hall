@@ -202,6 +202,18 @@ def api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en):
 
 
 @api_cmd
+def api_set_nco(freq, shift, en):
+    cmds = [
+    (
+        "CMD:set_nco\n"
+        f"F:{freq},{shift}\n"
+        f"U:{en}\n"
+    )
+    ]
+    execute_cmd_seq(cmds)
+
+
+@api_cmd
 def api_config_io(dac1_dat_sel, dac2_dat_sel, pid_dat_sel):
     cmds = [
     (
