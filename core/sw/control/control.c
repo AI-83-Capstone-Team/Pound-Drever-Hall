@@ -493,24 +493,26 @@ int cmd_set_nco(cmd_ctx_t* ctx)
         uint32_t inv = 0; 
         uint32_t sub = 0;
         
+        if (shift_rad < 0)
+        {
+            shift_rad += 2*M_PI;
+        }
+
+        if (shift_rad > M_PI)
+        {
+            shift_rad -= M_PI;
+            inv = ~inv;
+        }
+
         if (shift_rad > M_PI_2)
         {
             sub = 1;
-            inv = 1;
-            shift_rad -= M_PI_2;
+            inv = ~inv;
+            shift_rad = -(shift_rad - M_PI);
         }
 
-        else if (shift_rad < -M_PI_2)
-        {
-            sub = 0;
-            inv = 1;
-            shift_rad += M_PI;
-        }
 
-        else if (shift_rad < 0.0f)
-        {
-            sub = 1;
-        }
+        inv &= 0x00000001;
 
         int32_t shift_int = lrintf(shift_rad / M_PI_2 * 4095.0);
         uint32_t shift_int_unsigned = ABS(shift_int);

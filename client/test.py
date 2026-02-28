@@ -27,10 +27,10 @@ if __name__ == "__main__":
 
     api_get_adc()
 
-    api_set_nco(8000.0, -20.0, 1)
-    api_get_frame(10, 3, "sw/build") 
-    api_get_frame(10, 0, "sw/build") 
-    api_get_frame(10, 4, "sw/build") 
+    api_set_nco(8000.0, -179.99, 1)
+    api_get_frame(5, 3, "sw/build") 
+    # api_get_frame(1, 0, "sw/build") 
+    # api_get_frame(1, 4, "sw/build") 
     api_check_signed(17)
     api_check_signed(18)
 
