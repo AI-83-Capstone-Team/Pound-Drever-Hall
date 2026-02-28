@@ -324,7 +324,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
 
     if(dec > MAX_DEC) dec = MAX_DEC;
     if(alpha > MAX_ALPHA) alpha = MAX_ALPHA; 
-    if(sat > MAX_SAT) alpha = MAX_SAT;
+    if(sat > MAX_SAT) sat = MAX_SAT;
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
@@ -518,7 +518,7 @@ int cmd_set_nco(cmd_ctx_t* ctx)
         pdh_cmd_t cmd;
         cmd.raw = 0;
         cmd.set_nco_cmd.cmd = CMD_SET_NCO;
-        cmd.set_nco_cmd.coeff_sel = SELECT_EN;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_EN;
         pdh_execute_cmd(cmd);
 
         cmd.set_nco_cmd.coeff_sel = SELECT_STRIDE;
@@ -537,7 +537,7 @@ int cmd_set_nco(cmd_ctx_t* ctx)
         cmd.set_nco_cmd.payload = sub;
         pdh_execute_cmd(cmd);
 
-        cmd.set_nco_cmd.coeff_sel = SELECT_EN;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_EN;
         cmd.set_nco_cmd.payload = en;
         pdh_callback_t cb = pdh_execute_cmd(cmd);
         
@@ -654,7 +654,7 @@ push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
             switch(frame_code) 
             {
                 case ANGLES_AND_ESIGS:
-                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.angles_and_esigs_frame.adc_dat_a_16s, (int16_t)frame.angles_and_esigs_frame.adc_dat_b_16s, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
                     break;
 
                 case PID_ERR_TAPS:
@@ -669,8 +669,12 @@ push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
                     fprintf(f, "%d, %d, %u, %u\n", (int16_t)frame.osc_inspect_frame.nco_out1_w, (int16_t)frame.osc_inspect_frame.nco_out2_w, (uint16_t)frame.osc_inspect_frame.nco_feed1_r, (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
                     break;
 
+                case LOOPBACK:
+                    fprintf(f, "%u, %u, %u, %u\n", frame.loopback_frame.dac1_feed_w, frame.loopback_frame.dac2_feed_w, frame.loopback_frame.adc_dat_a_i, frame.loopback_frame.adc_dat_b_i);
+                    break;
+
                 default:
-                    fprintf(f, "%f, %f, %d, %d\n", ((int16_t)frame.angles_and_esigs_frame.cos_theta_r)/ROTATION_CONST, ((int16_t)frame.angles_and_esigs_frame.sin_theta_r)/ROTATION_CONST, frame.angles_and_esigs_frame.i_feed_w, frame.angles_and_esigs_frame.q_feed_w); 
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.angles_and_esigs_frame.adc_dat_a_16s, (int16_t)frame.angles_and_esigs_frame.adc_dat_b_16s, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
                     break;
             }
         }
@@ -697,8 +701,8 @@ int cmd_config_io(cmd_ctx_t* ctx)
     uint32_t dac2_code = ctx->uint_args[1];
     uint32_t pid_code = ctx->uint_args[2];
 
-    if(dac1_code > 1) return_code = CONFIG_IO_INVALID_DAC1;
-    if(dac2_code > 1) return_code = CONFIG_IO_INVALID_DAC2;
+    if(dac1_code > 3) return_code = CONFIG_IO_INVALID_DAC1;
+    if(dac2_code > 3) return_code = CONFIG_IO_INVALID_DAC2;
     if(pid_code > 3) return_code = CONFIG_IO_INVALID_PID;
 
     if(return_code == CONFIG_IO_OK)
@@ -732,28 +736,28 @@ int cmd_config_io(cmd_ctx_t* ctx)
 
 int cmd_test_frame(cmd_ctx_t* ctx)
 {
-    uint32_t byte_offset = ctx->uint_args[0];
-    
-    dma_frame_t frame;
-    frame.raw = dma_get_frame(byte_offset);
-
-    ctx->output.output_items[0].data.i = (int16_t)frame.angles_and_esigs_frame.sin_theta_r;
-    ctx->output.output_items[0].tag = INT_TAG;
-    strcpy(ctx->output.output_items[0].name, "sin_theta_r");
-    
-    ctx->output.output_items[1].data.i = (int16_t)frame.angles_and_esigs_frame.cos_theta_r;
-    ctx->output.output_items[1].tag = INT_TAG;
-    strcpy(ctx->output.output_items[1].name, "cos_theta_r");
-
-    ctx->output.output_items[2].data.i = (int16_t)frame.angles_and_esigs_frame.q_feed_w;
-    ctx->output.output_items[2].tag = INT_TAG;
-    strcpy(ctx->output.output_items[2].name, "q_feed_w");
-    
-    ctx->output.output_items[3].data.i = (int16_t)frame.angles_and_esigs_frame.i_feed_w;
-    ctx->output.output_items[3].tag = INT_TAG;
-    strcpy(ctx->output.output_items[3].name, "i_feed_w");
-
-    ctx->output.num_outputs = 4;
+    // uint32_t byte_offset = ctx->uint_args[0];
+    //
+    // dma_frame_t frame;
+    // frame.raw = dma_get_frame(byte_offset);
+    //
+    // ctx->output.output_items[0].data.i = (int16_t)frame.angles_and_esigs_frame.sin_theta_r;
+    // ctx->output.output_items[0].tag = INT_TAG;
+    // strcpy(ctx->output.output_items[0].name, "sin_theta_r");
+    //
+    // ctx->output.output_items[1].data.i = (int16_t)frame.angles_and_esigs_frame.cos_theta_r;
+    // ctx->output.output_items[1].tag = INT_TAG;
+    // strcpy(ctx->output.output_items[1].name, "cos_theta_r");
+    //
+    // ctx->output.output_items[2].data.i = (int16_t)frame.angles_and_esigs_frame.q_feed_w;
+    // ctx->output.output_items[2].tag = INT_TAG;
+    // strcpy(ctx->output.output_items[2].name, "q_feed_w");
+    //
+    // ctx->output.output_items[3].data.i = (int16_t)frame.angles_and_esigs_frame.i_feed_w;
+    // ctx->output.output_items[3].tag = INT_TAG;
+    // strcpy(ctx->output.output_items[3].name, "i_feed_w");
+    //
+    // ctx->output.num_outputs = 4;
     return PDH_OK;
 }
 

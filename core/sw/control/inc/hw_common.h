@@ -261,6 +261,7 @@ typedef enum
     PID_ERR_TAPS = 0b0001,
     IO_SUM_ERR = 0b0010,
     OSC_INSPECT = 0b0011,
+    LOOPBACK = 0b0100
 }   frame_code_e;
 
 
@@ -476,13 +477,6 @@ typedef union __attribute__((packed))
         uint32_t cmd            : 4;
     }   config_io_cb;
 
-    struct __attribute__((packed))
-    {
-        uint32_t _padding   : 26;
-        uint32_t val        : 4;
-        uint32_t _padding2  : 2;
-    }   cmd;
-
     uint32_t raw;
 }   pdh_callback_t;
 
@@ -491,8 +485,8 @@ typedef union __attribute__((packed))
 {
     struct __attribute__((packed))
     {
-        uint64_t sin_theta_r    : 16;
-        uint64_t cos_theta_r    : 16;
+        uint64_t adc_dat_b_16s  : 16;
+        uint64_t adc_dat_a_16s  : 16;
         uint64_t q_feed_w       : 16;
         uint64_t i_feed_w       : 16;
     }   angles_and_esigs_frame;
@@ -520,6 +514,14 @@ typedef union __attribute__((packed))
         uint64_t nco_feed1_r    : 16;
         uint64_t nco_feed2_r    : 16;
     }   osc_inspect_frame;
+
+    struct __attribute__((packed))
+    {
+        uint32_t adc_dat_b_i    : 16;
+        uint32_t adc_dat_a_i    : 16;
+        uint32_t dac2_feed_w    : 16;
+        uint32_t dac1_feed_w    : 16;
+    }   loopback_frame;
 
     uint64_t raw;
 }   dma_frame_t;

@@ -163,6 +163,12 @@ module pdh_core #
 
             5'b10000: cs_cb_w = {base_bus, 7'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
+            5'b10001: cs_cb_w = {base_bus, 13'b0, dac1_dat_sel_r};
+
+            5'b10010: cs_cb_w = {base_bus, 13'b0, dac2_dat_sel_r};
+
+            5'b10011: cs_cb_w = {base_bus, 13'b0, pid_sel_r};
+
             default: cs_cb_w = {base_bus, 16'd0};
             
         endcase
@@ -303,7 +309,7 @@ module pdh_core #
         SELECT_NCO_2 = 3'b011
     }   dac_sel_t;
 
-    logic dac1_dat_sel_r, next_dac1_dat_sel_w, dac2_dat_sel_r, next_dac2_dat_sel_w;
+    logic [2:0] dac1_dat_sel_r, next_dac1_dat_sel_w, dac2_dat_sel_r, next_dac2_dat_sel_w;
 
     logic [13:0] dac1_feed_w, dac2_feed_w;
 
@@ -418,22 +424,24 @@ module pdh_core #
         ANGLES_AND_ESIGS = 4'b0000,
         PID_ERR_TAPS = 4'b0001,
         IO_SUM_ERR = 4'b0010,
-        OSC_INSPECT = 4'b0011
+        OSC_INSPECT = 4'b0011,
+        LOOPBACK = 4'b0100
     }   frame_code_t;
     logic [3:0] frame_code_r, next_frame_code_w;
 
     always_comb begin
         unique case(frame_code_r)
-            ANGLES_AND_ESIGS: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
+            ANGLES_AND_ESIGS: dma_data_o = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r}; 
             PID_ERR_TAPS: dma_data_o = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
             IO_SUM_ERR: dma_data_o = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
             OSC_INSPECT: dma_data_o = {2'b0, nco_feed2_r, 2'b0, nco_feed1_r, nco_out2_w, nco_out1_w};
-            default: dma_data_o = {i_feed_r, q_feed_r, cos_theta_r, sin_theta_r}; 
+            LOOPBACK: dma_data_o = {2'b0, dac1_feed_w, 2'b0, dac2_feed_w, 2'b0, adc_dat_a_i, 2'b0, adc_dat_b_i};
+            default: dma_data_o = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r}; 
         endcase
     end
 
     always_comb begin
-        unique case(cmd_w)
+        case(cmd_w)
             CMD_IDLE: begin
                 next_callback_w = idle_cb_w;
             end
@@ -468,6 +476,10 @@ module pdh_core #
 
             CMD_SET_PID_COEFFS: begin
                 next_callback_w = set_pid_cb_w;
+            end
+
+            CMD_SET_NCO: begin
+                next_callback_w = set_nco_cb_w;
             end
 
             CMD_CONFIG_IO: begin
@@ -680,6 +692,7 @@ module pdh_core #
             nco_stride_r <= 12'd1;
             nco_en_r <= 1'b0;
             nco_inv_r <= 1'b0;
+            nco_sub_r <= 1'b0;
             nco_feed1_r <= '0;
             nco_feed2_r <= '0;
             
@@ -725,6 +738,7 @@ module pdh_core #
             nco_stride_r <= nco_stride_w;
             nco_en_r <= nco_en_w;
             nco_inv_r <= nco_inv_w;
+            nco_sub_r <= nco_sub_w;
             nco_feed1_r <= nco_feed1_w;
             nco_feed2_r <= nco_feed2_w;
 

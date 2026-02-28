@@ -26,7 +26,8 @@ __all__ = [
     'api_get_frame',
     'api_check_signed',
     'api_config_io',
-    'api_lock_in'
+    'api_lock_in',
+    'api_set_nco'
 ]
 
 

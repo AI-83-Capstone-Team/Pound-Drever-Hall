@@ -11,7 +11,7 @@ if __name__ == "__main__":
     api_get_adc()
 
     api_set_rotation(0)
-    api_config_io(dac1_dat_sel=0, dac2_dat_sel=0, pid_dat_sel=0)
+    api_config_io(dac1_dat_sel=2, dac2_dat_sel=3, pid_dat_sel=0)
     api_set_pid(kp=0.5, kd=0.2, ki=0.2, sp=-0.657, dec=100, alpha = 2, sat=18, en=1)
 
     api_set_dac(-0.45,0)
@@ -19,11 +19,18 @@ if __name__ == "__main__":
     api_get_adc()
 
 
-    api_lock_in("sw/build", 0, 0, 1000, 1, 1)
+    #api_lock_in("sw/build", 0, 0, 1000, 1, 1)
 
 
-    api_get_frame(1000, 1, "sw/build")
+    # api_get_frame(1000, 1, "sw/build")
 
 
     api_get_adc()
+
+    api_set_nco(8000.0, -20.0, 1)
+    api_get_frame(10, 3, "sw/build") 
+    api_get_frame(10, 0, "sw/build") 
+    api_get_frame(10, 4, "sw/build") 
+    api_check_signed(17)
+    api_check_signed(18)
 
