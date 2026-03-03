@@ -476,7 +476,7 @@ int cmd_set_nco(cmd_ctx_t* ctx)
     size_t index = 0;
 
     float freq = ctx->float_args[0];
-    float shift_deg = ctx->float_args[1];
+    float shift_deg = ctx->float_args[1] * -1.0f;
     uint32_t en = ctx->uint_args[0];
 
     uint32_t stride = ABS(lrintf(freq / STRIDE_CONST));

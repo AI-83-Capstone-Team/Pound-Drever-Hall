@@ -314,7 +314,7 @@ module pdh_core #
     logic [13:0] dac1_feed_w, dac2_feed_w;
 
     always_comb begin
-        unique case(dac1_dat_sel_r) 
+        case(dac1_dat_sel_r) 
             SELECT_DAC: begin
                 dac1_feed_w = dac1_dat_r;
             end
