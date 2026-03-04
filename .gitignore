@@ -31,3 +31,4 @@ compile_commands.json
 .cache/
 sim_build/
 results.xml
+sine_qtr_4096_16b.mem
