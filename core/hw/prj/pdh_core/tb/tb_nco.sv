@@ -12,6 +12,7 @@ module tb_nco;
     logic rst;
     logic sub;
     logic signed [15:0] out1, out2;
+    logic [11:0] addr1, addr2;
 
     nco dut (
         .clk(clk),
@@ -22,7 +23,9 @@ module tb_nco;
         .invert_i(invert),
         .out1_o(out1),
         .out2_o(out2),
-        .sub_i(sub)
+        .sub_i(sub),
+        .addr1_o(addr1),
+        .addr2_o(addr2)
     );
 
     // Same conversion you use elsewhere
@@ -53,7 +56,7 @@ module tb_nco;
                     $time,
                     sample_count,
                     out1, out2,
-                    out1_conv, out2_conv);
+                    addr1, addr2);
 
             sample_count <= sample_count + 1;
         end
@@ -66,19 +69,19 @@ module tb_nco;
                // init (avoid X)
         rst    = 1'b0;
         enable = 1'b0;
-        sub    = 1'b1;
-        invert = 1'b0;
+        sub    = 1'b0;
+        invert = 1'b1;
         stride = 12'd262;
-        shift  = 12'd1024;
+        shift  = 12'd2730;
 
         // open CSV
-        f = $fopen("nco_out.csv", "w");
+        f = $fopen("dumps/nco_out.csv", "w");
         if (f == 0) begin
             $fatal(1, "Failed to open nco_out.csv");
         end
 
         // header
-        $fwrite(f, "time,sample,out1_s16,out2_s16,out1_u14,out2_u14\n");
+        $fwrite(f, "time,sample,out1_s16,out2_s16,addr1,addr2\n");
 
         // reset + stimulus
         #4;

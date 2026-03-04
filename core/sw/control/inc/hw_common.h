@@ -261,7 +261,8 @@ typedef enum
     PID_ERR_TAPS = 0b0001,
     IO_SUM_ERR = 0b0010,
     OSC_INSPECT = 0b0011,
-    LOOPBACK = 0b0100
+    OSC_ADDR_CHECK = 0b0100,
+    LOOPBACK = 0b0101,
 }   frame_code_e;
 
 
@@ -509,11 +510,19 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint64_t nco_out1_w     : 16;
-        uint64_t nco_out2_w     : 16;
+        uint64_t nco_out1_r     : 16;
+        uint64_t nco_out2_r     : 16;
         uint64_t nco_feed1_r    : 16;
         uint64_t nco_feed2_r    : 16;
     }   osc_inspect_frame;
+
+    struct __attribute__((packed))
+    {
+        uint32_t phi1_w         : 16;
+        uint32_t phi2_w         : 16;
+        uint32_t addr1_r        : 16;
+        uint32_t addr2_r        : 16;
+    }   addr_check_frame;
 
     struct __attribute__((packed))
     {
@@ -522,6 +531,7 @@ typedef union __attribute__((packed))
         uint32_t dac2_feed_w    : 16;
         uint32_t dac1_feed_w    : 16;
     }   loopback_frame;
+
 
     uint64_t raw;
 }   dma_frame_t;

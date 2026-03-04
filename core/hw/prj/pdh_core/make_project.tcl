@@ -186,6 +186,7 @@ set_msg_config -id {BD 41-2384} -new_severity ERROR
 
 
 #Synthesis
+set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING true [get_runs synth_1]
 synth_design -top pdh_top -flatten_hierarchy none -bufg 16 -keep_equivalent_registers
 write_checkpoint         -force   $path_out/post_synth
 report_timing_summary    -file    $path_out/post_synth_timing_summary.rpt
@@ -205,7 +206,10 @@ report_timing_summary    -file    $path_out/post_place_timing_summary.rpt
 route_design
 write_checkpoint         -force   $path_out/post_route
 report_timing_summary    -file    $path_out/post_route_timing_summary.rpt
-report_timing            -file    $path_out/post_route_timing.rpt -sort_by group -max_paths 100 -path_type summary
+
+# report_timing            -file    $path_out/post_route_timing.rpt -sort_by group -max_paths 100 -path_type summary
+report_timing -file $path_out/post_route_timing.rpt -sort_by group -max_paths 100 -path_type summary -delay_type min_max
+
 report_clock_utilization -file    $path_out/clock_util.rpt
 report_utilization       -file    $path_out/post_route_util.rpt
 report_power             -file    $path_out/post_route_power.rpt

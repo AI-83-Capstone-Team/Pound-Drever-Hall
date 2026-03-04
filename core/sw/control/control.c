@@ -572,12 +572,12 @@ int cmd_set_nco(cmd_ctx_t* ctx)
     
         if (echo_shift_fractional > M_PI) echo_shift_fractional -= 2.0f * M_PI;
 
-        float echo_shift_degrees = 180.0 * echo_shift_fractional / M_PI;
-        float echo_shift_error = shift_deg - echo_shift_degrees;
+        float echo_shift_degrees = -180.0 * echo_shift_fractional / M_PI;
+        float echo_shift_error = -shift_deg - echo_shift_degrees;
         float echo_freq = echo_stride * STRIDE_CONST;
         float echo_freq_error = freq - echo_freq;
 
-        push_ctx_cb(ctx, &index, &echo_shift, FLOAT_TAG, "REGISTERED_PHASE_SHIFT");
+        push_ctx_cb(ctx, &index, &echo_shift_degrees, FLOAT_TAG, "REGISTERED_PHASE_SHIFT");
         push_ctx_cb(ctx, &index, &echo_shift_error, FLOAT_TAG, "REGISTERED_SHIFT_ERROR");
         push_ctx_cb(ctx, &index, &echo_freq, FLOAT_TAG, "REGISTERED_FREQ");
         push_ctx_cb(ctx, &index, &echo_freq_error, FLOAT_TAG, "REGISTERED_FREQ_ERROR");
@@ -668,7 +668,11 @@ push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
                     break;
 
                 case OSC_INSPECT:
-                    fprintf(f, "%d, %d, %u, %u\n", (int16_t)frame.osc_inspect_frame.nco_out1_w, (int16_t)frame.osc_inspect_frame.nco_out2_w, (uint16_t)frame.osc_inspect_frame.nco_feed1_r, (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
+                    fprintf(f, "%d, %d, %u, %u\n", (int16_t)frame.osc_inspect_frame.nco_out1_r, (int16_t)frame.osc_inspect_frame.nco_out2_r, (uint16_t)frame.osc_inspect_frame.nco_feed1_r, (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
+                    break;
+
+                case OSC_ADDR_CHECK:
+                    fprintf(f, "%u, %u, %u, %u\n", frame.addr_check_frame.phi1_w, frame.addr_check_frame.phi2_w, frame.addr_check_frame.addr1_r, frame.addr_check_frame.addr2_r);
                     break;
 
                 case LOOPBACK:
