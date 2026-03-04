@@ -1,0 +1,6 @@
+<testsuites name="results">
+  <testsuite name="all" package="all">
+    <property name="random_seed" value="1772605867" />
+    <testcase name="test_pdh_core" classname="test_pdh_core" file="/home/nolan/Projects/Pound-Drever-Hall/core/hw/prj/pdh_core/sim/test_pdh_core.py" lineno="249" time="0.014375925064086914" sim_time_ns="6840.0" ratio_time="475795.4684312652" />
+  </testsuite>
+</testsuites>

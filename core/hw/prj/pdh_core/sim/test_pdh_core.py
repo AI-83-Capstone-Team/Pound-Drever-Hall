@@ -1,0 +1,482 @@
+"""
+cocotb sanity test for pdh_core.
+
+Mirrors the command-echo checks from client/test.py but operates directly
+on the RTL — no DMA, no server, no hardware.  DMA-related inputs are tied
+to benign static values.
+
+Run via:
+    make -C core/hw/prj/pdh_core/sim          # or: make sim from core/hw/
+"""
+
+import math
+import cocotb
+from cocotb.clock import Clock
+from cocotb.triggers import ClockCycles, RisingEdge
+
+# ── Command codes (match pdh_core.sv) ──────────────────────────────────────────
+
+CMD_IDLE              = 0b0000
+CMD_SET_LED           = 0b0001
+CMD_SET_DAC           = 0b0010
+CMD_GET_ADC           = 0b0011
+CMD_CHECK_SIGNED      = 0b0100
+CMD_SET_ROT_COEFFS    = 0b0101
+CMD_COMMIT_ROT_COEFFS = 0b0110
+CMD_GET_FRAME         = 0b0111
+CMD_SET_PID_COEFFS    = 0b1000
+CMD_SET_NCO           = 0b1001
+CMD_CONFIG_IO         = 0b1110
+
+# ── PID coeff selects ──────────────────────────────────────────────────────────
+
+SELECT_KP    = 0b0000
+SELECT_KD    = 0b0001
+SELECT_KI    = 0b0010
+SELECT_DEC   = 0b0011
+SELECT_SP    = 0b0100
+SELECT_ALPHA = 0b0101
+SELECT_SAT   = 0b0110
+SELECT_EN    = 0b0111
+
+# ── NCO coeff selects ──────────────────────────────────────────────────────────
+
+SELECT_STRIDE = 0b000
+SELECT_SHIFT  = 0b001
+SELECT_INV    = 0b010
+SELECT_SUB    = 0b011
+NCO_SELECT_EN = 0b100
+
+# ── IO routing selects ─────────────────────────────────────────────────────────
+
+DAC_SEL_REGISTER = 0b000
+DAC_SEL_PID      = 0b001
+DAC_SEL_NCO1     = 0b010
+DAC_SEL_NCO2     = 0b011
+
+PID_SEL_IFEED = 0b000
+PID_SEL_QFEED = 0b001
+PID_SEL_ADCA  = 0b010
+PID_SEL_ADCB  = 0b011
+
+# ── Check-signed register selects ─────────────────────────────────────────────
+
+CS_ADC_A = 0b00000
+CS_ADC_B = 0b00001
+CS_IO    = 0b10000
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+
+STRIDE_CONST = 7629.39453125  # 125e6 / (4 * 4096)
+
+# Cycles to hold each strobe phase.
+# The 3-FF synchroniser + posedge detector + 2 pipeline stages for the
+# callback to reflect the new coefficients requires ~6 cycles from input.
+# 8 gives comfortable margin.
+SYNC_CYCLES = 8
+
+# ── Result tracking ────────────────────────────────────────────────────────────
+
+_results: list[tuple[str, bool]] = []
+
+
+def _section(title: str) -> None:
+    print(f"\n{'─' * 64}")
+    print(f"  {title}")
+    print(f"{'─' * 64}")
+
+
+def _check(label: str, ok: bool, detail: str = "") -> bool:
+    tag = "PASS" if ok else "FAIL"
+    msg = f"  [{tag}] {label}"
+    if detail:
+        msg += f"  ({detail})"
+    print(msg)
+    _results.append((label, ok))
+    return ok
+
+
+def _check_approx(label: str, got: float, expected: float, tol: float) -> bool:
+    ok = abs(got - expected) <= tol
+    return _check(label, ok, f"got={got:.5f}  expected={expected:.5f}  tol=±{tol}")
+
+
+def _summary() -> None:
+    passed = sum(ok for _, ok in _results)
+    total  = len(_results)
+    print(f"\n{'═' * 64}")
+    print(f"  Results: {passed}/{total} checks passed")
+    failed = [lbl for lbl, ok in _results if not ok]
+    if failed:
+        print("  Failed:")
+        for lbl in failed:
+            print(f"    ✗  {lbl}")
+    print(f"{'═' * 64}")
+
+
+# ── Numeric helpers ────────────────────────────────────────────────────────────
+
+def _as_signed16(v: int) -> int:
+    v = int(v) & 0xFFFF
+    return v - 0x10000 if v >= 0x8000 else v
+
+
+def _float_to_q15(x: float) -> int:
+    """Convert float in [-1, 1) to signed Q15 integer."""
+    if x >= 0.999969482421875:
+        return 0x7FFF
+    if x <= -1.0:
+        return -32768
+    return max(-32768, min(32767, round(x * 32768.0)))
+
+
+def _float_to_q13(x: float) -> int:
+    """Convert float in [-1, 1) to signed Q13 integer."""
+    return max(-8192, min(8191, round(x * 8192.0)))
+
+
+# ── AXI word packing ───────────────────────────────────────────────────────────
+
+def _word(rst: int, strobe: int, cmd: int, data: int) -> int:
+    """Pack the 32-bit AXI word presented to axi_from_ps_i."""
+    return (
+        ((rst    & 0x1)       << 31) |
+        ((strobe & 0x1)       << 30) |
+        ((cmd    & 0xF)       << 26) |
+        ((data   & 0x3FFFFFF)      )
+    )
+
+
+# ── Protocol helpers ───────────────────────────────────────────────────────────
+
+async def _reset(dut) -> None:
+    """Assert the synchronous/async reset then release it."""
+    dut.axi_from_ps_i.value = _word(1, 0, CMD_IDLE, 0)
+    await ClockCycles(dut.clk, 10)
+    dut.axi_from_ps_i.value = _word(0, 0, CMD_IDLE, 0)
+    await ClockCycles(dut.clk, 10)
+
+
+async def _send(dut, cmd: int, data: int) -> int:
+    """
+    Two-step strobe sequence; returns the callback value captured after the
+    strobe=1 phase has propagated through the synchroniser pipeline.
+
+    Sequence (each phase lasts SYNC_CYCLES clock cycles):
+        strobe=0  →  strobe=1  →  strobe=0
+    """
+    dut.axi_from_ps_i.value = _word(0, 0, cmd, data)
+    await ClockCycles(dut.clk, SYNC_CYCLES)
+
+    dut.axi_from_ps_i.value = _word(0, 1, cmd, data)
+    await ClockCycles(dut.clk, SYNC_CYCLES)
+    cb = int(dut.axi_to_ps_o.value)
+
+    dut.axi_from_ps_i.value = _word(0, 0, cmd, data)
+    await ClockCycles(dut.clk, SYNC_CYCLES)
+    return cb
+
+
+# ── Callback field extractors ──────────────────────────────────────────────────
+#
+# Each function takes the raw 32-bit callback and returns a named tuple/dict
+# of fields.  Bit positions are taken directly from pdh_core.sv.
+
+def _cb_cmd(cb: int) -> int:
+    return (cb >> 28) & 0xF
+
+def _cb_led(cb: int) -> dict:
+    return {"led": cb & 0xFF, "cmd": _cb_cmd(cb)}
+
+def _cb_dac(cb: int) -> dict:
+    return {"dac1": (cb >> 14) & 0x3FFF, "dac2": cb & 0x3FFF, "cmd": _cb_cmd(cb)}
+
+def _cb_adc(cb: int) -> dict:
+    return {"adca": cb & 0x3FFF, "adcb": (cb >> 14) & 0x3FFF, "cmd": _cb_cmd(cb)}
+
+def _cb_nco(cb: int) -> dict:
+    # {CMD, 1'd0, stride[11:0], shift[11:0], sub, inv, en}
+    return {
+        "en":     (cb >>  0) & 0x1,
+        "inv":    (cb >>  1) & 0x1,
+        "sub":    (cb >>  2) & 0x1,
+        "shift":  (cb >>  3) & 0xFFF,
+        "stride": (cb >> 15) & 0xFFF,
+        "cmd":    _cb_cmd(cb),
+    }
+
+def _cb_rot(cb: int) -> dict:
+    # {CMD, sin[15:2], cos[15:2]}
+    cos14 = (cb >>  0) & 0x3FFF
+    sin14 = (cb >> 14) & 0x3FFF
+    # Bottom 2 bits are truncated in the callback; reconstruct Q15 approximation
+    cos_q15 = _as_signed16(cos14 << 2)
+    sin_q15 = _as_signed16(sin14 << 2)
+    return {
+        "cos": cos_q15 / 32768.0,
+        "sin": sin_q15 / 32768.0,
+        "cmd": _cb_cmd(cb),
+    }
+
+def _cb_pid(cb: int) -> dict:
+    # {CMD, 8'd0, coeff_sel[3:0], payload[15:0]}
+    return {
+        "payload":   cb & 0xFFFF,
+        "coeff_sel": (cb >> 16) & 0xF,
+        "cmd":       _cb_cmd(cb),
+    }
+
+def _cb_config_io(cb: int) -> dict:
+    # {CMD, 19'b0, pid_sel[2:0], dac2_sel[2:0], dac1_sel[2:0]}
+    return {
+        "dac1": (cb >> 0) & 0x7,
+        "dac2": (cb >> 3) & 0x7,
+        "pid":  (cb >> 6) & 0x7,
+        "cmd":  _cb_cmd(cb),
+    }
+
+def _cb_cs(cb: int) -> dict:
+    # {CMD, 7'd0, reg_sel[4:0], 16-bit payload}
+    return {
+        "payload": _as_signed16(cb & 0xFFFF),
+        "reg_sel": (cb >> 16) & 0x1F,
+        "cmd":     _cb_cmd(cb),
+    }
+
+
+# ── Main test ──────────────────────────────────────────────────────────────────
+
+@cocotb.test()
+async def test_pdh_core(dut):
+    """
+    Command-echo regression test for pdh_core.
+
+    Exercises every command that has an observable callback echo and checks
+    that the FPGA register round-trips match what was sent.  DMA/frame
+    capture is out of scope for this lightweight RTL sim.
+    """
+    global _results
+    _results = []
+
+    # Start 125 MHz clock (8 ns period)
+    cocotb.start_soon(Clock(dut.clk, 8, unit="ns").start())
+
+    # Tie off DMA-related inputs to benign values
+    dut.dma_ready_i.value  = 1
+    dut.bram_ready_i.value = 1
+    dut.adc_dat_a_i.value  = 0
+    dut.adc_dat_b_i.value  = 0
+
+    # ── 1. Reset ───────────────────────────────────────────────────────────────
+    _section("1. FPGA Reset")
+    await _reset(dut)
+    _check("reset: led_o cleared",        int(dut.led_o.value) == 0)
+    _check("reset: rst_o deasserted",     int(dut.rst_o.value) == 0)
+
+    # ── 2. Set LED ─────────────────────────────────────────────────────────────
+    _section("2. Set LED")
+    LED_PAT = 0b10101010
+    cb = await _send(dut, CMD_SET_LED, LED_PAT & 0xFF)
+    f  = _cb_led(cb)
+    _check("set_led: led_o matches",   int(dut.led_o.value) == LED_PAT,
+           f"got=0x{int(dut.led_o.value):02X}")
+    _check("set_led: echo matches",    f["led"] == LED_PAT,
+           f"got=0x{f['led']:02X}")
+    _check("set_led: cmd echo",        f["cmd"] == CMD_SET_LED)
+
+    # ── 3. Config IO — both DACs from register, PID from ADC_A ────────────────
+    _section("3. Config IO")
+    io_data = DAC_SEL_REGISTER | (DAC_SEL_REGISTER << 3) | (PID_SEL_ADCA << 6)
+    cb = await _send(dut, CMD_CONFIG_IO, io_data)
+    f  = _cb_config_io(cb)
+    _check("config_io: dac1 sel echo", f["dac1"] == DAC_SEL_REGISTER)
+    _check("config_io: dac2 sel echo", f["dac2"] == DAC_SEL_REGISTER)
+    _check("config_io: pid sel echo",  f["pid"]  == PID_SEL_ADCA)
+    _check("config_io: cmd echo",      f["cmd"]  == CMD_CONFIG_IO)
+
+    # ── 4. Set DAC ─────────────────────────────────────────────────────────────
+    # The C server negates the voltage before converting, so we replicate that.
+    # dac_cb_w = {CMD, dac1_dat_r[13:0], dac2_dat_r[13:0]}
+    _section("4. Set DAC")
+
+    DAC1_V   = 0.6
+    dac1_code = round((-DAC1_V + 1.0) / 2.0 * 16383)   # server negation
+    dac1_data = dac1_code & 0x3FFF                       # dac_sel bit14 = 0 → DAC1
+    cb = await _send(dut, CMD_SET_DAC, dac1_data)
+    f  = _cb_dac(cb)
+    _check("set_dac1: code echo", f["dac1"] == dac1_code,
+           f"got={f['dac1']} exp={dac1_code}")
+    _check("set_dac1: cmd echo",  f["cmd"]  == CMD_SET_DAC)
+
+    DAC2_V   = -0.4
+    dac2_code = round((-DAC2_V + 1.0) / 2.0 * 16383)
+    dac2_data = (dac2_code & 0x3FFF) | (1 << 14)        # dac_sel bit14 = 1 → DAC2
+    cb = await _send(dut, CMD_SET_DAC, dac2_data)
+    f  = _cb_dac(cb)
+    _check("set_dac2: code echo", f["dac2"] == dac2_code,
+           f"got={f['dac2']} exp={dac2_code}")
+    _check("set_dac2: cmd echo",  f["cmd"]  == CMD_SET_DAC)
+
+    # ── 5. Get ADC ─────────────────────────────────────────────────────────────
+    # adc_cb_w = {CMD, adc_dat_b_i[13:0], adc_dat_a_i[13:0]}
+    _section("5. Get ADC")
+    ADC_A_CODE = 0x1234 & 0x3FFF
+    ADC_B_CODE = 0x0ABC & 0x3FFF
+    dut.adc_dat_a_i.value = ADC_A_CODE
+    dut.adc_dat_b_i.value = ADC_B_CODE
+    await ClockCycles(dut.clk, 4)   # let signals settle through combinatorial path
+
+    cb = await _send(dut, CMD_GET_ADC, 0)
+    f  = _cb_adc(cb)
+    _check("get_adc: adc_a echo", f["adca"] == ADC_A_CODE,
+           f"got=0x{f['adca']:04X} exp=0x{ADC_A_CODE:04X}")
+    _check("get_adc: adc_b echo", f["adcb"] == ADC_B_CODE,
+           f"got=0x{f['adcb']:04X} exp=0x{ADC_B_CODE:04X}")
+    _check("get_adc: cmd echo",   f["cmd"]  == CMD_GET_ADC)
+
+    # ── 6. Set NCO ─────────────────────────────────────────────────────────────
+    # Replicates cmd_set_nco() phase arithmetic from control.c.
+    # set_nco_cb_w = {CMD, 1'd0, stride[11:0], shift[11:0], sub, inv, en}
+    _section("6. Set NCO")
+    NCO_FREQ      = 2_000_000.0
+    NCO_SHIFT_DEG = -120.0
+    NCO_EN        = 1
+
+    stride = round(NCO_FREQ / STRIDE_CONST)
+    shift_rad = (-NCO_SHIFT_DEG) / 180.0 * math.pi     # server negates shift_deg
+    if shift_rad < 0:
+        shift_rad += 2 * math.pi
+    inv, sub = 0, 0
+    if shift_rad > math.pi:
+        shift_rad -= math.pi
+        inv ^= 1
+    if shift_rad > math.pi / 2:
+        sub = 1
+        inv ^= 1
+        shift_rad = -(shift_rad - math.pi)
+    inv &= 1
+    shift_int = abs(round(shift_rad / (math.pi / 2) * 4095))
+
+    async def _nco(sel, val=0):
+        return await _send(dut, CMD_SET_NCO, (sel << 16) | (val & 0xFFF))
+
+    await _nco(NCO_SELECT_EN, 0)          # disable first
+    await _nco(SELECT_STRIDE, stride)
+    await _nco(SELECT_SHIFT,  shift_int)
+    await _nco(SELECT_INV,    inv)
+    await _nco(SELECT_SUB,    sub)
+    cb = await _nco(NCO_SELECT_EN, NCO_EN)  # enable — final CB carries all state
+
+    f = _cb_nco(cb)
+    _check("nco: stride echo", f["stride"] == stride,
+           f"got={f['stride']} exp={stride}")
+    _check("nco: shift echo",  f["shift"]  == shift_int,
+           f"got={f['shift']} exp={shift_int}")
+    _check("nco: inv echo",    f["inv"]    == inv)
+    _check("nco: sub echo",    f["sub"]    == sub)
+    _check("nco: en echo",     f["en"]     == NCO_EN)
+    _check("nco: cmd echo",    f["cmd"]    == CMD_SET_NCO)
+
+    # ── 7. Set Rotation ────────────────────────────────────────────────────────
+    # set_rot_cb_w = {CMD, sin[15:2], cos[15:2]}
+    # (bottom 2 bits of each coefficient are truncated in the callback)
+    _section("7. Set Rotation")
+    ROT_DEG  = 45.0
+    theta    = math.radians(ROT_DEG)
+    cos_q15  = _float_to_q15(math.cos(theta))
+    sin_q15  = _float_to_q15(math.sin(theta))
+
+    # rot_select=0 → cos, rot_select=1 → sin
+    await _send(dut, CMD_SET_ROT_COEFFS, (cos_q15 & 0xFFFF) | (0 << 16))
+    cb = await _send(dut, CMD_SET_ROT_COEFFS, (sin_q15 & 0xFFFF) | (1 << 16))
+    f  = _cb_rot(cb)
+    _check_approx("set_rot: cos echo", f["cos"], math.cos(theta), 0.01)
+    _check_approx("set_rot: sin echo", f["sin"], math.sin(theta), 0.01)
+    _check("set_rot: cmd echo", f["cmd"] == CMD_SET_ROT_COEFFS)
+
+    cb = await _send(dut, CMD_COMMIT_ROT_COEFFS, 0)
+    _check("commit_rot: cmd echo", _cb_cmd(cb) == CMD_COMMIT_ROT_COEFFS)
+
+    # ── 8. Set PID coefficients ────────────────────────────────────────────────
+    # set_pid_cb_w = {CMD, 8'd0, coeff_sel[3:0], payload[15:0]}
+    _section("8. Set PID (disabled)")
+    PID_KP    =  0.5
+    PID_KD    =  0.2
+    PID_KI    =  0.2
+    PID_SP    = -0.657
+    PID_DEC   = 100
+    PID_ALPHA =  2
+    PID_SAT   = 18
+    PID_EN    =  0
+
+    kp_i = _float_to_q15(PID_KP)
+    kd_i = _float_to_q15(PID_KD)
+    ki_i = _float_to_q15(PID_KI)
+    sp_i = _float_to_q13(PID_SP)
+
+    async def _pid(sel, val16):
+        return await _send(dut, CMD_SET_PID_COEFFS, (sel << 16) | (val16 & 0xFFFF))
+
+    cb = await _pid(SELECT_KP, kp_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: kp echo", _as_signed16(f["payload"]) / 32768.0, PID_KP, 0.01)
+
+    cb = await _pid(SELECT_KD, kd_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: kd echo", _as_signed16(f["payload"]) / 32768.0, PID_KD, 0.01)
+
+    cb = await _pid(SELECT_KI, ki_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: ki echo", _as_signed16(f["payload"]) / 32768.0, PID_KI, 0.01)
+
+    cb = await _pid(SELECT_DEC, PID_DEC & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check("pid: dec echo",   f["payload"] == PID_DEC,   f"got={f['payload']}")
+
+    cb = await _pid(SELECT_SP, sp_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: sp echo", _as_signed16(f["payload"]) / 8192.0, PID_SP, 0.01)
+
+    cb = await _pid(SELECT_ALPHA, PID_ALPHA & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check("pid: alpha echo", f["payload"] == PID_ALPHA, f"got={f['payload']}")
+
+    cb = await _pid(SELECT_SAT, PID_SAT & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check("pid: sat echo",   f["payload"] == PID_SAT,   f"got={f['payload']}")
+
+    cb = await _pid(SELECT_EN, PID_EN & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check("pid: en echo",    f["payload"] == PID_EN,    f"got={f['payload']}")
+
+    # ── 9. Config IO — NCO drives DACs ────────────────────────────────────────
+    _section("9. Config IO — NCO drives DACs")
+    io_data = DAC_SEL_NCO1 | (DAC_SEL_NCO2 << 3) | (PID_SEL_ADCA << 6)
+    cb = await _send(dut, CMD_CONFIG_IO, io_data)
+    f  = _cb_config_io(cb)
+    _check("config_io nco: dac1 → NCO1", f["dac1"] == DAC_SEL_NCO1)
+    _check("config_io nco: dac2 → NCO2", f["dac2"] == DAC_SEL_NCO2)
+    _check("config_io nco: pid ← ADC_A", f["pid"]  == PID_SEL_ADCA)
+
+    # Let the NCO run for a while and verify the output is non-zero
+    await ClockCycles(dut.clk, 200)
+    samples = []
+    for _ in range(8):
+        await RisingEdge(dut.clk)
+        samples.append(int(dut.dac_dat_o.value))
+    nco_nonzero = any(s != 0 for s in samples)
+    _check("nco output is non-zero", nco_nonzero, f"samples={samples[:4]}")
+
+    # ── 10. Check signed — register readback ───────────────────────────────────
+    _section("10. Check Signed")
+    for label, reg_sel in [("IO", CS_IO), ("ADC_A", CS_ADC_A), ("ADC_B", CS_ADC_B)]:
+        cb = await _send(dut, CMD_CHECK_SIGNED, reg_sel & 0x1F)
+        f  = _cb_cs(cb)
+        _check(f"check_signed {label}: reg_sel echo", f["reg_sel"] == reg_sel,
+               f"got={f['reg_sel']}")
+        _check(f"check_signed {label}: cmd echo",     f["cmd"] == CMD_CHECK_SIGNED)
+
+    # ── Summary ────────────────────────────────────────────────────────────────
+    _summary()
+    failed = [lbl for lbl, ok in _results if not ok]
+    assert not failed, f"Failed checks: {failed}"

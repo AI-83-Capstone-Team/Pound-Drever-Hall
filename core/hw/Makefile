@@ -1,5 +1,6 @@
-PROJECTS   = $(notdir $(wildcard prj/*)) 
+PROJECTS   = $(notdir $(wildcard prj/*))
 DEFINES ?= ""
+SIM     ?= verilator
 DTS_VER = DTS_VER=2022.1
 
 # build artifacts
@@ -13,7 +14,7 @@ VIVADO = vivado -nojournal -mode batch
 HSI    = hsi    -nolog -nojournal -mode batch
 #HSI    = hsi    -nolog -mode batch
 
-.PHONY: all clean $(PROJECTS)
+.PHONY: all clean sim $(PROJECTS)
 
 all:
 	@echo "Specify a project: $(PROJECTS)"
@@ -29,6 +30,9 @@ $(PROJECTS):
 	@mv vivado.log build/vivado.log
 
 
+
+sim:
+	$(MAKE) -C prj/pdh_core/sim SIM=$(SIM)
 
 clean:
 	rm -rf build .Xil

@@ -34,7 +34,11 @@ core/
         dma_controller.sv   AXI4 master for HP0 DDR burst writes
         sine_qtr_rom.sv  4096-entry, 16-bit quarter-sine ROM
         posedge_detector.sv  Rising-edge detector utility
-      tb/                Testbenches
+      tb/                Testbenches (SystemVerilog, Icarus)
+      sim/               cocotb regression sim
+        run.py             Runner script — builds and executes the sim
+        test_pdh_core.py   cocotb test module (command-echo checks)
+        Makefile           Thin make wrapper around run.py
   sw/
     server.c             TCP server: argument parsing, dispatch table, response formatting
     control/
@@ -86,6 +90,27 @@ cd core
 ```
 
 Target: `root@10.42.0.62` (password: `root`). Requires `sshpass` and `scp`.
+
+### RTL Simulation (cocotb)
+
+A lightweight cocotb testbench exercises `pdh_core` directly — no hardware, no server, no DMA.  It issues the same command-echo sequence as `client/test.py` and asserts that every FPGA callback register round-trip is correct.
+
+```bash
+# from anywhere
+cd core/hw/prj/pdh_core/sim
+python run.py                   # Verilator (default)
+python run.py --sim icarus
+SIM=icarus python run.py
+```
+
+Or via make (thin wrapper around `run.py`):
+
+```bash
+cd core/hw && make sim              # SIM=verilator default
+cd core/hw && make sim SIM=icarus
+```
+
+Requires: `cocotb` (`pip install cocotb`) and either Verilator or Icarus Verilog (`iverilog`).  The Makefile automatically symlinks `sine_qtr_4096_16b.mem` into the sim directory so `$readmemh` resolves correctly.
 
 ### Python Client
 

@@ -1,0 +1,26 @@
+SIM           ?= verilator
+TOPLEVEL_LANG  = verilog
+TOPLEVEL       = pdh_core
+MODULE         = test_pdh_core
+
+RTL_DIR := $(abspath ../rtl)
+
+VERILOG_SOURCES = \
+	$(RTL_DIR)/pdh_core.sv      \
+	$(RTL_DIR)/nco.sv           \
+	$(RTL_DIR)/pid_core.sv      \
+	$(RTL_DIR)/posedge_detector.sv \
+	$(RTL_DIR)/sine_qtr_rom.sv
+
+ifeq ($(SIM),icarus)
+COMPILE_ARGS += -g2012 -DNOSYNTH
+endif
+
+ifeq ($(SIM),verilator)
+COMPILE_ARGS += --sv -DNOSYNTH --timing
+endif
+
+# vvp runs with cwd = this directory, so $readmemh finds the .mem file here
+$(shell ln -sf $(RTL_DIR)/sine_qtr_4096_16b.mem ./sine_qtr_4096_16b.mem 2>/dev/null)
+
+include $(shell cocotb-config --makefiles)/Makefile.sim
