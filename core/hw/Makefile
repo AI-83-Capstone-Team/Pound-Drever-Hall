@@ -38,3 +38,4 @@ clean:
 	rm -rf build .Xil
 	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*,tmp}  
 	rm -f *.txt *.log vivado.jou vivado_pid*.str
+	$(MAKE) -C prj/pdh_core/sim clean
