@@ -107,6 +107,8 @@ The following rules must never be broken under any circumstances.
 
 2. Do not modify the interface between the Software and the Hardware subject to the same constraints as invariant 1.
 
+3. Whenever a change is made that results in a difference from what is currently in the .README, update the .README accordingly.
+
 
 
 
