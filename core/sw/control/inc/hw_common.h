@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 
-#define ABS(V) ((V > 0)? V : -V)
+#define ABS(V) ((V) > 0 ? (V) : -(V))
 #define SWEEP_BUFFER_SIZE 2000
 #define ADC_BUFFER_SIZE 1
 
@@ -30,11 +30,11 @@
 #define RP_CALL(fn_call)                                   \
     do {                                                   \
         int _ret = (fn_call);                              \
-        if (_ret != PDH_OK) {                               \
+        if (_ret != PDH_OK) {                              \
             fprintf(stderr, "%s failed (code %d)!\n",      \
                     #fn_call, _ret);                       \
-        	return _ret;				   \
-	}                                                  \
+            return _ret;                                   \
+        }                                                  \
     } while (0)
 
 #else
@@ -45,13 +45,13 @@
 
 #ifdef DEBUG
 
-#define RP_CALL_NOTERM(fn_call)                 	   \
+#define RP_CALL_NOTERM(fn_call)                            \
     do {                                                   \
         int _ret = (fn_call);                              \
-        if (_ret != PDH_OK) {                               \
+        if (_ret != PDH_OK) {                              \
             fprintf(stderr, "%s failed (code %d)!\n",      \
                     #fn_call, _ret);                       \
-	}                                                  \
+        }                                                  \
     } while (0)
 
 #else

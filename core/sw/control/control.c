@@ -60,7 +60,7 @@ static inline int push_ctx_cb(cmd_ctx_t* ctx, size_t* index, void* value, int ta
 
     ctx->output.num_outputs = ++*index;
     return 0;
- }
+}
 
 
 static inline int validate_cb(void* cb, void* expected, int tag, const char* func, const char* name, int success_code, int fail_code)
@@ -114,7 +114,6 @@ int cmd_reset_fpga(cmd_ctx_t* ctx) //TODO: Better rst cb verification
 {
     int return_code = PDH_OK;
 
- 
     pdh_cmd_t cmd;
     cmd.raw = 0;
 
@@ -409,7 +408,7 @@ int cmd_set_rot(cmd_ctx_t* ctx)
 
     float theta_rad = ctx->float_args[0];
     if (theta_rad > M_PI) theta_rad = M_PI;
-    if (theta_rad < -1.0f*M_PI) theta_rad = -1.0f*M_PI;
+    if (theta_rad < -1.0f * M_PI) theta_rad = -1.0f * M_PI;
 
     float c = cosf(theta_rad);
     float s = sinf(theta_rad);
@@ -633,8 +632,8 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
     size_t index = 0;
     push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB"); 
     push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DECIMATION_CODE_CB"); 
-push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB"); 
-    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD); 
+    push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
     
 
     usleep(DMA_BURST_CONST + (BRAM_DEC_CONST * decimation_code)); //TODO: Handle waiting for DMA finish better

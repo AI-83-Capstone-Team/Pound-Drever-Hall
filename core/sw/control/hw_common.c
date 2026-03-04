@@ -72,7 +72,7 @@ int pdh_Release()
 }
 
 
- inline __attribute__((always_inline)) int pdh_send_cmd(pdh_cmd_t cmd)
+inline __attribute__((always_inline)) int pdh_send_cmd(pdh_cmd_t cmd)
 {
     *((volatile uint32_t*)((uint8_t*)gAxiMap + AXI_WRITE_OFFSET)) = cmd.raw;
     __sync_synchronize();

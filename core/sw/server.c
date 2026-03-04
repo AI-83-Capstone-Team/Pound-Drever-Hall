@@ -46,7 +46,7 @@ static const char* find_key(const char* src, const char* key)
 {
     size_t klen = strlen(key);
     const char* p = src;
-    while (*p) 
+    while (*p)
     {
         if (strncmp(p, key, klen) == 0) return p + klen;
         const char* nl = strchr(p, '\n');
@@ -129,7 +129,7 @@ static int load_context(const char* text, cmd_ctx_t* ctx)
     //Load command str
     {
         const char *nl = strchr(cmd, '\n');
-        size_t len = nl? (size_t)(nl - cmd) : strlen(cmd);
+        size_t len = nl ? (size_t)(nl - cmd) : strlen(cmd);
         if (len >= COMMAND_SIZE) len = COMMAND_SIZE - 1;
 
         memcpy(ctx->name, cmd, len);
@@ -137,36 +137,37 @@ static int load_context(const char* text, cmd_ctx_t* ctx)
     }
 
     const char *f = find_key(text, "F:");
-    if(f) 
+    if (f)
     {
         ctx->num_floats = parse_floats(f, ctx->float_args, FLOAT_ARGS);
         ctx->float_status = LOAD_CTX_OK;
-    } 
-    else 
+    }
+    else
     {
         ctx->num_floats = 0;
         ctx->float_status = LOAD_CTX_NO_KEY;
     }
 
     const char *i = find_key(text, "I:");
-    if (i) 
+    if (i)
     {
         ctx->num_ints = parse_ints(i, ctx->int_args, INT_ARGS);
         ctx->int_status = LOAD_CTX_OK;
-    } 
-    else 
+    }
+    else
     {
         ctx->num_ints = 0;
         ctx->int_status = LOAD_CTX_NO_KEY;
     }
 
     const char *u = find_key(text, "U:");
-    if (u) 
+    if (u)
     {
         ctx->num_uints = parse_uints(u, ctx->uint_args, UINT_ARGS);
         ctx->uint_status = LOAD_CTX_OK;
-    } 
-    else {
+    }
+    else
+    {
         ctx->num_uints = 0;
         ctx->uint_status = LOAD_CTX_NO_KEY;
     }
@@ -182,9 +183,9 @@ static int dispatch_command(cmd_ctx_t* ctx, int* code)
 
     bool cmd_found = false;
     int i = 0;
-    while(i < NUM_CMDS)
+    while (i < NUM_CMDS)
     {
-        if(strncmp(ctx->name, gCmds[i].name, COMMAND_SIZE) == 0)
+        if (strncmp(ctx->name, gCmds[i].name, COMMAND_SIZE) == 0)
         {
             memcpy(&curr_cmd, &gCmds[i], sizeof(curr_cmd));
             cmd_found = true;
@@ -192,11 +193,11 @@ static int dispatch_command(cmd_ctx_t* ctx, int* code)
         }
         i++;
     }
-    if(!cmd_found) return DISPATCH_CMD_NO_CMD;
+    if (!cmd_found) return DISPATCH_CMD_NO_CMD;
 
-    if(ctx->num_floats < curr_cmd.required_floats) return DISPATCH_CMD_FLOAT_ARG_MISMATCH;
-    if(ctx->num_ints < curr_cmd.required_ints) return DISPATCH_CMD_INT_ARG_MISMATCH;
-    if(ctx->num_uints < curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
+    if (ctx->num_floats < curr_cmd.required_floats) return DISPATCH_CMD_FLOAT_ARG_MISMATCH;
+    if (ctx->num_ints < curr_cmd.required_ints) return DISPATCH_CMD_INT_ARG_MISMATCH;
+    if (ctx->num_uints < curr_cmd.required_uints) return DISPATCH_CMD_UINT_ARG_MISMATCH;
     DEBUG_INFO("Dispatching: %s...\n", gCmds[i].name);
     *code = curr_cmd.func(ctx);
     DEBUG_INFO("done dispatch\n");
@@ -210,16 +211,16 @@ static int write_all(int fd, const void* buff, size_t len)
     const uint8_t* p = buff;
     size_t rem = len;
 
-    while(rem > 0)
+    while (rem > 0)
     {
-        size_t n = write(fd, p, rem);
-        if(n < 0)
+        size_t n = write(fd, p, rem); // NOTE: write() returns ssize_t; if(n < 0) is dead code here
+        if (n < 0)
         {
-            if(errno == EINTR) continue;
+            if (errno == EINTR) continue;
             else return -1;
         }
 
-        if(n==0) return -1;
+        if (n == 0) return -1;
         p += n;
         rem -= n;
     }
@@ -230,28 +231,26 @@ static int write_all(int fd, const void* buff, size_t len)
 
 static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 {
-	char* buff = (char*)malloc(MAX_BYTES);
-	int offset = 0;
-
+    char *buff = (char *)malloc(MAX_BYTES);
+    int offset = 0;
     size_t cap = MAX_BYTES;
 
-	offset += snprintf(buff + offset, cap - offset, "type:output\nname:%s\n", ctx.name);
-	offset += snprintf(buff + offset, cap - offset, "status:%d\n", func_status);
+    offset += snprintf(buff + offset, cap - offset, "type:output\nname:%s\n", ctx.name);
+    offset += snprintf(buff + offset, cap - offset, "status:%d\n", func_status);
 
-	for(size_t i = 0; i < ctx.output.num_outputs; i++)
-	{
-		output_item_t output = ctx.output.output_items[i];
+    for (size_t i = 0; i < ctx.output.num_outputs; i++)
+    {
+        output_item_t output = ctx.output.output_items[i];
 
-		if(output.tag == FLOAT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%f\n", output.name, output.data.f);
-		else if(output.tag == INT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%d\n", output.name, output.data.i);
-		else if(output.tag == UINT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%u\n", output.name, output.data.u);
-
-		else
-		{
-		    offset += snprintf(buff + offset, cap - offset, "%s\n", "ERROR: unknown tag!");
-		    break;
-		}
-	}
+        if (output.tag == FLOAT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%f\n", output.name, output.data.f);
+        else if (output.tag == INT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%d\n", output.name, output.data.i);
+        else if (output.tag == UINT_TAG) offset += snprintf(buff + offset, cap - offset, "%s:%u\n", output.name, output.data.u);
+        else
+        {
+            offset += snprintf(buff + offset, cap - offset, "%s\n", "ERROR: unknown tag!");
+            break;
+        }
+    }
 
     ssize_t n = write_all(client_fd, buff, offset);
     free(buff);
@@ -262,14 +261,14 @@ static void send_response(int client_fd, int func_status, cmd_ctx_t ctx)
 int main(void)
 {
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);    //allocate socket obj for listener socket instance. specify IPV4, TCP, defaults
-    if(listen_fd < 0)
+    if (listen_fd < 0)
     {
         perror("ERROR: can't create socket\n");
         return 1;
     }
 
     int opt = 1;
-    if(setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)    //configure socket through its fd, SOL_SOCKET specifies we are configuring at the socket level i.e. not reconfiguring protocol or IP level stuff. we want to allow binding to ip adresses (interfaces) that may already be in use so we set SO_REUSEADDR to 1
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)    //configure socket through its fd, SOL_SOCKET specifies we are configuring at the socket level i.e. not reconfiguring protocol or IP level stuff. we want to allow binding to ip adresses (interfaces) that may already be in use so we set SO_REUSEADDR to 1
     {
         perror("ERROR: can't setsocketopt\n");
         close(listen_fd);
@@ -283,14 +282,14 @@ int main(void)
     addr.sin_port = htons(SERVER_PORT); //network byte order required for TCP/IP machinery to work properly
     addr.sin_addr.s_addr = htonl(INADDR_ANY); //let socket get data from any visible IP
 
-    if(bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)  //updates kernel LUT to see that this socket owns port 5555 and the given IP addr set, in this case all ip addrs
+    if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)  //updates kernel LUT to see that this socket owns port 5555 and the given IP addr set, in this case all ip addrs
     {
         perror("ERROR: can't bind\n");
         close(listen_fd);
         return 1;
     }
 
-    if(listen(listen_fd, 8) < 0)    //allocates acceptance queue and starts the kernel's interrupt-driven TCP state machine used to populate it. 
+    if (listen(listen_fd, 8) < 0)    //allocates acceptance queue and starts the kernel's interrupt-driven TCP state machine used to populate it.
     {
         perror("ERROR: can't listen\n");
         close(listen_fd);
@@ -302,22 +301,21 @@ int main(void)
     
     int pdh_code = pdh_Init();
     int dma_code = dma_Init();
-    if(pdh_code == PDH_OK && dma_code == PDH_OK)
+    if (pdh_code == PDH_OK && dma_code == PDH_OK)
     {
-        while(true)
+        while (true)
         {
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
 
-            int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len); //Every time a TCP handshake completes on a listening socket, the kernel automatically creates a child socket and places it into the accept queue. accept creates an fd for the child socket at the front of this queue. do note both accepted and listener sockets are both permutations of the core socket data structure.
+            int client_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len); //Every time a TCP handshake completes on a listening socket, the kernel automatically creates a child socket and places it into the accept queue. accept creates an fd for the child socket at the front of this queue. do note both accepted and listener sockets are both permutations of the core socket data structure.
 
-            if(client_fd < 0)
+            if (client_fd < 0)
             {
-                if(errno == EINTR)
+                if (errno == EINTR)
                 {
                     continue;
                 }
-
                 else
                 {
                     perror("ERROR: can't accept client connection\n");
@@ -331,26 +329,26 @@ int main(void)
 
             char inbuff[MAX_BYTES];
             ssize_t nread = read(client_fd, inbuff, MAX_BYTES); //pull bytes from TCP buffer (mapping to last accepted TCP transaction sequence) that kernel already filled with packet data delivered after handshake and move them into inbuff
-            if(nread <= 0)
+            if (nread <= 0)
             {
-                if(nread < 1) perror("ERROR: can't read\n");
+                if (nread < 1) perror("ERROR: can't read\n");
                 close(client_fd);
                 continue;
             }
-            inbuff[nread-1] = '\0';
+            inbuff[nread - 1] = '\0';
 
             cmd_ctx_t ctx;
             memset(&ctx, 0, sizeof(ctx));
 
             DEBUG_INFO("Loading context...\n");
-            int loadCtx = load_context(inbuff, &ctx);
-            if(loadCtx == LOAD_CTX_OK)
+            int load_ctx = load_context(inbuff, &ctx);
+            if (load_ctx == LOAD_CTX_OK)
             {
                 int func_status;
                 DEBUG_INFO("Command dispatch...\n");
                 int dispatch = dispatch_command(&ctx, &func_status);
 
-                if(dispatch != DISPATCH_CMD_OK)
+                if (dispatch != DISPATCH_CMD_OK)
                 {
                     DEBUG_INFO("DISPATCH FAILURE: %d", dispatch);
                     send_response(client_fd, func_status, ctx);
@@ -364,9 +362,8 @@ int main(void)
             close(client_fd);
         }
     }
-
-    else 
-    { 
+    else
+    {
         DEBUG_INFO("pdh_Init() exited with code: %d\n", pdh_code);
         DEBUG_INFO("dma_Init() exited with code: %d\n", dma_code);
     }
