@@ -29,3 +29,5 @@ dumps/
 *.err
 compile_commands.json
 .cache/
+sim_build/
+results.xml

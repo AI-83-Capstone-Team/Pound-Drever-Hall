@@ -1,6 +1,7 @@
 PROJECTS   = $(notdir $(wildcard prj/*))
 DEFINES ?= ""
 SIM     ?= verilator
+VENV_PYTHON := $(abspath ../../myenv/bin/python3)
 DTS_VER = DTS_VER=2022.1
 
 # build artifacts
@@ -32,7 +33,7 @@ $(PROJECTS):
 
 
 sim:
-	$(MAKE) -C prj/pdh_core/sim SIM=$(SIM)
+	$(MAKE) -C prj/pdh_core/sim SIM=$(SIM) PYTHON=$(VENV_PYTHON)
 
 clean:
 	rm -rf build .Xil

@@ -17,10 +17,11 @@ COMPILE_ARGS += -g2012 -DNOSYNTH
 endif
 
 ifeq ($(SIM),verilator)
-COMPILE_ARGS += --sv -DNOSYNTH --timing
+COMPILE_ARGS += --sv -DNOSYNTH --timing -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CMPCONST
 endif
 
 # vvp runs with cwd = this directory, so $readmemh finds the .mem file here
 $(shell ln -sf $(RTL_DIR)/sine_qtr_4096_16b.mem ./sine_qtr_4096_16b.mem 2>/dev/null)
 
-include $(shell cocotb-config --makefiles)/Makefile.sim
+COCOTB_MAKEFILES ?= $(shell cocotb-config --makefiles)
+include $(COCOTB_MAKEFILES)/Makefile.sim
