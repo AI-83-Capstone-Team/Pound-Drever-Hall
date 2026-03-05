@@ -91,6 +91,7 @@ typedef enum
     CMD_GET_FRAME = 0b0111,
     CMD_SET_PID_COEFFS = 0b1000,
     CMD_SET_NCO = 0b1001,
+    CMD_SET_FIR = 0b1010,
     CMD_CONFIG_IO = 0b1110,
 }   pdh_cmd_e;   
 
@@ -224,16 +225,33 @@ typedef enum
 typedef enum
 {
     SET_FIR_OK,
+    SET_FIR_INVALID_COEFF,
+    SET_FIR_INVALID_INPUT_SEL,
+    SET_FIR_ADDR_CB_FAIL,
+    SET_FIR_COEFF_CB_FAIL,
+    SET_FIR_MEM_WEN_CB_FAIL,
+    SET_FIR_CHAIN_WEN_CB_FAIL,
+    SET_FIR_INPUT_SEL_CB_FAIL,
 }   set_fir_e;
 
 
 typedef enum
 {
-    FIR_SELECT_ADDR = 0b00,
-    FIR_SELECT_COEFF = 0b01,
-    FIR_SELECT_MEM_WRITE_EN = 0b10,
-    FIR_SELECT_CHAIN_WRITE_EN = 0b11
+    FIR_SELECT_ADDR           = 0b000,
+    FIR_SELECT_COEFF          = 0b001,
+    FIR_SELECT_INPUT_SEL      = 0b010,
+    FIR_SELECT_MEM_WRITE_EN   = 0b011,
+    FIR_SELECT_CHAIN_WRITE_EN = 0b100,
 }   fir_update_sel_e;
+
+
+typedef enum
+{
+    FIR_INPUT_ADC1   = 0b000,
+    FIR_INPUT_ADC2   = 0b001,
+    FIR_INPUT_I_FEED = 0b010,
+    FIR_INPUT_Q_FEED = 0b011,
+}   fir_input_sel_e;
 
 
 
@@ -280,6 +298,7 @@ typedef enum
     OSC_INSPECT = 0b0011,
     OSC_ADDR_CHECK = 0b0100,
     LOOPBACK = 0b0101,
+    FIR_IO = 0b0110,
 }   frame_code_e;
 
 
@@ -371,6 +390,15 @@ typedef union __attribute__((packed))
         uint32_t cmd        : 4;
         uint32_t _padding_2 : 2;
     }   set_nco_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t payload    : 16;
+        uint32_t update_sel : 3;
+        uint32_t _padding   : 7;
+        uint32_t cmd        : 4;
+        uint32_t _padding_2 : 2;
+    }   set_fir_cmd;
 
     struct __attribute__((packed))
     {
@@ -488,6 +516,14 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
+        uint32_t payload_r    : 16;
+        uint32_t update_sel_r : 3;
+        uint32_t _padding     : 9;
+        uint32_t cmd          : 4;
+    }   set_fir_cb;
+
+    struct __attribute__((packed))
+    {
         uint32_t dac1_dat_sel_r : 3;
         uint32_t dac2_dat_sel_r : 3;
         uint32_t pid_dat_sel_r  : 3;
@@ -549,6 +585,12 @@ typedef union __attribute__((packed))
         uint32_t dac1_feed_w    : 16;
     }   loopback_frame;
 
+    struct __attribute__((packed))
+    {
+        uint64_t fir_in_w  : 16;
+        uint64_t fir_out_w : 16;
+        uint64_t _padding  : 32;
+    }   fir_io_frame;
 
     uint64_t raw;
 }   dma_frame_t;

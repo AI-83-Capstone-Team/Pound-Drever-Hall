@@ -19,6 +19,15 @@ class FrameCode(IntEnum):
     OSC_INSPECT      = 0b0011
     OSC_ADDR_CHECK   = 0b0100
     LOOPBACK         = 0b0101
+    FIR_IO           = 0b0110
+
+
+class FirInputSel(IntEnum):
+    """FIR filter input source selection (mirrors fir_input_sel_t in RTL)."""
+    ADC1   = 0b000
+    ADC2   = 0b001
+    I_FEED = 0b010
+    Q_FEED = 0b011
 
 
 class DacSel(IntEnum):
@@ -61,6 +70,7 @@ FRAME_COLUMNS: dict[FrameCode, list[str]] = {
     FrameCode.OSC_INSPECT:     ["nco_out1",  "nco_out2",  "nco_feed1", "nco_feed2"],
     FrameCode.OSC_ADDR_CHECK:  ["phi1",      "phi2",      "addr1",     "addr2"],
     FrameCode.LOOPBACK:        ["dac1_feed", "dac2_feed", "adc_a",     "adc_b"],
+    FrameCode.FIR_IO:          ["fir_in",    "fir_out"],
 }
 
 
@@ -161,3 +171,12 @@ class LockInResult:
     status: int
     dac_lock_point: float
     data: Optional[np.ndarray]   # None when log_data=False
+
+
+@dataclass
+class SetFirResult:
+    status: int
+    input_sel_cb: int
+    mem_wen_en_cb: int
+    mem_wen_dis_cb: int
+    chain_wen_cb: int

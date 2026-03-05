@@ -50,44 +50,37 @@ module tb_fir_tap;
         check("rst: dout_o",      dout_o,      16'sd0);
         check("rst: din_pipe1_o", din_pipe1_o, 16'sd0);
 
-        // ── Load coeff=3, din=4 → dout=12 ────────────────────────────────────
-        // Posedge 1: coeff_r ← 3 (via wren_i), out_r ← old_coeff*4 = 0
-        // Posedge 2: out_r ← 3*4 = 12
-        @(negedge clk); coeff_in_i = 16'sd3; din_i = 16'sd4; wren_i = 1'b1;
+        // ── Q15 multiply: 0.5 × 0.5 = 0.25 ──────────────────────────────────
+        // coeff=0x4000 (0.5 Q15), din=0x4000 (0.5 Q15)
+        // 32-bit product = 0x10000000; bits[30:15] = 0x2000 (0.25 Q15)
+        @(negedge clk); coeff_in_i = 16'sh4000; din_i = 16'sh4000; wren_i = 1'b1;
         @(posedge clk); #1; wren_i = 1'b0;
         @(posedge clk); #1;
-        check("multiply: coeff=3 din=4 → 12", dout_o, 16'sd12);
+        check("Q15 mul: 0.5*0.5=0.25", dout_o, 16'sh2000);
 
         // ── din pipe passthrough ──────────────────────────────────────────────
         @(negedge clk); din_i = 16'sd7;
         @(posedge clk); #1;
         check("din_pipe: delay 1 cycle", din_pipe1_o, 16'sd7);
 
-        // ── Positive saturation ───────────────────────────────────────────────
-        // coeff=0x4000 (16384), din=2 → prod_wide = 32768 = 17'b0_1000...
-        // in[16]=0, in[15]=1 → overflow → saturate to 0x7FFF
-        @(negedge clk); coeff_in_i = 16'sh4000; din_i = 16'sd2; wren_i = 1'b1;
+        // ── Q15 multiply: -0.5 × 0.5 = -0.25 ────────────────────────────────
+        // coeff=0xC000 (-0.5 Q15), din=0x4000 (0.5 Q15)
+        // 32-bit product = 0xF0000000; bits[30:15] = 0xE000 (-0.25 Q15)
+        @(negedge clk); coeff_in_i = 16'shC000; din_i = 16'sh4000; wren_i = 1'b1;
         @(posedge clk); #1; wren_i = 1'b0;
         @(posedge clk); #1;
-        check("sat+: coeff=0x4000 din=2 → 0x7FFF", dout_o, 16'sh7FFF);
+        check("Q15 mul: -0.5*0.5=-0.25", dout_o, 16'shE000);
 
-        // ── Negative output (no saturation) ──────────────────────────────────
-        // coeff=-1, din=5 → prod=-5, fits in 17 bits, no saturation
-        @(negedge clk); coeff_in_i = -16'sd1; din_i = 16'sd5; wren_i = 1'b1;
+        // ── Positive saturation: (-1.0) × (-1.0) = +1.0 → 0x7FFF ────────────
+        // coeff=0x8000 (-1.0 Q15), din=0x8000 (-1.0 Q15)
+        // 32-bit product = 0x40000000; bits[31]=0, bits[30]=1 → overflow → 0x7FFF
+        @(negedge clk); coeff_in_i = 16'sh8000; din_i = 16'sh8000; wren_i = 1'b1;
         @(posedge clk); #1; wren_i = 1'b0;
         @(posedge clk); #1;
-        check("negative: coeff=-1 din=5 → -5", dout_o, -16'sd5);
-
-        // ── Negative saturation ───────────────────────────────────────────────
-        // coeff=0x8001 (-32767), din=2 → prod=-65534
-        // 17-bit: 1_0000_0000_0000_0010 → in[16]=1, in[15]=0 → overflow → 0x8000
-        @(negedge clk); coeff_in_i = 16'sh8001; din_i = 16'sd2; wren_i = 1'b1;
-        @(posedge clk); #1; wren_i = 1'b0;
-        @(posedge clk); #1;
-        check("sat-: coeff=0x8001 din=2 → 0x8000", dout_o, 16'sh8000);
+        check("sat+: (-1.0)*(-1.0) → 0x7FFF", dout_o, 16'sh7FFF);
 
         // ── coeff=0 zeroes output ─────────────────────────────────────────────
-        @(negedge clk); coeff_in_i = 16'sd0; din_i = 16'sd12345; wren_i = 1'b1;
+        @(negedge clk); coeff_in_i = 16'sd0; din_i = 16'sh4000; wren_i = 1'b1;
         @(posedge clk); #1; wren_i = 1'b0;
         @(posedge clk); #1;
         check("zero coeff: any din → 0", dout_o, 16'sd0);

@@ -396,6 +396,96 @@ int cmd_set_pid(cmd_ctx_t* ctx)
 
 
 
+int cmd_set_fir(cmd_ctx_t* ctx)
+{
+    int return_code = SET_FIR_OK;
+    size_t index = 0;
+
+    uint32_t input_sel = ctx->uint_args[0];
+    uint32_t num_coeffs = ctx->num_floats;
+
+    if (input_sel > 3)
+        return_code = SET_FIR_INVALID_INPUT_SEL;
+
+    if (return_code == SET_FIR_OK)
+    {
+        for (uint32_t i = 0; i < num_coeffs; i++)
+        {
+            float v = ctx->float_args[i];
+            if (v > 1.0f || v < -1.0f)
+            {
+                return_code = SET_FIR_INVALID_COEFF;
+                break;
+            }
+        }
+    }
+
+    if (return_code == SET_FIR_OK)
+    {
+        pdh_cmd_t cmd;
+        cmd.raw = 0;
+        cmd.set_fir_cmd.cmd = CMD_SET_FIR;
+
+        // Set FIR input source
+        uint32_t input_sel_u32 = input_sel;
+        cmd.set_fir_cmd.update_sel = FIR_SELECT_INPUT_SEL;
+        cmd.set_fir_cmd.payload = input_sel_u32;
+        pdh_callback_t cb = pdh_execute_cmd(cmd);
+        uint32_t echo_input_sel = cb.set_fir_cb.payload_r & 0x7;
+        return_code = validate_cb(&echo_input_sel, &input_sel_u32, UINT_TAG, __func__, "INPUT_SEL_CB", return_code, SET_FIR_INPUT_SEL_CB_FAIL);
+        push_ctx_cb(ctx, &index, &echo_input_sel, UINT_TAG, "INPUT_SEL_CB");
+
+        // Enable memory write before coefficient loading
+        uint32_t mem_wen_1 = 1;
+        cmd.set_fir_cmd.update_sel = FIR_SELECT_MEM_WRITE_EN;
+        cmd.set_fir_cmd.payload = 1;
+        cb = pdh_execute_cmd(cmd);
+        uint32_t echo_mem_wen_en = cb.set_fir_cb.payload_r & 0x1;
+        return_code = validate_cb(&echo_mem_wen_en, &mem_wen_1, UINT_TAG, __func__, "MEM_WEN_EN_CB", return_code, SET_FIR_MEM_WEN_CB_FAIL);
+        push_ctx_cb(ctx, &index, &echo_mem_wen_en, UINT_TAG, "MEM_WEN_EN_CB");
+
+        // Write each coefficient: set address then value
+        for (uint32_t i = 0; i < num_coeffs; i++)
+        {
+            uint32_t addr = i;
+            cmd.set_fir_cmd.update_sel = FIR_SELECT_ADDR;
+            cmd.set_fir_cmd.payload = addr;
+            cb = pdh_execute_cmd(cmd);
+            uint32_t echo_addr = cb.set_fir_cb.payload_r & 0x1F;
+            return_code = validate_cb(&echo_addr, &addr, UINT_TAG, __func__, "ADDR_CB", return_code, SET_FIR_ADDR_CB_FAIL);
+
+            int16_t coeff_q15 = float_to_q15(ctx->float_args[i]);
+            uint32_t coeff_u32 = (uint32_t)(uint16_t)coeff_q15;
+            cmd.set_fir_cmd.update_sel = FIR_SELECT_COEFF;
+            cmd.set_fir_cmd.payload = coeff_u32;
+            cb = pdh_execute_cmd(cmd);
+            uint32_t echo_coeff = (uint32_t)(cb.set_fir_cb.payload_r & 0xFFFF);
+            return_code = validate_cb(&echo_coeff, &coeff_u32, UINT_TAG, __func__, "COEFF_CB", return_code, SET_FIR_COEFF_CB_FAIL);
+        }
+
+        // Disable memory write
+        uint32_t mem_wen_0 = 0;
+        cmd.set_fir_cmd.update_sel = FIR_SELECT_MEM_WRITE_EN;
+        cmd.set_fir_cmd.payload = 0;
+        cb = pdh_execute_cmd(cmd);
+        uint32_t echo_mem_wen_dis = cb.set_fir_cb.payload_r & 0x1;
+        return_code = validate_cb(&echo_mem_wen_dis, &mem_wen_0, UINT_TAG, __func__, "MEM_WEN_DIS_CB", return_code, SET_FIR_MEM_WEN_CB_FAIL);
+        push_ctx_cb(ctx, &index, &echo_mem_wen_dis, UINT_TAG, "MEM_WEN_DIS_CB");
+
+        // Enable chain write so data flows through the filter
+        uint32_t chain_wen_1 = 1;
+        cmd.set_fir_cmd.update_sel = FIR_SELECT_CHAIN_WRITE_EN;
+        cmd.set_fir_cmd.payload = 1;
+        cb = pdh_execute_cmd(cmd);
+        uint32_t echo_chain_wen = cb.set_fir_cb.payload_r & 0x1;
+        return_code = validate_cb(&echo_chain_wen, &chain_wen_1, UINT_TAG, __func__, "CHAIN_WEN_CB", return_code, SET_FIR_CHAIN_WEN_CB_FAIL);
+        push_ctx_cb(ctx, &index, &echo_chain_wen, UINT_TAG, "CHAIN_WEN_CB");
+    }
+
+    return return_code;
+}
+
+
 #define SIN_SELECT 1
 #define COS_SELECT 0
 #define ROTATION_CONST 32768.0f
@@ -676,6 +766,10 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
 
                 case LOOPBACK:
                     fprintf(f, "%u, %u, %u, %u\n", frame.loopback_frame.dac1_feed_w, frame.loopback_frame.dac2_feed_w, frame.loopback_frame.adc_dat_a_i, frame.loopback_frame.adc_dat_b_i);
+                    break;
+
+                case FIR_IO:
+                    fprintf(f, "%d, %d\n", (int16_t)frame.fir_io_frame.fir_in_w, (int16_t)frame.fir_io_frame.fir_out_w);
                     break;
 
                 default:

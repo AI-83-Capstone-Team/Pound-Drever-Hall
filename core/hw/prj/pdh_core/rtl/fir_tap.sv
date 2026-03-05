@@ -25,14 +25,14 @@ module fir_tap #
         if(in[DW] ^ in[DW-1]) begin
             if(in[DW] == 1'b1) saturate_product = {1'b1, {(DW-1){1'b0}}};
             else if(in[DW] == 1'b0) saturate_product = {1'b0, {(DW-1){1'b1}}};
-        end else saturate_product = in[DW-1:0]; 
+        end else saturate_product = in[DW-1:0];
     endfunction
-    
-    logic signed [DW:0] prod_wide_w;
+
+    logic signed [2*DW-1:0] prod_wide_w;
     assign prod_wide_w = coeff_r * din_i;
-    
+
     logic signed [DW-1:0] out_w, out_r;
-    assign out_w = saturate_product(prod_wide_w);
+    assign out_w = saturate_product(prod_wide_w[2*DW-1:DW-1]);
 
     always_ff @(posedge clk) begin
         if(rst) begin

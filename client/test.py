@@ -14,6 +14,7 @@ signal integrity.  The final summary lists any failed checks.
 """
 
 import math
+import os
 import time
 
 import matplotlib
@@ -22,13 +23,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pdh_api import (
-    DacDatSel, DacSel, FrameCode, PidDatSel, CsSel,
+    DacDatSel, DacSel, FirInputSel, FrameCode, PidDatSel, CsSel,
     api_check_signed, api_config_io, api_get_adc, api_get_frame,
     api_lock_in, api_reset_fpga, api_set_dac, api_set_led,
-    api_set_nco, api_set_pid, api_set_rotation,
+    api_set_fir, api_set_nco, api_set_pid, api_set_rotation,
 )
 
 REMOTE_DIR = "sw/build"
+FIR_COEFFS_CSV = os.path.join(os.path.dirname(__file__), "fir_coeffs_example.csv")
 
 # ── Test parameters ────────────────────────────────────────────────────────────
 
@@ -307,6 +309,46 @@ def main() -> None:
     _check("check_signed IO sel echo",   cs_io.reg_sel_cb   == int(CsSel.IO))
     _check("check_signed ADC_A sel echo", cs_adca.reg_sel_cb == int(CsSel.ADC_A))
     _check("check_signed ADC_B sel echo", cs_adcb.reg_sel_cb == int(CsSel.ADC_B))
+
+    # ── 14. FIR filter configuration ─────────────────────────────────────────
+    _section("14. FIR Filter Configuration")
+
+    # Route NCO1 → DAC1 so the FIR input (ADC1 via loopback) sees a 2 MHz
+    # sine wave.  The 100 kHz low-pass FIR should visibly attenuate it.
+    api_config_io(DacDatSel.NCO_1, DacDatSel.NCO_2, PidDatSel.ADC_A)
+
+    # Load coefficients from the example CSV
+    coeffs: list[float] = []
+    with open(FIR_COEFFS_CSV) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                coeffs.append(float(line))
+
+    print(f"  Loading {len(coeffs)} coefficients from {os.path.basename(FIR_COEFFS_CSV)}")
+    print(f"  Input select: {FirInputSel.ADC1.name} ({int(FirInputSel.ADC1)})")
+
+    fir = api_set_fir(FIR_COEFFS_CSV, FirInputSel.ADC1)
+
+    _check("set_fir: status == 0",         fir.status == 0)
+    _check("set_fir: input_sel echo",      fir.input_sel_cb == int(FirInputSel.ADC1),
+           f"got={fir.input_sel_cb}  expected={int(FirInputSel.ADC1)}")
+    _check("set_fir: mem_write_en=1 echo", fir.mem_wen_en_cb == 1,
+           f"got={fir.mem_wen_en_cb}")
+    _check("set_fir: mem_write_en=0 echo", fir.mem_wen_dis_cb == 0,
+           f"got={fir.mem_wen_dis_cb}")
+    _check("set_fir: chain_write_en=1 echo", fir.chain_wen_cb == 1,
+           f"got={fir.chain_wen_cb}")
+
+    # FIR_IO frame: capture FIR input and output
+    _section("14b. Frame: FIR_IO")
+    fir_frame = api_get_frame(1, FrameCode.FIR_IO, REMOTE_DIR)
+    _check("FIR_IO frame received", fir_frame.data.size > 0)
+    if fir_frame.data.size > 0:
+        figs.append(_plot_frame(
+            fir_frame,
+            "FIR_IO — filter input vs output (fc=100 kHz low-pass)",
+        ))
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()
