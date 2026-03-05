@@ -30,7 +30,7 @@ from pdh_api import (
 )
 
 REMOTE_DIR = "sw/build"
-FIR_COEFFS_CSV = os.path.join(os.path.dirname(__file__), "fir_coeffs_example.csv")
+FIR_COEFFS_CSV = os.path.join(os.path.dirname(__file__), "..", "test_resources", "fir_coeffs_example.csv")
 
 # ── Test parameters ────────────────────────────────────────────────────────────
 

@@ -1,0 +1,30 @@
+SIM           ?= verilator
+TOPLEVEL_LANG  = verilog
+TOPLEVEL       = fir
+MODULE         = test_fir_freq_response
+
+RTL_DIR := $(abspath ../rtl)
+
+VERILOG_SOURCES = \
+	$(RTL_DIR)/fir.sv     \
+	$(RTL_DIR)/fir_tap.sv
+
+# Top-level parameter overrides (must match NTAPS/DW/AW in pdh_core.sv)
+ifeq ($(SIM),verilator)
+COMPILE_ARGS += --sv -DNOSYNTH --timing \
+                -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE \
+                -GNTAPS=32 -GDW=16 -GAW=5
+endif
+
+ifeq ($(SIM),icarus)
+COMPILE_ARGS += -g2012 -DNOSYNTH \
+                -Pfir.NTAPS=32 -Pfir.DW=16 -Pfir.AW=5
+endif
+
+# Default CSV — override with: make -f Makefile.fir_freq COEFF_CSV=path/to/coeffs.csv
+PROJ_ROOT ?= $(abspath ../../../../..)
+export COEFF_CSV    ?= $(PROJ_ROOT)/test_resources/fir_coeffs_example.csv
+export RESULTS_JSON ?= $(CURDIR)/fir_freq_results.json
+
+COCOTB_MAKEFILES ?= $(shell cocotb-config --makefiles)
+include $(COCOTB_MAKEFILES)/Makefile.sim

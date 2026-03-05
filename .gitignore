@@ -32,3 +32,6 @@ compile_commands.json
 sim_build/
 results.xml
 sine_qtr_4096_16b.mem
+fir_freq_response.png
+fir_freq_results.json
+
