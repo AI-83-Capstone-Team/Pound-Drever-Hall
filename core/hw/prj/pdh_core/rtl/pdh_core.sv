@@ -67,6 +67,7 @@ module pdh_core #
         CMD_GET_FRAME = 4'b0111,
         CMD_SET_PID_COEFFS = 4'b1000,
         CMD_SET_NCO = 4'b1001,
+        CMD_SET_FIR = 4'b1010,
         CMD_CONFIG_IO = 4'b1110
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
@@ -119,7 +120,8 @@ module pdh_core #
         get_frame_cb_w,
         set_pid_cb_w,
         set_nco_cb_w,
-        config_io_cb_w;
+        config_io_cb_w,
+        set_fir_cb_w;
 
         
     assign idle_cb_w    = 32'b0;
@@ -179,14 +181,14 @@ module pdh_core #
 
     typedef enum logic [3:0]
     {
-        SELECT_KP = 4'b0000,
-        SELECT_KD = 4'b0001,
-        SELECT_KI = 4'b0010,
-        SELECT_DEC = 4'b0011,
-        SELECT_SP = 4'b0100,
-        SELECT_ALPHA = 4'b0101,
-        SELECT_SAT = 4'b0110,
-        SELECT_EN = 4'b0111
+        PID_SELECT_KP    = 4'b0000,
+        PID_SELECT_KD    = 4'b0001,
+        PID_SELECT_KI    = 4'b0010,
+        PID_SELECT_DEC   = 4'b0011,
+        PID_SELECT_SP    = 4'b0100,
+        PID_SELECT_ALPHA = 4'b0101,
+        PID_SELECT_SAT   = 4'b0110,
+        PID_SELECT_EN    = 4'b0111
     }   pid_coeff_sel_t;
 
 
@@ -198,33 +200,33 @@ module pdh_core #
 
     always_comb begin
         case(pid_coeff_select_w)
-            SELECT_KP: begin
+            PID_SELECT_KP: begin
                 pid_payload_w = kp_r;
             end
 
-            SELECT_KD: begin
+            PID_SELECT_KD: begin
                 pid_payload_w = kd_r;
             end
-       
-            SELECT_KI: begin
+
+            PID_SELECT_KI: begin
                 pid_payload_w = ki_r;
             end
-            
-            SELECT_SP: begin
+
+            PID_SELECT_SP: begin
                 pid_payload_w = {{2{sp_r[13]}}, sp_r};
             end
 
-            SELECT_DEC: begin
+            PID_SELECT_DEC: begin
                 pid_payload_w = {2'b0, dec_r};
             end
 
-            SELECT_ALPHA: begin
+            PID_SELECT_ALPHA: begin
                 pid_payload_w = {12'b0, alpha_r};
             end
-            SELECT_SAT: begin
+            PID_SELECT_SAT: begin
                 pid_payload_w = {11'b0, satwidth_r};
             end
-            SELECT_EN: begin
+            PID_SELECT_EN: begin
                 pid_payload_w = {15'b0, pid_enable_r};
             end
 
@@ -291,6 +293,102 @@ module pdh_core #
 
     assign nco_feed1_w = s16_to_u14(nco_out1_r);
     assign nco_feed2_w = s16_to_u14(nco_out2_r);
+
+
+
+
+////////////////////// FIR BLOCK /////////////////////////////////////////
+
+
+localparam NTAPS = 32;
+localparam AW = $clog2(NTAPS);
+
+logic signed [15:0] tap_coeff_r, tap_coeff_w;
+logic [AW-1:0] tap_addr_r, tap_addr_w;
+logic tap_mem_write_en_r, tap_mem_write_en_w;
+logic tap_chain_write_en_r, tap_chain_write_en_w;
+
+logic signed [15:0] fir_in_w, fir_out_w;
+
+
+typedef enum logic [2:0]
+{
+    FIR_SELECT_ADDR = 3'b000,
+    FIR_SELECT_COEFF = 3'b001,
+    FIR_SELECT_INPUT_SEL = 3'b010,
+    FIR_SELECT_MEM_WRITE_EN = 3'b011,
+    FIR_SELECT_CHAIN_WRITE_EN = 3'b100
+}   fir_update_sel_t;
+logic [2:0] fir_update_sel_w;
+assign fir_update_sel_w = data_w[18:16];
+
+
+typedef enum logic [2:0]
+{
+    ADC1 = 3'b000,
+    ADC2 = 3'b001,
+    I_FEED = 3'b010,
+    Q_FEED = 3'b011
+}   fir_input_sel_t;
+logic [2:0] fir_input_sel_r, fir_input_sel_w;
+
+
+
+always_comb begin
+    unique case(fir_input_sel_r)
+        ADC1: fir_in_w = adc_dat_a_16s_r;
+        ADC2: fir_in_w = adc_dat_b_16s_r;
+        I_FEED: fir_in_w = i_feed_r;
+        Q_FEED: fir_in_w = q_feed_r;
+    endcase
+end
+
+
+assign tap_addr_w = (cmd_w == CMD_SET_FIR && fir_update_sel_w == FIR_SELECT_ADDR)? data_w[AW-1:0] : tap_addr_r;
+assign tap_coeff_w = (cmd_w == CMD_SET_FIR && fir_update_sel_w == FIR_SELECT_COEFF)? data_w[15:0] : tap_coeff_r;
+assign fir_input_sel_w = (cmd_w == CMD_SET_FIR && fir_update_sel_w == FIR_SELECT_INPUT_SEL)? data_w[2:0] : fir_input_sel_r;
+assign tap_mem_write_en_w = (cmd_w == CMD_SET_FIR && fir_update_sel_w == FIR_SELECT_MEM_WRITE_EN)? data_w[0] : tap_mem_write_en_r;
+assign tap_chain_write_en_w = (cmd_w == CMD_SET_FIR && fir_update_sel_w == FIR_SELECT_CHAIN_WRITE_EN)? data_w[0] : tap_chain_write_en_r;
+logic [15:0] fir_payload_w;
+always_comb begin
+    case(fir_update_sel_w)
+        FIR_SELECT_ADDR:           fir_payload_w = {{(16-AW){1'b0}}, tap_addr_r};
+        FIR_SELECT_COEFF:          fir_payload_w = tap_coeff_r;
+        FIR_SELECT_INPUT_SEL:      fir_payload_w = {13'b0, fir_input_sel_r};
+        FIR_SELECT_MEM_WRITE_EN:   fir_payload_w = {15'b0, tap_mem_write_en_r};
+        FIR_SELECT_CHAIN_WRITE_EN: fir_payload_w = {15'b0, tap_chain_write_en_r};
+        default:                   fir_payload_w = 16'd0;
+    endcase
+end
+assign set_fir_cb_w = {CMD_SET_FIR, 9'd0, fir_update_sel_w, fir_payload_w};
+
+fir # (
+    .NTAPS(NTAPS),
+    .DW(16),
+    .AW(AW)
+) u_fir (
+    .clk(clk),
+    .rst(rst_sync_r),
+    .tap_addr_i(tap_addr_r),
+    .tap_coeff_i(tap_coeff_r),
+    .tap_mem_write_en_i(tap_mem_write_en_r),
+    .tap_chain_write_en_i(tap_chain_write_en_r),
+
+    .din_i(fir_in_w),
+    .dout_o(fir_out_w)
+); 
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     
@@ -495,6 +593,10 @@ module pdh_core #
                 next_callback_w = config_io_cb_w;
             end
 
+            CMD_SET_FIR: begin
+                next_callback_w = set_fir_cb_w;
+            end
+
             default: begin
                 next_callback_w = '0;
             end
@@ -511,33 +613,33 @@ module pdh_core #
     assign next_dma_decimation_code_w = (cmd_w == CMD_GET_FRAME)? data_w[21:0] : dma_decimation_code_r;
     assign next_frame_code_w = (cmd_w == CMD_GET_FRAME)? data_w[25:22] : frame_code_r;
 
-    assign kp_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KP))? data_w[15:0] : kp_r;
-    assign kd_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KD))? data_w[15:0] : kd_r;
-    assign ki_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_KI))? data_w[15:0] : ki_r;
-    assign dec_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_DEC))? data_w[13:0] : dec_r;
-    assign sp_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_SP))? data_w[13:0] : sp_r;
-    assign alpha_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_ALPHA))? data_w[3:0] : alpha_r;
-    assign satwidth_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_SAT))? data_w[4:0] : satwidth_r;
-    assign pid_enable_w = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == SELECT_EN))? data_w[0] : pid_enable_r;
+    assign kp_w        = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_KP))    ? data_w[15:0] : kp_r;
+    assign kd_w        = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_KD))    ? data_w[15:0] : kd_r;
+    assign ki_w        = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_KI))    ? data_w[15:0] : ki_r;
+    assign dec_w       = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_DEC))   ? data_w[13:0] : dec_r;
+    assign sp_w        = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_SP))    ? data_w[13:0] : sp_r;
+    assign alpha_w     = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_ALPHA)) ? data_w[3:0]  : alpha_r;
+    assign satwidth_w  = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_SAT))   ? data_w[4:0]  : satwidth_r;
+    assign pid_enable_w= (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_EN))    ? data_w[0]    : pid_enable_r;
 
 
     typedef enum logic [2:0]
     {
-        SELECT_STRIDE = 3'b000,
-        SELECT_SHIFT = 3'b001,
-        SELECT_INV = 3'b010,
-        SELECT_SUB = 3'b011,
-        NCO_SELECT_EN = 3'b100
+        NCO_SELECT_STRIDE = 3'b000,
+        NCO_SELECT_SHIFT  = 3'b001,
+        NCO_SELECT_INV    = 3'b010,
+        NCO_SELECT_SUB    = 3'b011,
+        NCO_SELECT_EN     = 3'b100
     }   nco_sel_t;
 
     logic [2:0] nco_coeff_select_w;
     assign nco_coeff_select_w = data_w[18:16];
 
-    assign nco_stride_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_STRIDE))? data_w[11:0] : nco_stride_r;
-    assign nco_shift_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_SHIFT))? data_w[11:0] : nco_shift_r;
-    assign nco_inv_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_INV))? data_w[0] : nco_inv_r;
-    assign nco_sub_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == SELECT_SUB))? data_w[0] : nco_sub_r;
-    assign nco_en_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_EN))? data_w[0] : nco_en_r;
+    assign nco_stride_w = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_STRIDE))? data_w[11:0] : nco_stride_r;
+    assign nco_shift_w  = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_SHIFT)) ? data_w[11:0] : nco_shift_r;
+    assign nco_inv_w    = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_INV))   ? data_w[0]    : nco_inv_r;
+    assign nco_sub_w    = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_SUB))   ? data_w[0]    : nco_sub_r;
+    assign nco_en_w     = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_EN))    ? data_w[0]    : nco_en_r;
 
 //////////////////  IQ FEED LOGIC /////////////////////
 
@@ -678,7 +780,7 @@ module pdh_core #
             i_feed_r <= '0;
             q_feed_r <= '0;
 
-            dma_decimation_code_r <= 26'd1;
+            dma_decimation_code_r <= 22'd1;
             frame_code_r <= ANGLES_AND_ESIGS;
             dma_enable_r <= 1'b0;
             bram_enable_r <= 1'b0;
@@ -692,7 +794,7 @@ module pdh_core #
             kd_r <= '0;
             ki_r <= '0;
             dec_r <= 14'd1;
-            sp_r <= 16'd0;
+            sp_r <= 14'd0;
             alpha_r <= 4'd4;
             satwidth_r <= 5'd31;
             pid_enable_r <= 1'b0;
@@ -707,9 +809,15 @@ module pdh_core #
             nco_feed1_r <= '0;
             nco_feed2_r <= '0;
             
-            dac1_dat_sel_r <= '0;
-            dac2_dat_sel_r <= '0;
-            pid_sel_r <= '0;
+            dac1_dat_sel_r      <= '0;
+            dac2_dat_sel_r      <= '0;
+            pid_sel_r           <= '0;
+
+            tap_addr_r          <= '0;
+            tap_coeff_r         <= '0;
+            tap_mem_write_en_r  <= 1'b0;
+            tap_chain_write_en_r<= 1'b0;
+            fir_input_sel_r     <= '0;
 
             dma_data_r <= '0;
 
@@ -757,9 +865,15 @@ module pdh_core #
             nco_feed1_r <= nco_feed1_w;
             nco_feed2_r <= nco_feed2_w;
 
-            dac1_dat_sel_r <= next_dac1_dat_sel_w;
-            dac2_dat_sel_r <= next_dac2_dat_sel_w;
-            pid_sel_r <= next_pid_sel_w;
+            dac1_dat_sel_r      <= next_dac1_dat_sel_w;
+            dac2_dat_sel_r      <= next_dac2_dat_sel_w;
+            pid_sel_r           <= next_pid_sel_w;
+
+            tap_addr_r          <= tap_addr_w;
+            tap_coeff_r         <= tap_coeff_w;
+            tap_mem_write_en_r  <= tap_mem_write_en_w;
+            tap_chain_write_en_r<= tap_chain_write_en_w;
+            fir_input_sel_r     <= fir_input_sel_w;
 
             dma_data_r <= dma_data_w;
 

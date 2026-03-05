@@ -10,14 +10,16 @@ VERILOG_SOURCES = \
 	$(RTL_DIR)/nco.sv           \
 	$(RTL_DIR)/pid_core.sv      \
 	$(RTL_DIR)/posedge_detector.sv \
-	$(RTL_DIR)/sine_qtr_rom.sv
+	$(RTL_DIR)/sine_qtr_rom.sv  \
+	$(RTL_DIR)/fir.sv           \
+	$(RTL_DIR)/fir_tap.sv
 
 ifeq ($(SIM),icarus)
 COMPILE_ARGS += -g2012 -DNOSYNTH
 endif
 
 ifeq ($(SIM),verilator)
-COMPILE_ARGS += --sv -DNOSYNTH --timing -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CMPCONST
+COMPILE_ARGS += --sv -DNOSYNTH --timing -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CMPCONST -Wno-CASEINCOMPLETE
 endif
 
 # vvp runs with cwd = this directory, so $readmemh finds the .mem file here

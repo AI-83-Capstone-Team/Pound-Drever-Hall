@@ -26,26 +26,35 @@ CMD_COMMIT_ROT_COEFFS = 0b0110
 CMD_GET_FRAME         = 0b0111
 CMD_SET_PID_COEFFS    = 0b1000
 CMD_SET_NCO           = 0b1001
+CMD_SET_FIR           = 0b1010
 CMD_CONFIG_IO         = 0b1110
 
 # ── PID coeff selects ──────────────────────────────────────────────────────────
 
-SELECT_KP    = 0b0000
-SELECT_KD    = 0b0001
-SELECT_KI    = 0b0010
-SELECT_DEC   = 0b0011
-SELECT_SP    = 0b0100
-SELECT_ALPHA = 0b0101
-SELECT_SAT   = 0b0110
-SELECT_EN    = 0b0111
+PID_SELECT_KP    = 0b0000
+PID_SELECT_KD    = 0b0001
+PID_SELECT_KI    = 0b0010
+PID_SELECT_DEC   = 0b0011
+PID_SELECT_SP    = 0b0100
+PID_SELECT_ALPHA = 0b0101
+PID_SELECT_SAT   = 0b0110
+PID_SELECT_EN    = 0b0111
 
 # ── NCO coeff selects ──────────────────────────────────────────────────────────
 
-SELECT_STRIDE = 0b000
-SELECT_SHIFT  = 0b001
-SELECT_INV    = 0b010
-SELECT_SUB    = 0b011
-NCO_SELECT_EN = 0b100
+NCO_SELECT_STRIDE = 0b000
+NCO_SELECT_SHIFT  = 0b001
+NCO_SELECT_INV    = 0b010
+NCO_SELECT_SUB    = 0b011
+NCO_SELECT_EN     = 0b100
+
+# ── FIR update selects ─────────────────────────────────────────────────────────
+
+FIR_SELECT_ADDR           = 0b000
+FIR_SELECT_COEFF          = 0b001
+FIR_SELECT_INPUT_SEL      = 0b010
+FIR_SELECT_MEM_WRITE_EN   = 0b011
+FIR_SELECT_CHAIN_WRITE_EN = 0b100
 
 # ── IO routing selects ─────────────────────────────────────────────────────────
 
@@ -243,6 +252,14 @@ def _cb_cs(cb: int) -> dict:
         "cmd":     _cb_cmd(cb),
     }
 
+def _cb_fir(cb: int) -> dict:
+    # {CMD, 9'd0, update_sel[2:0], payload[15:0]}
+    return {
+        "payload":    cb & 0xFFFF,
+        "update_sel": (cb >> 16) & 0x7,
+        "cmd":        _cb_cmd(cb),
+    }
+
 
 # ── Main test ──────────────────────────────────────────────────────────────────
 
@@ -360,11 +377,11 @@ async def test_pdh_core(dut):
     async def _nco(sel, val=0):
         return await _send(dut, CMD_SET_NCO, (sel << 16) | (val & 0xFFF))
 
-    await _nco(NCO_SELECT_EN, 0)          # disable first
-    await _nco(SELECT_STRIDE, stride)
-    await _nco(SELECT_SHIFT,  shift_int)
-    await _nco(SELECT_INV,    inv)
-    await _nco(SELECT_SUB,    sub)
+    await _nco(NCO_SELECT_EN,     0)          # disable first
+    await _nco(NCO_SELECT_STRIDE, stride)
+    await _nco(NCO_SELECT_SHIFT,  shift_int)
+    await _nco(NCO_SELECT_INV,    inv)
+    await _nco(NCO_SELECT_SUB,    sub)
     cb = await _nco(NCO_SELECT_EN, NCO_EN)  # enable — final CB carries all state
 
     f = _cb_nco(cb)
@@ -417,35 +434,35 @@ async def test_pdh_core(dut):
     async def _pid(sel, val16):
         return await _send(dut, CMD_SET_PID_COEFFS, (sel << 16) | (val16 & 0xFFFF))
 
-    cb = await _pid(SELECT_KP, kp_i & 0xFFFF)
+    cb = await _pid(PID_SELECT_KP, kp_i & 0xFFFF)
     f  = _cb_pid(cb)
     _check_approx("pid: kp echo", _as_signed16(f["payload"]) / 32768.0, PID_KP, 0.01)
 
-    cb = await _pid(SELECT_KD, kd_i & 0xFFFF)
+    cb = await _pid(PID_SELECT_KD, kd_i & 0xFFFF)
     f  = _cb_pid(cb)
     _check_approx("pid: kd echo", _as_signed16(f["payload"]) / 32768.0, PID_KD, 0.01)
 
-    cb = await _pid(SELECT_KI, ki_i & 0xFFFF)
+    cb = await _pid(PID_SELECT_KI, ki_i & 0xFFFF)
     f  = _cb_pid(cb)
     _check_approx("pid: ki echo", _as_signed16(f["payload"]) / 32768.0, PID_KI, 0.01)
 
-    cb = await _pid(SELECT_DEC, PID_DEC & 0xFFFF)
+    cb = await _pid(PID_SELECT_DEC, PID_DEC & 0xFFFF)
     f  = _cb_pid(cb)
     _check("pid: dec echo",   f["payload"] == PID_DEC,   f"got={f['payload']}")
 
-    cb = await _pid(SELECT_SP, sp_i & 0xFFFF)
+    cb = await _pid(PID_SELECT_SP, sp_i & 0xFFFF)
     f  = _cb_pid(cb)
     _check_approx("pid: sp echo", _as_signed16(f["payload"]) / 8192.0, PID_SP, 0.01)
 
-    cb = await _pid(SELECT_ALPHA, PID_ALPHA & 0xFFFF)
+    cb = await _pid(PID_SELECT_ALPHA, PID_ALPHA & 0xFFFF)
     f  = _cb_pid(cb)
     _check("pid: alpha echo", f["payload"] == PID_ALPHA, f"got={f['payload']}")
 
-    cb = await _pid(SELECT_SAT, PID_SAT & 0xFFFF)
+    cb = await _pid(PID_SELECT_SAT, PID_SAT & 0xFFFF)
     f  = _cb_pid(cb)
     _check("pid: sat echo",   f["payload"] == PID_SAT,   f"got={f['payload']}")
 
-    cb = await _pid(SELECT_EN, PID_EN & 0xFFFF)
+    cb = await _pid(PID_SELECT_EN, PID_EN & 0xFFFF)
     f  = _cb_pid(cb)
     _check("pid: en echo",    f["payload"] == PID_EN,    f"got={f['payload']}")
 
@@ -475,6 +492,45 @@ async def test_pdh_core(dut):
         _check(f"check_signed {label}: reg_sel echo", f["reg_sel"] == reg_sel,
                f"got={f['reg_sel']}")
         _check(f"check_signed {label}: cmd echo",     f["cmd"] == CMD_CHECK_SIGNED)
+
+    # ── 11. Set FIR ────────────────────────────────────────────────────────────
+    # set_fir_cb_w = {CMD, 9'd0, update_sel[2:0], payload[15:0]}
+    _section("11. Set FIR")
+
+    async def _fir(sel, val=0):
+        return await _send(dut, CMD_SET_FIR, (sel << 16) | (val & 0xFFFF))
+
+    FIR_ADDR  = 0x1A          # tap address (5-bit, fits in NTAPS=32)
+    FIR_COEFF = 0x5A3C        # arbitrary 16-bit coefficient
+
+    cb = await _fir(FIR_SELECT_ADDR, FIR_ADDR)
+    f  = _cb_fir(cb)
+    _check("fir: addr echo",       f["payload"]    == FIR_ADDR,         f"got=0x{f['payload']:04X}")
+    _check("fir: addr sel echo",   f["update_sel"] == FIR_SELECT_ADDR)
+    _check("fir: addr cmd echo",   f["cmd"]        == CMD_SET_FIR)
+
+    cb = await _fir(FIR_SELECT_COEFF, FIR_COEFF)
+    f  = _cb_fir(cb)
+    _check("fir: coeff echo",      f["payload"]    == FIR_COEFF,        f"got=0x{f['payload']:04X}")
+    _check("fir: coeff sel echo",  f["update_sel"] == FIR_SELECT_COEFF)
+
+    cb = await _fir(FIR_SELECT_MEM_WRITE_EN, 1)
+    f  = _cb_fir(cb)
+    _check("fir: mem_wr_en=1",     f["payload"]    == 1)
+    _check("fir: mem_wr sel echo", f["update_sel"] == FIR_SELECT_MEM_WRITE_EN)
+
+    cb = await _fir(FIR_SELECT_MEM_WRITE_EN, 0)
+    f  = _cb_fir(cb)
+    _check("fir: mem_wr_en=0",     f["payload"]    == 0)
+
+    cb = await _fir(FIR_SELECT_CHAIN_WRITE_EN, 1)
+    f  = _cb_fir(cb)
+    _check("fir: chain_wr_en=1",   f["payload"]    == 1)
+    _check("fir: chain sel echo",  f["update_sel"] == FIR_SELECT_CHAIN_WRITE_EN)
+
+    cb = await _fir(FIR_SELECT_CHAIN_WRITE_EN, 0)
+    f  = _cb_fir(cb)
+    _check("fir: chain_wr_en=0",   f["payload"]    == 0)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()

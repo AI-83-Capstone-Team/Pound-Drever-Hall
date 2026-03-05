@@ -187,14 +187,14 @@ typedef enum
 
 typedef enum
 {
-    SELECT_KP = 0b0000,
-    SELECT_KD = 0b0001,
-    SELECT_KI = 0b0010,
-    SELECT_DEC = 0b0011,
-    SELECT_SP = 0b0100,
-    SELECT_ALPHA = 0b0101,
-    SELECT_SAT = 0b0110,
-    SELECT_EN = 0b0111,
+    PID_SELECT_KP = 0b0000,
+    PID_SELECT_KD = 0b0001,
+    PID_SELECT_KI = 0b0010,
+    PID_SELECT_DEC = 0b0011,
+    PID_SELECT_SP = 0b0100,
+    PID_SELECT_ALPHA = 0b0101,
+    PID_SELECT_SAT = 0b0110,
+    PID_SELECT_EN = 0b0111,
 }   pid_coeff_sel_e;
 
 typedef enum
@@ -212,12 +212,30 @@ typedef enum
 
 typedef enum
 {
-    SELECT_STRIDE = 0b000,
-    SELECT_SHIFT = 0b001,
-    SELECT_INV = 0b010,
-    SELECT_SUB = 0b011,
+    NCO_SELECT_STRIDE = 0b000,
+    NCO_SELECT_SHIFT = 0b001,
+    NCO_SELECT_INV = 0b010,
+    NCO_SELECT_SUB = 0b011,
     NCO_SELECT_EN = 0b100,
 }   nco_coeff_sel_e;
+
+
+
+typedef enum
+{
+    SET_FIR_OK,
+}   set_fir_e;
+
+
+typedef enum
+{
+    FIR_SELECT_ADDR = 0b00,
+    FIR_SELECT_COEFF = 0b01,
+    FIR_SELECT_MEM_WRITE_EN = 0b10,
+    FIR_SELECT_CHAIN_WRITE_EN = 0b11
+}   fir_update_sel_e;
+
+
 
 typedef enum
 {
@@ -251,7 +269,6 @@ typedef enum
     LOCK_IN_INVALID_DAC,
     LOCK_IN_INVALID_PID_FEED,
     LOCK_IN_FOPEN_ERR,
-
 }   lock_in_e;
 
 

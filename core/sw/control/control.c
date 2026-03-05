@@ -330,7 +330,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
         
     cmd.set_pid_cmd.payload = kp_i;
-    cmd.set_pid_cmd.coeff_sel = SELECT_KP;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_KP;
     pdh_callback_t cb = pdh_execute_cmd(cmd);
     int16_t echo_kp = (int16_t)cb.set_pid_cb.payload_r;
     float kp_converted = echo_kp / 32768.0f;
@@ -338,7 +338,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     push_ctx_cb(ctx, &index, &kp_converted, FLOAT_TAG, "KP_CB");
 
     cmd.set_pid_cmd.payload = kd_i;
-    cmd.set_pid_cmd.coeff_sel = SELECT_KD;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_KD;
     cb = pdh_execute_cmd(cmd);
     int16_t echo_kd = (int16_t)cb.set_pid_cb.payload_r;
     float kd_converted = echo_kd / 32768.0f;
@@ -346,7 +346,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     push_ctx_cb(ctx, &index, &kd_converted, FLOAT_TAG, "KD_CB");
 
     cmd.set_pid_cmd.payload = ki_i;
-    cmd.set_pid_cmd.coeff_sel = SELECT_KI;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_KI;
     cb = pdh_execute_cmd(cmd);
     int16_t echo_ki = (int16_t)cb.set_pid_cb.payload_r;
     float ki_converted = echo_ki / 32768.0f;
@@ -354,14 +354,14 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     push_ctx_cb(ctx, &index, &ki_converted, FLOAT_TAG, "KI_CB");
 
     cmd.set_pid_cmd.payload = dec;
-    cmd.set_pid_cmd.coeff_sel = SELECT_DEC;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_DEC;
     cb = pdh_execute_cmd(cmd);
     uint32_t echo_dec = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_dec, &dec, UINT_TAG, __func__, "DEC_CB", return_code, SET_PID_INVALID_DEC);
     push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DEC_CB");
 
     cmd.set_pid_cmd.payload = sp_i;
-    cmd.set_pid_cmd.coeff_sel = SELECT_SP;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_SP;
     cb = pdh_execute_cmd(cmd);
     int16_t echo_sp = (int16_t)cb.set_pid_cb.payload_r;
     float sp_converted = echo_sp / 8192.0f;
@@ -369,21 +369,21 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     push_ctx_cb(ctx, &index, &sp_converted, FLOAT_TAG, "SP_CB");
 
     cmd.set_pid_cmd.payload = alpha;
-    cmd.set_pid_cmd.coeff_sel = SELECT_ALPHA;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_ALPHA;
     cb = pdh_execute_cmd(cmd);
     uint32_t echo_alpha = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_alpha, &alpha, UINT_TAG, __func__, "ALPHA_CB", return_code, SET_PID_INVALID_ALPHA);
     push_ctx_cb(ctx, &index, &echo_alpha, UINT_TAG, "ALPHA_CB");
 
     cmd.set_pid_cmd.payload = sat;
-    cmd.set_pid_cmd.coeff_sel = SELECT_SAT;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_SAT;
     cb = pdh_execute_cmd(cmd);
     uint32_t echo_sat = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_sat, &sat, UINT_TAG, __func__, "SAT_CB", return_code, SET_PID_INVALID_SAT);
     push_ctx_cb(ctx, &index, &echo_sat, UINT_TAG, "SAT_CB");
 
     cmd.set_pid_cmd.payload = en;
-    cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_EN;
     cb = pdh_execute_cmd(cmd);
     uint32_t echo_en = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
@@ -522,19 +522,19 @@ int cmd_set_nco(cmd_ctx_t* ctx)
         cmd.set_nco_cmd.coeff_sel = NCO_SELECT_EN;
         pdh_execute_cmd(cmd);
 
-        cmd.set_nco_cmd.coeff_sel = SELECT_STRIDE;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_STRIDE;
         cmd.set_nco_cmd.payload = stride;
         pdh_execute_cmd(cmd);
 
-        cmd.set_nco_cmd.coeff_sel = SELECT_SHIFT;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_SHIFT;
         cmd.set_nco_cmd.payload = shift_int_unsigned;
         pdh_execute_cmd(cmd);
 
-        cmd.set_nco_cmd.coeff_sel = SELECT_INV;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_INV;
         cmd.set_nco_cmd.payload = inv;
         pdh_execute_cmd(cmd);
 
-        cmd.set_nco_cmd.coeff_sel = SELECT_SUB;
+        cmd.set_nco_cmd.coeff_sel = NCO_SELECT_SUB;
         cmd.set_nco_cmd.payload = sub;
         pdh_execute_cmd(cmd);
 
@@ -839,7 +839,7 @@ int cmd_lock_in(cmd_ctx_t* ctx)
         
         cmd.raw = 0;
         cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+        cmd.set_pid_cmd.coeff_sel = PID_SELECT_EN;
         cmd.set_pid_cmd.payload = PID_DISABLE;
         cb = pdh_execute_cmd(cmd);
 
@@ -923,7 +923,7 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 
         cmd.raw = 0;
         cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = SELECT_SP; 
+        cmd.set_pid_cmd.coeff_sel = PID_SELECT_SP; 
         cmd.set_pid_cmd.payload = 0; //sp;
         cb = pdh_execute_cmd(cmd);
 
@@ -945,7 +945,7 @@ int cmd_lock_in(cmd_ctx_t* ctx)
 
         cmd.raw = 0;
         cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = SELECT_EN;
+        cmd.set_pid_cmd.coeff_sel = PID_SELECT_EN;
         cmd.set_pid_cmd.payload = PID_ENABLE;
         cb = pdh_execute_cmd(cmd);        
         
