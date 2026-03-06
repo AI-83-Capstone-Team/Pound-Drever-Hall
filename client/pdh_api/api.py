@@ -51,7 +51,8 @@ __all__ = [
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
-    "api_set_pid", "api_set_fir", "api_config_io", "api_get_frame", "api_lock_in",
+    "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
+    "api_get_frame", "api_lock_in",
 ]
 
 
@@ -233,6 +234,23 @@ def api_set_pid(
     )
 
 
+def _send_fir_coeffs(coeffs: list[float], input_sel: FirInputSel | int) -> SetFirResult:
+    """Internal: send an in-memory coefficient list to the FPGA FIR block."""
+    coeff_str = ",".join(str(c) for c in coeffs)
+    r = execute_cmd(
+        f"CMD:set_fir\n"
+        f"F:{coeff_str}\n"
+        f"U:{int(input_sel)}\n"
+    )
+    return SetFirResult(
+        status=r.get("status", -1),
+        input_sel_cb=r.get("INPUT_SEL_CB", 0),
+        mem_wen_en_cb=r.get("MEM_WEN_EN_CB", 0),
+        mem_wen_dis_cb=r.get("MEM_WEN_DIS_CB", 0),
+        chain_wen_cb=r.get("CHAIN_WEN_CB", 0),
+    )
+
+
 @api_cmd
 def api_set_fir(csv_path: str, input_sel: FirInputSel | int) -> SetFirResult:
     """
@@ -248,20 +266,18 @@ def api_set_fir(csv_path: str, input_sel: FirInputSel | int) -> SetFirResult:
             line = line.strip()
             if line:
                 coeffs.append(float(line))
+    return _send_fir_coeffs(coeffs, input_sel)
 
-    coeff_str = ",".join(str(c) for c in coeffs)
-    r = execute_cmd(
-        f"CMD:set_fir\n"
-        f"F:{coeff_str}\n"
-        f"U:{int(input_sel)}\n"
-    )
-    return SetFirResult(
-        status=r.get("status", -1),
-        input_sel_cb=r.get("INPUT_SEL_CB", 0),
-        mem_wen_en_cb=r.get("MEM_WEN_EN_CB", 0),
-        mem_wen_dis_cb=r.get("MEM_WEN_DIS_CB", 0),
-        chain_wen_cb=r.get("CHAIN_WEN_CB", 0),
-    )
+
+@api_cmd
+def api_set_fir_coeffs(coeffs: list[float], input_sel: FirInputSel | int) -> SetFirResult:
+    """
+    Program the FPGA FIR filter from an in-memory coefficient list.
+
+    coeffs:    List of Q15 float coefficients in [-1, 1).
+    input_sel: Signal routed to the FIR input (FirInputSel enum or raw int 0-3).
+    """
+    return _send_fir_coeffs(coeffs, input_sel)
 
 
 @api_cmd

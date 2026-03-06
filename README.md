@@ -8,14 +8,16 @@ A hardware/software co-design implementation of a **Pound-Drever-Hall (PDH) lase
 
 1. [Repository Structure](#repository-structure)
 2. [Build and Deploy](#build-and-deploy)
-3. [System Architecture](#system-architecture)
-4. [Command Dispatch and Receive Architecture](#command-dispatch-and-receive-architecture)
-5. [NCO Design](#nco-design)
-6. [PID Controller Design](#pid-controller-design)
-7. [DMA Live Capture Design](#dma-live-capture-design)
-8. [Signal Representation and Fixed-Point Conventions](#signal-representation-and-fixed-point-conventions)
-9. [IO Routing](#io-routing)
-10. [Notable Design Choices](#notable-design-choices)
+3. [Controller GUI](#controller-gui)
+4. [System Architecture](#system-architecture)
+5. [Command Dispatch and Receive Architecture](#command-dispatch-and-receive-architecture)
+6. [NCO Design](#nco-design)
+7. [PID Controller Design](#pid-controller-design)
+8. [FIR Filter Design](#fir-filter-design)
+9. [DMA Live Capture Design](#dma-live-capture-design)
+10. [Signal Representation and Fixed-Point Conventions](#signal-representation-and-fixed-point-conventions)
+11. [IO Routing](#io-routing)
+12. [Notable Design Choices](#notable-design-choices)
 
 ---
 
@@ -50,9 +52,11 @@ core/
         control.h        Command handler declarations
   deploy.sh              Build, copy, and run script for the Red Pitaya
 client/
+  gui.py                 Interactive tkinter GUI — full hardware control without scripting
   pdh_api/
     api.py               Python API functions wrapping each TCP command
     types.py             Enums and result dataclasses mirroring the C/RTL types
+    fir_design.py        Windowed-sinc FIR lowpass design (shared by GUI and sim tooling)
   test.py                Board-level regression test and visualization script
 sim/
   pdh.m                  MATLAB PDH signal simulation
@@ -119,7 +123,129 @@ cd client
 python test.py      # Runs the board-level regression test
 ```
 
-Requires: `paramiko`, `numpy`, `matplotlib`.
+Requires: `paramiko`, `numpy`, `matplotlib`, `tk` (system package — see [Controller GUI](#controller-gui)).
+
+---
+
+## Controller GUI
+
+`client/gui.py` is a `tkinter`-based GUI that exposes every API-reachable hardware state interactively, without writing or editing scripts.
+
+### Prerequisites
+
+In addition to the standard Python client requirements (`paramiko`, `numpy`, `matplotlib`), the system `tk` package is needed:
+
+```bash
+# Arch
+sudo pacman -S tk
+
+# Debian / Ubuntu
+sudo apt install python3-tk
+```
+
+### Launching
+
+```bash
+cd client
+python gui.py
+```
+
+The **IP** and **Port** fields at the top of the window default to `10.42.0.62` / `5555`. Change them before issuing any command to retarget a different device; the fields are read on every button press.
+
+### Tabs
+
+#### System
+
+| Control | Function |
+|---------|----------|
+| **Reset FPGA** | Calls `reset_fpga` after a confirmation dialog. Clears all FPGA state. |
+| **Read ADC** | Reads IN1 and IN2 voltages and displays them in real time. |
+| **DAC1 / DAC2** | Sets the DAC register value (float in [−1, 1]). Only takes effect when the DAC source is set to **Register** in the IO Routing tab. |
+| **LED** | Sets the 8-bit LED pattern (decimal or `0x` hex). |
+
+#### IO Routing
+
+Three groups of radio buttons configure the signal routing:
+
+- **DAC1 Source** / **DAC2 Source**: `Register` (manual value), `PID` (PID output), `NCO 1`, `NCO 2`.
+- **PID Input**: `I Feed`, `Q Feed`, `ADC A`, `ADC B`, `FIR Out`.
+
+Click **Apply** to write all three selections in one `config_io` command. The feedback line beneath the button shows the values echoed back by the FPGA.
+
+#### NCO
+
+Configures the numerically controlled oscillator used for IQ demodulation and as a DAC drive signal.
+
+| Field | Range | Notes |
+|-------|-------|-------|
+| Frequency (Hz) | (0, 62.5 MHz] | Snapped to the nearest stride count. Feedback shows the registered frequency and error. |
+| Phase shift (°) | [−180, 180] | Relative phase offset between NCO output 1 and output 2. |
+| Enable | checkbox | Enables/disables NCO output. |
+
+The feedback line shows the registered frequency, frequency quantization error, phase shift, and shift error.
+
+#### Rotation
+
+Sets the IQ demodulation rotation angle. Use this to align the PDH error signal onto the I channel after accounting for any optical/electrical phase shift.
+
+| Field | Range |
+|-------|-------|
+| Angle (°) | [−180, 180] (entry or slider) |
+
+Feedback shows the applied cos θ, sin θ, and the resulting I/Q feed values.
+
+#### FIR
+
+Designs and programs a windowed-sinc lowpass filter into the FPGA FIR block.
+
+**FIR Input** selects which signal is fed into the filter: `ADC 1`, `ADC 2`, `I Feed`, or `Q Feed`.
+
+**Filter Design** fields:
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| NTAPS | 32 (fixed) | Set at compile time to match the FPGA bitstream. |
+| Corner freq (Hz) | 5 000 000 | Half-amplitude (−6 dB) cutoff. Must be in (0, 62.5 MHz). |
+| Window | Hann | `Hann`, `Hamming`, `Blackman`, or `Rectangular`. Wider windows give better stopband attenuation at the cost of a wider transition band. |
+
+Click **Apply** to design the filter and program the FPGA in one step. If any coefficient exceeds the Q15 range (magnitude ≥ 1), an error is shown without making the API call — reduce the corner frequency or choose a different window. The feedback line shows the DC gain and the maximum coefficient magnitude.
+
+#### PID
+
+Configures all PID controller parameters.
+
+| Field | Default | Range | Notes |
+|-------|---------|-------|-------|
+| Kp | 0.5 | [−1, 1) | Proportional gain (Q15) |
+| Ki | 0.0 | [−1, 1) | Integral gain (Q15) |
+| Kd | 0.0 | [−1, 1) | Derivative gain (Q15) |
+| Setpoint | 0.0 | [−1, 1) | Error signal zero target (Q13, in volts) |
+| Decimation | 100 | [1, 16383] | PID update interval in clock cycles (125 MHz) |
+| Alpha | 4 | [0, 15] | EMA derivative filter time constant (larger = more smoothing) |
+| Satwidth | 31 | [15, 31] | Integrator saturation bound (±2^satwidth) and I-term shift |
+| Enable | ☐ | — | Enables/disables the PID output |
+
+Click **Apply** to write all parameters. The feedback line shows every coefficient echoed back by the FPGA.
+
+#### Frame Capture
+
+Triggers a DMA snapshot and plots the result in a new matplotlib window.
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| Frame code | `ANGLES_AND_ESIGS` | Selects which signals are packed into each 64-bit DMA word (see [Frame Types](#frame-types)). |
+| Decimation | 1 | Sample rate divisor (1 = full 125 MHz rate; N = every Nth sample). |
+
+Click **Capture Frame** to start a capture. The button disables while the DMA transfer and SFTP retrieval complete (typically 0.5–2 s). On success, a new matplotlib window opens with one subplot per signal column; each click creates an additional independent window. The status bar at the bottom of the GUI shows the sample count and frame code on success, or the error message in red on failure.
+
+### Status Bar
+
+The status bar at the bottom of the window shows the result of the most recent command:
+
+- **Green text**: command succeeded; shows key feedback values.
+- **Red text**: command failed; shows the full error message.
+
+The status bar clears automatically after 10 seconds.
 
 ---
 
@@ -482,6 +608,115 @@ Adding 8191 before the conversion centers the zero-error output at mid-scale (0 
 | dec       | uint14 | [1, 16383]   | clock cycles per PID update     |
 | alpha     | uint4  | [0, 15]      | EMA time constant exponent      |
 | sat       | uint5  | [15, 31]     | integrator bound and I-shift    |
+
+---
+
+## FIR Filter Design
+
+A programmable FIR lowpass filter sits between the IQ demodulation stage and the PID controller. It is implemented across two RTL modules (`fir.sv` / `fir_tap.sv`) and designed in software via `client/pdh_api/fir_design.py`.
+
+### Signal Placement
+
+```
+ADC A/B  ──┐
+I Feed   ──┼─► [FIR input mux] ──► fir.sv ──► FIR Out ──► [PID input mux] ──► pid_core
+Q Feed   ──┘
+```
+
+The FIR input source and whether the PID consumes the FIR output are both controlled independently via `config_io`. The filter can be programmed and its input/output routed at any time without affecting other subsystems.
+
+### Architecture
+
+#### Tap Structure (`fir_tap.sv`)
+
+Each tap computes a saturating Q15 multiply-accumulate:
+
+```
+coeff_r (DW-bit Q15) × din_i (DW-bit Q15)  →  prod_wide (2×DW bits, Q30)
+prod_wide[2×DW−1 : DW−1]  →  saturate_product  →  dout_o (DW-bit Q15)
+```
+
+The product uses the upper `DW+1` bits of the full `2×DW`-bit result (i.e. bits `[31:15]` for DW=16). The `saturate_product` function checks the top two bits for overflow and clamps to `[MIN, MAX]` if they disagree, otherwise takes the lower `DW` bits. This is a standard Q15 multiply: the product of two Q15 numbers is Q30; discarding the bottom 15 fractional bits and keeping the top 16 gives a Q15 result.
+
+Each tap also pipelines `din_i` through `din_pipe1_o`, forming a shift-register chain across all NTAPS instantiations:
+
+```
+din_i → tap[0].din_pipe1_o → tap[1].din_pipe1_o → … → tap[NTAPS−1].din_pipe1_o
+```
+
+#### Adder Tree (`fir.sv`)
+
+The NTAPS tap outputs are summed in a registered binary adder tree with `AW = ⌈log₂(NTAPS)⌉` pipeline stages:
+
+```
+Stage 0: tap_out_bus[0..NTAPS−1]  (unregistered, wire assignment)
+Stage 1: NTAPS/2 registered sums of adjacent pairs
+Stage 2: NTAPS/4 registered sums
+…
+Stage AW: 1 registered final sum  →  dout_o
+```
+
+Each adder uses the same `sat_add` saturating function: both operands are sign-extended to `DW+1` bits, added, and the result is clamped if the sign bit and the MSB of the `DW`-bit result disagree. This prevents any single large coefficient from overflowing the output even in the worst-case all-in-phase input scenario.
+
+**NTAPS must be a power of 2** so the binary tree is complete and all intermediate stage widths are exact powers of two.
+
+#### Pipeline Latency
+
+Total latency from `din_i` to `dout_o`:
+
+```
+1 cycle  (tap register: din_i → din_pipe1_r, coeff × din_i → out_r)
++ AW cycles  (adder tree pipeline stages)
+= 1 + AW cycles
+```
+
+For the default configuration (NTAPS=32, AW=5): **6 clock cycles** at 125 MHz = 48 ns.
+
+### Coefficient Loading
+
+Updating coefficients is a two-phase atomic operation, preventing the filter from running with a partially written coefficient set:
+
+1. **Write phase**: coefficients are written one at a time into `tap_coeffs[addr]`, a shared staging array in `fir.sv`, via `tap_addr_i` / `tap_coeff_i` / `tap_mem_write_en_i`.
+2. **Commit phase**: a single pulse on `tap_chain_write_en_i` simultaneously latches every `tap_coeffs[i]` into the corresponding `coeff_r` register inside each `fir_tap`. The filter begins using the new coefficients on the very next clock cycle.
+
+This guarantees that the filter is never in an inconsistent state mid-update. `cmd_set_fir` in `control.c` issues `NTAPS` sequential write-address commands followed by one chain-write-enable command.
+
+Coefficients are Q15 16-bit signed values. The valid range is `[−32768, +32767]`, i.e. `[−1, +1)` in float. Writing coefficients outside this range or with total energy exceeding the single-precision accumulation capacity will cause saturation in the adder tree.
+
+### Coefficient Design
+
+`client/pdh_api/fir_design.py` implements a windowed-sinc lowpass design:
+
+```
+h[n] = sinc(ωc × (n − nc) / π)  ×  w[n]
+```
+
+where `ωc = 2π × f_corner / fs` is the normalized cutoff and `nc = (NTAPS − 1) / 2` is the centre tap. The window `w[n]` trades passband ripple against stopband attenuation:
+
+| Window | Passband ripple | Stopband attenuation | Transition width |
+|--------|----------------|----------------------|-----------------|
+| Rectangular | ±0.9 dB | ~21 dB | Narrowest |
+| Hann | ±0.06 dB | ~44 dB | Moderate |
+| Hamming | ±0.02 dB | ~41 dB | Moderate |
+| Blackman | ±0.002 dB | ~74 dB | Widest |
+
+`design_lowpass` raises `ValueError` if `max|coeff| ≥ 1.0` — the Q15 range would be exceeded. This happens at very high corner frequencies (approaching `fs/2`) where the ideal sinc kernel values approach 1. The fix is to lower the corner frequency or choose a windowed design; for standard PDH demodulation bandwidths (< 10 MHz) it does not arise.
+
+`f_corner` is the half-amplitude (−6 dB) point of the ideal sinc kernel, not the −3 dB point. The actual −3 dB frequency shifts with window choice.
+
+### Frequency-Response Simulation
+
+`core/hw/sim/run_fir_freq.py` designs a filter, writes the coefficients to a CSV, runs the cocotb/Verilator RTL simulation, and overlays the ideal frequency response against the measured RTL response:
+
+```bash
+cd core/hw/sim
+python run_fir_freq.py                              # 32 taps, 5 MHz corner, Hann
+python run_fir_freq.py --ntaps 64 --corner 2e6
+python run_fir_freq.py --corner 10e6 --window hamming
+python run_fir_freq.py --no-sim                     # replot most recent result
+```
+
+Artifacts (coefficient CSV, results JSON, response PNG) are written to `sim/artifacts/fir_freq/fir_freq_N/` with an auto-incrementing index so successive runs never overwrite each other.
 
 ---
 

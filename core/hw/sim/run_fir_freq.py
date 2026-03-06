@@ -58,6 +58,10 @@ def _design_lowpass(ntaps: int, corner_hz: float, window: str) -> list:
     """Windowed-sinc lowpass FIR. Returns list of ntaps float coefficients.
 
     corner_hz is the half-amplitude (-6 dB) cutoff of the ideal sinc kernel.
+
+    NOTE: canonical copy lives in client/pdh_api/fir_design.py (design_lowpass).
+    This local copy is kept so run_fir_freq.py works standalone without the
+    client package on PYTHONPATH.
     """
     wc = 2.0 * math.pi * corner_hz / FS
     nc = (ntaps - 1) / 2.0

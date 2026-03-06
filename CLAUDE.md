@@ -113,7 +113,10 @@ The following rules must never be broken under any circumstances.
 
 
 
-
+# Python Environment
+``` bash
+source myenv/bin/activate
+```
 
 
 
