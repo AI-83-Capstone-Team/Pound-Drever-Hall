@@ -399,9 +399,8 @@ fir # (
         I_FEED_W = 3'b000,
         Q_FEED_W = 3'b001,
         SAT_A_16S = 3'b010,
-        SAT_B_16S = 3'b011
-        //SQUARED_SIGN_I = 3'b100, TODO: Implement these
-        //SQUARED_SIGN_Q = 3'b101
+        SAT_B_16S = 3'b011,
+        FIR_OUT_W = 3'b100
     }   pid_sel_t;
     logic [2:0] pid_sel_r, next_pid_sel_w;
 
@@ -484,6 +483,10 @@ fir # (
 
             SAT_B_16S: begin
                 pid_in_w = adc_dat_b_16s_r;
+            end
+
+            FIR_OUT_W: begin
+                pid_in_w = fir_out_w;
             end
 
             default begin

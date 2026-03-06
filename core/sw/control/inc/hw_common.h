@@ -145,6 +145,7 @@ typedef enum
     Q_FEED_R = 0b001,
     DAT_A_16_S = 0b010,
     DAT_B_16_S = 0b011,
+    FIR_OUT = 0b100,
 }   pid_dat_sel_e;
 
 

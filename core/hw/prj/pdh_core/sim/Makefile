@@ -7,4 +7,4 @@ all:
 	$(PYTHON) run.py --sim $(SIM)
 
 clean:
-	rm -rf sim_build __pycache__ results.xml *.vcd sine_qtr_4096_16b.mem
+	rm -rf build/ __pycache__ results.xml *.vcd sine_qtr_4096_16b.mem

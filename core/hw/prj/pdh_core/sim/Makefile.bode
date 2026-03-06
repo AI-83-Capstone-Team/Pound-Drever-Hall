@@ -1,8 +1,8 @@
 SIM           ?= verilator
 TOPLEVEL_LANG  = verilog
 TOPLEVEL       = pdh_core
-MODULE         = test_pdh_core
-SIM_BUILD      = build/pdh_core
+MODULE         = test_bode
+SIM_BUILD      = build/bode
 
 RTL_DIR := $(abspath ../rtl)
 
@@ -25,6 +25,17 @@ endif
 
 # vvp runs with cwd = this directory, so $readmemh finds the .mem file here
 $(shell ln -sf $(RTL_DIR)/sine_qtr_4096_16b.mem ./sine_qtr_4096_16b.mem 2>/dev/null)
+
+PROJ_ROOT ?= $(abspath ../../../../..)
+export COEFF_CSV     ?= $(PROJ_ROOT)/test_resources/fir_coeffs_example.csv
+export RESULTS_JSON  ?= $(CURDIR)/bode_results.json
+export KP_TEST       ?= 0.5
+export KI_TEST       ?= 0.0
+export KD_TEST       ?= 0.0
+export ALPHA_TEST    ?= 2
+export SATWIDTH_TEST ?= 31
+export LINE_DELAY_NS ?= 0.0
+export DEC_CODES     ?= 1,2,5,10,20,50,100,200,500,1000
 
 export PYTHONPATH := $(CURDIR)/utils
 

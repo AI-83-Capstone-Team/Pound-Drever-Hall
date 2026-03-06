@@ -54,10 +54,6 @@ def _dft_amplitude(samples: list, omega: float) -> float:
     """
     Estimate the amplitude of a sinusoid at angular frequency omega
     using exact DFT evaluation at that frequency.
-
-    For an integer number of cycles in the window the result is exact;
-    for non-integer cycles the error is O(1/N) which is negligible when
-    N_MEAS is chosen to span at least 8 full cycles.
     """
     s = sum(x * cmath.exp(-1j * omega * n) for n, x in enumerate(samples))
     return 2.0 * abs(s) / len(samples)
@@ -115,17 +111,15 @@ async def _measure(dut, freq: float, n_meas: int) -> float:
     return a_out / a_in if a_in > 1e-9 else 0.0
 
 
-_HERE = pathlib.Path(__file__).resolve().parent
-
-
 # ── Main cocotb test ────────────────────────────────────────────────────────────
 
 @cocotb.test()
 async def test_fir_freq_response(dut):
     # ── Load coefficients ───────────────────────────────────────────────────────
-    _repo_root  = pathlib.Path(__file__).resolve().parents[5]
+    _repo_root   = pathlib.Path(__file__).resolve().parents[6]
     _default_csv = _repo_root / "test_resources" / "fir_coeffs_example.csv"
-    csv_path    = pathlib.Path(os.environ.get("COEFF_CSV", str(_default_csv)))
+    _here        = pathlib.Path(__file__).resolve().parent.parent  # sim/
+    csv_path     = pathlib.Path(os.environ.get("COEFF_CSV", str(_default_csv)))
 
     coeffs: list = []
     with open(csv_path) as f:
@@ -156,15 +150,10 @@ async def test_fir_freq_response(dut):
     await _program_fir(dut, coeffs)
 
     # ── Frequency sweep ─────────────────────────────────────────────────────────
-    # f_min guarantees at least 8 full cycles in the minimum n_meas window (256),
-    # giving reliable DFT demodulation across the entire sweep range.
     f_min    = FS / 256 * 8        # ≈ 3.9 MHz — lowest frequency we sweep
     f_max    = FS * 0.49           # ≈ 61.25 MHz
     n_points = 60
 
-    # Also add a dense set of points around the expected cutoff to resolve
-    # the transition band clearly (works for any fc, not just 100 kHz).
-    # This is computed analytically; no additional RTL cycles needed.
     freqs_sweep = [
         f_min * (f_max / f_min) ** (i / (n_points - 1))
         for i in range(n_points)
@@ -175,7 +164,6 @@ async def test_fir_freq_response(dut):
           f"to {f_max/1e6:.2f} MHz ...")
 
     for freq in freqs_sweep:
-        # At least 8 full cycles for reliable demodulation.
         n_meas = max(256, int(8.0 * FS / freq))
         mag    = await _measure(dut, freq, n_meas)
         H_rtl.append(mag)
@@ -191,7 +179,7 @@ async def test_fir_freq_response(dut):
         H = sum(c * cmath.exp(-1j * omega * n) for n, c in enumerate(coeffs))
         H_ideal.append(abs(H))
 
-    # ── Write results for the parent process to plot ────────────────────────────
+    # ── Write results ────────────────────────────────────────────────────────────
     results = {
         "csv_path":    str(csv_path),
         "ntaps":       ntaps,
@@ -202,7 +190,7 @@ async def test_fir_freq_response(dut):
         "freqs_rtl":   freqs_sweep,
         "H_rtl":       H_rtl,
     }
-    out = os.environ.get("RESULTS_JSON", str(_HERE / "fir_freq_results.json"))
+    out = os.environ.get("RESULTS_JSON", str(_here / "fir_freq_results.json"))
     with open(out, "w") as f:
         json.dump(results, f)
     print(f"\nResults written → {out}")

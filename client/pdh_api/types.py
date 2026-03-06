@@ -49,6 +49,7 @@ class PidDatSel(IntEnum):
     Q_FEED  = 0b001
     ADC_A   = 0b010
     ADC_B   = 0b011
+    FIR_OUT = 0b100
 
 
 class CsSel(IntEnum):

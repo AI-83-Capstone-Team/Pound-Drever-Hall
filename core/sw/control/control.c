@@ -802,7 +802,7 @@ int cmd_config_io(cmd_ctx_t* ctx)
 
     if(dac1_code > 3) return_code = CONFIG_IO_INVALID_DAC1;
     if(dac2_code > 3) return_code = CONFIG_IO_INVALID_DAC2;
-    if(pid_code > 3) return_code = CONFIG_IO_INVALID_PID;
+    if(pid_code > 4) return_code = CONFIG_IO_INVALID_PID;
 
     if(return_code == CONFIG_IO_OK)
     {
