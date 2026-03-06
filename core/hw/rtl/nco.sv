@@ -1,3 +1,12 @@
+// Numerically Controlled Oscillator.
+//
+// Generates two quadrature sinusoidal outputs (out1_o, out2_o) by accumulating a phase
+// register and looking up values from a quarter-wave ROM.  The second output (out2_o) is
+// offset from the first by shift_i, optionally subtracted (sub_i) and inverted (invert_i).
+// When enable_i is de-asserted the outputs and phase are held at zero.
+//
+// Phase accumulator: 14-bit (top 2 bits = quadrant, bottom 12 bits = ROM address).
+// ROM: 4096-entry × 16-bit quarter-sine; mirrored and negated for full sine reconstruction.
 module nco(
     input logic clk,
     input logic enable_i,

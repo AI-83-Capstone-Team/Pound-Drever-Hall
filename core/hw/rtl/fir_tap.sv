@@ -1,5 +1,12 @@
 `timescale 1 ns / 1 ps
 
+// Single FIR tap: registered coefficient × input, with output saturation.
+//
+// When wren_i is pulsed the coefficient register latches coeff_in_i (loaded from the shared
+// tap_coeffs[] array in the parent fir module).  din_i is pipelined through din_pipe1_o to
+// form the shift register chain across all taps.
+//
+// The 2*DW-bit product is saturated back to DW bits before output.
 module fir_tap #
 (
     parameter DW

@@ -15,7 +15,6 @@ AW    ?= 5   # ceil(log2(NTAPS)); set by run_fir_freq.py
 
 ifeq ($(SIM),verilator)
 COMPILE_ARGS += --sv -DNOSYNTH --timing \
-                -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE \
                 -GNTAPS=$(NTAPS) -GDW=16 -GAW=$(AW)
 endif
 

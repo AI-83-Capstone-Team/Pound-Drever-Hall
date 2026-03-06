@@ -15,12 +15,17 @@ VERILOG_SOURCES = \
 	$(RTL_DIR)/fir.sv           \
 	$(RTL_DIR)/fir_tap.sv
 
+NTAPS ?= 32
+AW    ?= 5   # ceil(log2(NTAPS))
+
 ifeq ($(SIM),icarus)
-COMPILE_ARGS += -g2012 -DNOSYNTH
+COMPILE_ARGS += -g2012 -DNOSYNTH \
+                -Ppdh_core.NTAPS=$(NTAPS) -Ppdh_core.AW=$(AW)
 endif
 
 ifeq ($(SIM),verilator)
-COMPILE_ARGS += --sv -DNOSYNTH --timing -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CMPCONST -Wno-CASEINCOMPLETE
+COMPILE_ARGS += --sv -DNOSYNTH --timing \
+                -GNTAPS=$(NTAPS) -GAW=$(AW)
 endif
 
 # vvp runs with cwd = this directory, so $readmemh finds the .mem file here

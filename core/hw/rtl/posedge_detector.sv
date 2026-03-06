@@ -1,3 +1,4 @@
+// Synchronous rising-edge detector.  Q is high for one clock cycle on the rising edge of D.
 module posedge_detector
 (
     input logic clk,

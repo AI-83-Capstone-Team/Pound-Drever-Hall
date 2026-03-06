@@ -1,3 +1,7 @@
+// Dual-port synchronous quarter-wave sine ROM.
+// Stores one quarter period (0 to π/2) of a sine wave; the NCO reconstructs the full
+// waveform by mirroring and negating based on the current quadrant.
+// Infers dual-port block RAM; loaded from INIT_FILE at simulation/synthesis time.
 module sine_qtr_rom #(
     parameter integer AW = 12, // 2^12 = 4096 entries
     parameter integer DW = 16,

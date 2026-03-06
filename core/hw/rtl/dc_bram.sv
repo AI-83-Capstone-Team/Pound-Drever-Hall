@@ -1,5 +1,6 @@
-//dual-clock BRAM
-
+// Dual-clock true-dual-port BRAM.
+// Write port clocked on wclk; read port clocked on rclk.  Both ports are synchronous
+// (output registered).  Infers block RAM in Vivado.
 module dc_bram #(
   parameter int DEPTH,
   parameter int AW

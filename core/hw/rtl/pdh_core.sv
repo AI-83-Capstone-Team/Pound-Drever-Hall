@@ -1,13 +1,23 @@
 `timescale 1 ns / 1 ps
 
-//TODO: Add FIFO between NCO/PID and DMA feed
+// PDH Controller Core.
+//
+// Decodes 32-bit commands arriving via the PS AXI GPIO register, drives the NCO, FIR, and
+// PID submodules, and orchestrates BRAM capture + DMA transfer frames.
+//
+// Command protocol: every command is strobed in twice (0→1) by the PS.  On each rising strobe
+// edge the core latches the command word, executes it, and posts a 32-bit callback to the PS.
+//
+// TODO: Add FIFO between NCO/PID and DMA feed
 
 module pdh_core #
 (
-    parameter ADC_DATA_WIDTH = 14, //To account for padding
-    parameter DAC_DATA_WIDTH = 14,
-    parameter AXI_GPIO_IN_WIDTH = 32,
-    parameter AXI_GPIO_OUT_WIDTH = 32
+    parameter int unsigned ADC_DATA_WIDTH    = 14,  // ADC sample width — offset binary
+    parameter int unsigned DAC_DATA_WIDTH    = 14,  // DAC output width — offset binary
+    parameter int unsigned AXI_GPIO_IN_WIDTH  = 32, // PS→PL GPIO register width
+    parameter int unsigned AXI_GPIO_OUT_WIDTH = 32, // PL→PS callback register width
+    parameter int unsigned NTAPS             = 32,  // FIR tap count (must be a power of 2)
+    parameter int unsigned AW               = $clog2(NTAPS) // FIR coefficient address width
 )
 (
 
@@ -35,14 +45,35 @@ module pdh_core #
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
-    localparam int unsigned CMD_BITS = 4;
+    localparam int unsigned CMD_BITS    = 4;
 
-    localparam int unsigned CMD_END = 29;
-    localparam int unsigned CMD_START = 26;
-    localparam int unsigned DATA_END = 25;
+    // AXI command word layout: [31]=rst, [30]=strobe, [29:26]=cmd, [25:0]=data
+    localparam int unsigned CMD_END    = 29;
+    localparam int unsigned CMD_START  = 26;
+    localparam int unsigned DATA_END   = 25;
     localparam int unsigned DATA_START = 0;
 
-    localparam logic signed [14:0] ADC_OFFSET = 15'd8192;
+    // ADC uses offset-binary encoding; subtract the midpoint to get a signed centered value.
+    // Negated because the hardware drives the ADC input low for positive optical power.
+    localparam logic signed [ADC_DATA_WIDTH:0] ADC_OFFSET = (ADC_DATA_WIDTH+1)'(1 << (ADC_DATA_WIDTH - 1));
+
+    // DAC midpoint in unsigned offset-binary: 0 V output = 2^(DAC_DATA_WIDTH-1)
+    localparam logic [DAC_DATA_WIDTH-1:0] DAC_INIT = DAC_DATA_WIDTH'(1 << (DAC_DATA_WIDTH - 1));
+
+    // NCO-to-DAC conversion bias: maps Q15 ±1.0 to [0, 2^DAC_DATA_WIDTH-1]
+    // formula: u14 = -(q15 >> 2) + (2^(DAC_DATA_WIDTH-1) - 1)
+    localparam logic signed [15:0] NCO_DAC_BIAS = 16'($signed({1'b0, DAC_INIT}) - 1);
+
+    // Q15 fixed-point +1.0 (maximum positive value); used as identity rotation coefficient
+    localparam logic signed [15:0] Q15_MAX = 16'sh7FFF;
+
+    // PID controller power-on reset defaults
+    localparam int unsigned PID_DEC_INIT      = 1;   // update every sample (no decimation)
+    localparam int unsigned PID_ALPHA_INIT    = 4;   // EMA smoothing shift: α = 2^(-4)
+    localparam int unsigned PID_SATWIDTH_INIT = 31;  // integrator saturation at ±2^31
+
+    // NCO power-on reset default
+    localparam int unsigned NCO_STRIDE_INIT = 1;     // minimum stride ≈ 7629 Hz
 
 ////////////////////// ADC BLOCK ////////////////////////////////////
 
@@ -285,8 +316,10 @@ module pdh_core #
     assign set_nco_cb_w = {CMD_SET_NCO, 1'd0, nco_stride_r, nco_shift_r, nco_sub_r, nco_inv_r, nco_en_r};
 
 
+    // Convert a Q15 signed sample (e.g. NCO output) to 14-bit unsigned offset-binary for the DAC.
+    // The NCO outputs ±1.0 full-scale; attenuate by 4 and bias to DAC midpoint.
     function automatic logic [13:0] s16_to_u14(input logic signed [15:0] in);
-        logic signed [15:0] t1 = -(in >> 2) + 16'sd8191;
+        logic signed [15:0] t1 = -(in >> 2) + NCO_DAC_BIAS;
         s16_to_u14 = t1[13:0];
     endfunction
 
@@ -298,10 +331,8 @@ module pdh_core #
 
 
 ////////////////////// FIR BLOCK /////////////////////////////////////////
-
-
-localparam NTAPS = 32;
-localparam AW = $clog2(NTAPS);
+// Programmable NTAPS-tap FIR filter with saturation adder tree.
+// NTAPS and AW are module parameters; defaults: 32 taps, AW = ceil(log2(NTAPS)) = 5.
 
 logic signed [15:0] tap_coeff_r, tap_coeff_w;
 logic [AW-1:0] tap_addr_r, tap_addr_w;
@@ -336,10 +367,11 @@ logic [2:0] fir_input_sel_r, fir_input_sel_w;
 
 always_comb begin
     unique case(fir_input_sel_r)
-        ADC1: fir_in_w = adc_dat_a_16s_r;
-        ADC2: fir_in_w = adc_dat_b_16s_r;
-        I_FEED: fir_in_w = i_feed_r;
-        Q_FEED: fir_in_w = q_feed_r;
+        ADC1:    fir_in_w = adc_dat_a_16s_r;
+        ADC2:    fir_in_w = adc_dat_b_16s_r;
+        I_FEED:  fir_in_w = i_feed_r;
+        Q_FEED:  fir_in_w = q_feed_r;
+        default: fir_in_w = adc_dat_a_16s_r;
     endcase
 end
 
@@ -417,50 +449,22 @@ fir # (
     logic [13:0] dac1_feed_w, dac2_feed_w;
 
     always_comb begin
-        unique case(dac1_dat_sel_r) 
-            SELECT_DAC: begin
-                dac1_feed_w = dac1_dat_r;
-            end
-
-            SELECT_PID: begin
-                dac1_feed_w = pid_out_w;
-            end
-
-            SELECT_NCO_1: begin
-                dac1_feed_w = nco_feed1_r;
-            end
-             
-            SELECT_NCO_2: begin
-                dac1_feed_w = nco_feed2_r;
-            end
-
-            default: begin
-                dac1_feed_w = 14'd8192;
-            end
+        unique case(dac1_dat_sel_r)
+            SELECT_DAC:   dac1_feed_w = dac1_dat_r;
+            SELECT_PID:   dac1_feed_w = pid_out_w;
+            SELECT_NCO_1: dac1_feed_w = nco_feed1_r;
+            SELECT_NCO_2: dac1_feed_w = nco_feed2_r;
+            default:      dac1_feed_w = DAC_INIT;
         endcase
     end
 
     always_comb begin
-        unique case(dac2_dat_sel_r) 
-            SELECT_DAC: begin
-                dac2_feed_w = dac2_dat_r;
-            end
-
-            SELECT_PID: begin
-                dac2_feed_w = pid_out_w;
-            end
-
-            SELECT_NCO_1: begin
-                dac2_feed_w = nco_feed1_r;
-            end
-             
-            SELECT_NCO_2: begin
-                dac2_feed_w = nco_feed2_r;
-            end
-
-            default: begin
-                dac2_feed_w = 14'd8192;
-            end
+        unique case(dac2_dat_sel_r)
+            SELECT_DAC:   dac2_feed_w = dac2_dat_r;
+            SELECT_PID:   dac2_feed_w = pid_out_w;
+            SELECT_NCO_1: dac2_feed_w = nco_feed1_r;
+            SELECT_NCO_2: dac2_feed_w = nco_feed2_r;
+            default:      dac2_feed_w = DAC_INIT;
         endcase
     end
 
@@ -647,12 +651,16 @@ fir # (
     assign nco_en_w     = (cmd_w == CMD_SET_NCO && (nco_coeff_select_w == NCO_SELECT_EN))    ? data_w[0]    : nco_en_r;
 
 //////////////////  IQ FEED LOGIC /////////////////////
+// ADC samples arrive as unsigned offset-binary.  Each is converted to signed, centred, and
+// negated (hardware inversion), then fed through a 2×2 rotation matrix to produce the I/Q
+// demodulation outputs.  Rotation coefficients are in Q15 format.
 
     logic signed [15:0] adc_dat_a_16s_w, adc_dat_b_16s_w, adc_dat_a_16s_r, adc_dat_b_16s_r;
     logic signed [14:0] tmp_s_a, tmp_s_b;
     logic signed [32:0] i_rot_w, q_rot_w;
     logic signed [31:0] i_rot_sat_w, q_rot_sat_w;
     always_comb begin
+        // Convert offset-binary to signed: negate so that increasing optical power gives positive error.
         tmp_s_a = -($signed({1'b0, adc_dat_a_i}) - ADC_OFFSET);
         tmp_s_b = -($signed({1'b0, adc_dat_b_i}) - ADC_OFFSET);
         adc_dat_a_16s_w = {tmp_s_a[14], tmp_s_a};
@@ -666,8 +674,10 @@ fir # (
         i_rot_sat_w = i_rot_w[32] ^ i_rot_w[31]? (i_rot_w[31]? {1'b1, {31{1'b0}}} : {1'b0, {31{1'b1}}}) : i_rot_w[31:0];
         q_rot_sat_w = q_rot_w[32] ^ q_rot_w[31]? (q_rot_w[31]? {1'b1, {31{1'b0}}} : {1'b0, {31{1'b1}}}) : q_rot_w[31:0];
 
-        i_feed_w = i_rot_sat_w >>> 15;
-        q_feed_w = q_rot_sat_w >>> 15;
+        // The rotation products are Q30 (Q15 × Q15); arithmetic-right-shift by 15 gives Q15.
+        // Explicitly select bits [30:15] to make the truncation intent clear to the linter.
+        i_feed_w = i_rot_sat_w[30:15];
+        q_feed_w = q_rot_sat_w[30:15];
     end
 
 ////////////////////////////////////////////////////////
@@ -776,10 +786,10 @@ fir # (
             {axi_3ff_r, axi_2ff_r, axi_1ff_r} <= '0;
             axi_from_ps_r <= 0;
             led_r <= 0;
-            sin_theta_r <= 0; 
-            cos_theta_r <= 16'sh7FFF;
+            sin_theta_r <= 0;
+            cos_theta_r <= Q15_MAX;     // identity rotation: cos(0) = 1.0 in Q15
             rot_sin_theta_r <= 0;
-            rot_cos_theta_r <= 16'sh7FFF;
+            rot_cos_theta_r <= Q15_MAX;
             adc_dat_a_16s_r <= '0;
             adc_dat_b_16s_r <= '0;
             i_feed_r <= '0;
@@ -798,14 +808,14 @@ fir # (
             kp_r <= '0;
             kd_r <= '0;
             ki_r <= '0;
-            dec_r <= 14'd1;
+            dec_r <= 14'(PID_DEC_INIT);
             sp_r <= 14'd0;
-            alpha_r <= 4'd4;
-            satwidth_r <= 5'd31;
+            alpha_r <= 4'(PID_ALPHA_INIT);
+            satwidth_r <= 5'(PID_SATWIDTH_INIT);
             pid_enable_r <= 1'b0;
 
             nco_shift_r <= '0;
-            nco_stride_r <= 12'd1;
+            nco_stride_r <= 12'(NCO_STRIDE_INIT);
             nco_en_r <= 1'b0;
             nco_inv_r <= 1'b0;
             nco_sub_r <= 1'b0;
@@ -899,8 +909,8 @@ fir # (
     always_ff @(negedge clk) begin
         if(rst_sync_ne_r) begin
             dac_sel_r <= 1'b0;
-            dac1_dat_r <= 14'h2000;
-            dac2_dat_r <= 14'h2000;
+            dac1_dat_r <= DAC_INIT;
+            dac2_dat_r <= DAC_INIT;
         end else begin
             dac_sel_r <= next_dac_sel_w;
             dac1_dat_r <= next_dac1_dat_w; //next_dac1_dat_w;

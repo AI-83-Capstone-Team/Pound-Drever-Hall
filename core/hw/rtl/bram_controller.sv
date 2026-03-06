@@ -1,7 +1,10 @@
+// Dual-clock BRAM capture controller.
+// On a rising edge of enable_i, captures DEPTH samples into the BRAM at the given
+// decimation rate, then asserts bram_ready_o.  Written on pdh_clk, read on axi_clk.
 module bram_controller
 #(
     parameter int unsigned DEPTH = 16_384,
-    parameter int unsigned AW = 31 //$clog2(DEPTH)
+    parameter int unsigned AW = $clog2(DEPTH)  // address width; default = ceil(log2(DEPTH))
 )
 (
     input logic pdh_clk,
@@ -72,7 +75,7 @@ module bram_controller
                 next_addr_w = {AW{1'd0}};
                 bram_we_w = 1'b0;
                 next_decimation_code_w = enable_sync_edge_w? decimation_code_i : decimation_code_r;
-                next_count_w = 26'd0;
+                next_count_w = '0;
             end
 
             ST_CAPTURE_DATA: begin
@@ -80,15 +83,15 @@ module bram_controller
                 next_addr_w = (count_r == 0)? addr_r + 1 : addr_r;
                 bram_we_w = 1'b1;
                 next_decimation_code_w = decimation_code_r;
-                next_count_w = (count_r >= decimation_code_r-1)? 26'd0 : count_r + 1;
+                next_count_w = (count_r >= decimation_code_r-1)? 22'd0 : count_r + 1;
             end
 
             default: begin
                 bram_ready_o = 1'b0;
                 next_addr_w = {AW{1'd0}};
                 bram_we_w = 1'b0;
-                next_decimation_code_w = 26'd1;
-                next_count_w = 26'd0;
+                next_decimation_code_w = 22'd1;
+                next_count_w = '0;
             end
 
         endcase
@@ -107,8 +110,8 @@ module bram_controller
         if (rst_sync_r) begin
             state_r <= ST_IDLE;
             addr_r <= {AW{1'd0}};
-            decimation_code_r <= 26'd1;
-            count_r <= 26'd0;
+            decimation_code_r <= 22'd1;
+            count_r <= '0;
         end else begin
             state_r <= next_state_w;
             addr_r <= next_addr_w;

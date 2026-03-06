@@ -1,6 +1,11 @@
 
 `timescale 1 ps / 1 ps
 
+// PDH Top-Level — Red Pitaya (Zynq-7000) wrapper.
+//
+// Instantiates the Vivado block-design wrapper (PS + DDR + AXI GPIO + HP0 export),
+// the ADC clock buffer, pdh_core, bram_controller, and dma_controller.
+// The HP0 AXI3 write channel is routed externally; the read channel is permanently tied off.
 module pdh_top
 (
     // Zynq PS external
@@ -207,7 +212,9 @@ module pdh_top
         .ADC_DATA_WIDTH(14),
         .DAC_DATA_WIDTH(14),
         .AXI_GPIO_IN_WIDTH(32),
-        .AXI_GPIO_OUT_WIDTH(32)
+        .AXI_GPIO_OUT_WIDTH(32),
+        .NTAPS(32),
+        .AW(5)
     ) u_pdh_core (
         .clk(pdh_clk),
         .axi_from_ps_i(axi_from_ps),

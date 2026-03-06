@@ -1,5 +1,15 @@
 `timescale 1ns / 1ps
 
+// Symmetric FIR filter with a registered, saturating adder tree.
+//
+// Coefficients are loaded into tap_coeffs[] one at a time via tap_addr_i / tap_coeff_i while
+// tap_mem_write_en_i is high.  A single pulse on tap_chain_write_en_i simultaneously latches
+// all tap_coeffs[] values into the fir_tap registers (atomic coefficient update).
+//
+// The adder tree has AW = ceil(log2(NTAPS)) registered pipeline stages.  Total latency from
+// din_i to dout_o is (1 tap register) + AW (adder stages) cycles.
+//
+// NTAPS must be a power of 2 so the binary adder tree is complete.
 module fir # 
 (
     parameter NTAPS,

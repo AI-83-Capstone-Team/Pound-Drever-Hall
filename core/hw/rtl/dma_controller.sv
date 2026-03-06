@@ -1,6 +1,8 @@
 `timescale 1 ns / 1 ps
 
-
+// AXI3 DMA master controller.
+// On a rising edge of enable_i, streams the BRAM contents to DDR via the HP0 AXI3 port
+// in 16-beat incremental bursts until DMA_SIZE bytes have been written.
 
 module dma_controller
 #(
@@ -39,7 +41,7 @@ module dma_controller
     localparam int unsigned BYTES_PER_BEAT = 8; //each address points to a location in DDR holding this many bits
     localparam int unsigned ADDR_INC = 16*8; // beats/burst * bytes/beat
 
-    localparam logic [3:0] BEAT_BASE = 4'd0;
+    localparam logic [4:0] BEAT_BASE = 5'd0;  // beat_r is [4:0]
 
     localparam logic [1:0] BURST_INC = 2'b01;
     localparam logic [3:0] BURST_LEN = 4'd15;
