@@ -299,7 +299,7 @@ def _compute_margins(freqs, H_complex):
 
 @cocotb.test()
 async def test_bode(dut):
-    _repo_root   = pathlib.Path(__file__).resolve().parents[6]
+    _repo_root   = pathlib.Path(__file__).resolve().parents[4]
     _default_csv = _repo_root / "test_resources" / "fir_coeffs_example.csv"
     _here        = pathlib.Path(__file__).resolve().parent.parent  # sim/
 

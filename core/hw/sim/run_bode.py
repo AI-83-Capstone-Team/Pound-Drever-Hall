@@ -28,7 +28,7 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 HERE      = pathlib.Path(__file__).resolve().parent
-PROJ_ROOT = HERE.parents[4]
+PROJ_ROOT = HERE.parents[2]
 
 _bin = pathlib.Path(sys.executable).parent
 _result = subprocess.run([str(_bin / "cocotb-config"), "--makefiles"],

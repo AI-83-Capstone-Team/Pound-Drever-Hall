@@ -26,7 +26,7 @@ endif
 # vvp runs with cwd = this directory, so $readmemh finds the .mem file here
 $(shell ln -sf $(RTL_DIR)/sine_qtr_4096_16b.mem ./sine_qtr_4096_16b.mem 2>/dev/null)
 
-PROJ_ROOT ?= $(abspath ../../../../..)
+PROJ_ROOT ?= $(abspath ../../..)
 export COEFF_CSV     ?= $(PROJ_ROOT)/test_resources/fir_coeffs_example.csv
 export RESULTS_JSON  ?= $(CURDIR)/bode_results.json
 export KP_TEST       ?= 0.5

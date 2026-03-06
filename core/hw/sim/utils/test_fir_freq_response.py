@@ -8,10 +8,11 @@ din_i and dout_o are accessible without any command-protocol overhead.
 
 Environment variables:
     COEFF_CSV   Path to a CSV file with one Q15 float per line.
-                Default: <repo_root>/test_resources/fir_coeffs_example.csv
+    CORNER_HZ   Nominal filter corner frequency (Hz); used to set f_min of
+                the frequency sweep. 0 or unset → default (FS/32).
 
 Run via:
-    python run_fir_freq.py [--csv path/to/coeffs.csv]
+    python run_fir_freq.py [--ntaps N] [--corner HZ]
 """
 
 import cmath
@@ -25,18 +26,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, RisingEdge
 
-# ── RTL parameters (must match Makefile.fir_freq) ──────────────────────────────
-
-NTAPS = 32
-DW    = 16
-AW    = 5          # = log2(NTAPS)
-FS    = 125e6      # sample rate, Hz
-
-# Pipeline latency (cycles from din_i to dout_o):
-#   1 cycle  – tap output register (out_r in fir_tap)
-#   AW cycles – pipelined adder tree
-# Add NTAPS to fill the delay line with steady-state samples.
-N_WARMUP = NTAPS + AW + 1 + 16     # = 54 cycles (with a comfortable margin)
+FS = 125e6      # sample rate, Hz
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -86,9 +76,9 @@ async def _program_fir(dut, coeffs: list) -> None:
 
 # ── Per-frequency measurement ───────────────────────────────────────────────────
 
-async def _measure(dut, freq: float, n_meas: int) -> float:
+async def _measure(dut, freq: float, n_warmup: int, n_meas: int) -> float:
     """
-    Drive a cosine at freq Hz for N_WARMUP + n_meas cycles.
+    Drive a cosine at freq Hz for n_warmup + n_meas cycles.
     Collect dout_o samples only during the last n_meas cycles (steady state).
     Return |H(freq)| = output_amplitude / input_amplitude.
     """
@@ -98,11 +88,11 @@ async def _measure(dut, freq: float, n_meas: int) -> float:
     in_samples:  list = []
     out_samples: list = []
 
-    for n in range(N_WARMUP + n_meas):
+    for n in range(n_warmup + n_meas):
         raw = round(amp_q15 * math.cos(omega * n)) & 0xFFFF
         dut.din_i.value = raw
         await RisingEdge(dut.clk)
-        if n >= N_WARMUP:
+        if n >= n_warmup:
             in_samples.append(_as_signed16(raw) / 32768.0)
             out_samples.append(_as_signed16(int(dut.dout_o.value)) / 32768.0)
 
@@ -116,7 +106,7 @@ async def _measure(dut, freq: float, n_meas: int) -> float:
 @cocotb.test()
 async def test_fir_freq_response(dut):
     # ── Load coefficients ───────────────────────────────────────────────────────
-    _repo_root   = pathlib.Path(__file__).resolve().parents[6]
+    _repo_root   = pathlib.Path(__file__).resolve().parents[4]
     _default_csv = _repo_root / "test_resources" / "fir_coeffs_example.csv"
     _here        = pathlib.Path(__file__).resolve().parent.parent  # sim/
     csv_path     = pathlib.Path(os.environ.get("COEFF_CSV", str(_default_csv)))
@@ -129,9 +119,15 @@ async def test_fir_freq_response(dut):
                 coeffs.append(float(line))
 
     ntaps = len(coeffs)
+    aw    = max(1, (ntaps - 1).bit_length())   # address width = ceil(log2(ntaps))
+
+    # Pipeline latency: 1 tap-output register + AW adder-tree stages + margin
+    n_warmup = ntaps + aw + 1 + 16
+
     print(f"\nLoaded {ntaps} coefficients from {csv_path}")
     print(f"  DC gain  : {sum(coeffs):.6f}")
     print(f"  max|coeff|: {max(abs(c) for c in coeffs):.6f}")
+    print(f"  AW={aw}  n_warmup={n_warmup}")
 
     # ── Clock and reset ─────────────────────────────────────────────────────────
     cocotb.start_soon(Clock(dut.clk, 8, unit="ns").start())
@@ -150,8 +146,13 @@ async def test_fir_freq_response(dut):
     await _program_fir(dut, coeffs)
 
     # ── Frequency sweep ─────────────────────────────────────────────────────────
-    f_min    = FS / 256 * 8        # ≈ 3.9 MHz — lowest frequency we sweep
-    f_max    = FS * 0.49           # ≈ 61.25 MHz
+    corner_hz = float(os.environ.get("CORNER_HZ", "0"))
+    f_max     = FS * 0.49
+    if corner_hz > 0:
+        f_min = max(1e4, corner_hz / 8.0)
+    else:
+        f_min = FS / 32.0       # default: ~3.9 MHz
+
     n_points = 60
 
     freqs_sweep = [
@@ -160,12 +161,12 @@ async def test_fir_freq_response(dut):
     ]
 
     H_rtl: list = []
-    print(f"\nSweeping {n_points} frequencies from {f_min/1e6:.2f} MHz "
+    print(f"\nSweeping {n_points} frequencies from {f_min/1e6:.3f} MHz "
           f"to {f_max/1e6:.2f} MHz ...")
 
     for freq in freqs_sweep:
         n_meas = max(256, int(8.0 * FS / freq))
-        mag    = await _measure(dut, freq, n_meas)
+        mag    = await _measure(dut, freq, n_warmup, n_meas)
         H_rtl.append(mag)
         print(f"  {freq/1e6:7.3f} MHz  |H| = {mag:.4f}  "
               f"({20 * math.log10(max(mag, 1e-6)):.1f} dB)")
@@ -184,6 +185,7 @@ async def test_fir_freq_response(dut):
         "csv_path":    str(csv_path),
         "ntaps":       ntaps,
         "fs":          FS,
+        "f_min":       f_min,
         "f_max":       f_max,
         "freqs_ideal": freqs_ideal,
         "H_ideal":     H_ideal,

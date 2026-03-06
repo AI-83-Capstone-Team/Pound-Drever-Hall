@@ -29,11 +29,11 @@ dumps/
 *.err
 compile_commands.json
 .cache/
-core/hw/prj/pdh_core/sim/build/
+core/hw/sim/build/
 results.xml
 sine_qtr_4096_16b.mem
 # Sim artifacts (auto-generated, not versioned)
-core/hw/prj/pdh_core/sim/artifacts/
+core/hw/sim/artifacts/
 # Legacy loose outputs (now go into artifacts/)
 fir_freq_response.png
 fir_freq_results.json

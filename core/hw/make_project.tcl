@@ -8,8 +8,7 @@ set prj_name [lindex $argv 0]
 set prj_defs [lindex $argv 1]
 puts "Project name: $prj_name"
 puts "Defines: $prj_defs"
-cd prj/$prj_name
-set path_out ../../build
+set path_out build
 
 tclapp::install -quiet ultrafast
 set part_name xc7z010clg400-1

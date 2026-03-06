@@ -1,42 +1,21 @@
-PROJECTS   = $(notdir $(wildcard prj/*))
 DEFINES ?= ""
-SIM     ?= verilator
-VENV_PYTHON := $(abspath ../../myenv/bin/python3)
-DTS_VER = DTS_VER=2022.1
-
-# build artifacts
-FPGA_BIT    = build/boot.bit
-FPGA_BIN    = build/boot.bin
-FSBL_ELF    = build/fsbl/fsbl.elf
-MEMTEST_ELF = build/dram_test_executable.elf
-DEVICE_TREE = build/system.dts
 
 VIVADO = vivado -nojournal -mode batch
-HSI    = hsi    -nolog -nojournal -mode batch
-#HSI    = hsi    -nolog -mode batch
 
-.PHONY: all clean sim $(PROJECTS)
+.PHONY: all clean pdh_core
 
 all:
-	@echo "Specify a project: $(PROJECTS)"
+	@echo "Targets: pdh_core  clean"
 
-
-$(PROJECTS):
-	@mkdir -p build/$@
-	$(VIVADO) -source prj/$@/make_project.tcl -tclargs $@ $(DEFINES)
-	# Post-processing
+pdh_core:
+	@mkdir -p build
+	$(VIVADO) -source make_project.tcl -tclargs pdh_core $(DEFINES)
 	@echo "all:{build/boot.bit}" > build/boot.bif
 	bootgen -image build/boot.bif -arch zynq -process_bitstream bin
 	@mv build/boot.bit.bin build/boot.bin
 	@mv vivado.log build/vivado.log
 
-
-
-sim:
-	$(MAKE) -C prj/pdh_core/sim SIM=$(SIM) PYTHON=$(VENV_PYTHON)
-
 clean:
-	rm -rf build .Xil
-	rm -rf prj/*/{out,.Xil,.srcs,sdk,.hbs,*.log,usage_statistics*,tmp}  
+	rm -rf build tmp .Xil
+	rm -rf sim/build sim/__pycache__ sim/results.xml sim/sine_qtr_4096_16b.mem
 	rm -f *.txt *.log vivado.jou vivado_pid*.str
-	$(MAKE) -C prj/pdh_core/sim clean

@@ -47,7 +47,7 @@ Host PC (Python client) --TCP:5555--> ARM Server (C) --AXI/mmap--> FPGA (SystemV
                                        DMA (HP0 port, 0x10000000) <-- FPGA capture buffer
 ```
 
-### FPGA RTL (`core/hw/prj/pdh_core/rtl/`)
+### FPGA RTL (`core/hw/rtl/`)
 - `pdh_top.sv` — Top-level, instantiates everything, connects to Red Pitaya AXI GP0 slave and HP0 DMA master
 - `pdh_core.sv` — Main control FSM; decodes 32-bit commands from ARM, drives submodules, writes 32-bit callbacks back to ARM
 - `nco.sv` — Numerically controlled oscillator (LO generation); uses `sine_qtr_rom.sv` with `sine_qtr_4096_16b.mem`
