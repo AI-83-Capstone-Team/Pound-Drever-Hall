@@ -644,7 +644,8 @@ class _FrameCapturePanel(_Panel):
         data   = r.data
         ts     = datetime.datetime.now().strftime("%H:%M:%S")
 
-        fig, axes = plt.subplots(n_cols, 1, figsize=(10, 2.5 * n_cols), squeeze=False)
+        fig, axes = plt.subplots(n_cols, 1, figsize=(10, 2.5 * n_cols), squeeze=False,
+                                 sharex=True)
         fig.suptitle(f"{fc.name}  dec={dec}  {ts}", fontsize=10)
 
         for i, ax in enumerate(axes[:, 0]):
@@ -657,7 +658,7 @@ class _FrameCapturePanel(_Panel):
             else:
                 continue
             ax.plot(y, linewidth=0.6)
-            ax.set_ylabel(col_name, fontsize=8)
+            ax.set_ylabel(col_name, fontsize=12)
             ax.set_xlabel("sample" if i == n_cols - 1 else "")
             ax.grid(True, alpha=0.3)
 
