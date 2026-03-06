@@ -5,6 +5,11 @@ Every subsystem reachable from the Python API is reachable here.
 API calls run in background daemon threads; results are posted back
 to the main thread via root.after(0, callback).
 
+Layout: three side-by-side columns of labelled panels, all visible at once.
+  Col 0: System, IO Routing
+  Col 1: NCO, Rotation, FIR
+  Col 2: PID, Frame Capture
+
 Usage:
     cd client
     python gui.py
@@ -38,6 +43,8 @@ def _update_connection(ip: str, port: int) -> None:
     api.api.SERVER_PORT = port
 
 
+# ── Application ───────────────────────────────────────────────────────────────
+
 class _App(tk.Tk):
     """Main application window."""
 
@@ -46,7 +53,7 @@ class _App(tk.Tk):
         self.title("PDH Controller")
         self.resizable(True, True)
         self._build_settings_bar()
-        self._build_notebook()
+        self._build_panels()
         self._build_status_bar()
         self._status_timer: str | None = None
 
@@ -71,27 +78,36 @@ class _App(tk.Tk):
             port = DEFAULT_PORT
         return self._ip_var.get().strip() or DEFAULT_IP, port
 
-    # ── Notebook ──────────────────────────────────────────────────────────────
+    # ── Panels ────────────────────────────────────────────────────────────────
 
-    def _build_notebook(self) -> None:
-        nb = ttk.Notebook(self)
-        nb.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+    def _build_panels(self) -> None:
+        content = ttk.Frame(self, padding=4)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+        content.columnconfigure(2, weight=1)
+        content.rowconfigure(0, weight=1)
 
-        self._tab_system    = _SystemTab(nb, self)
-        self._tab_io        = _IORoutingTab(nb, self)
-        self._tab_nco       = _NCOTab(nb, self)
-        self._tab_rotation  = _RotationTab(nb, self)
-        self._tab_fir       = _FIRTab(nb, self)
-        self._tab_pid       = _PIDTab(nb, self)
-        self._tab_capture   = _FrameCaptureTab(nb, self)
+        # Three column frames so panels within each column stack cleanly.
+        col0 = ttk.Frame(content)
+        col1 = ttk.Frame(content)
+        col2 = ttk.Frame(content)
+        col0.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 4))
+        col1.grid(row=0, column=1, sticky=tk.NSEW, padx=4)
+        col2.grid(row=0, column=2, sticky=tk.NSEW, padx=(4, 0))
 
-        nb.add(self._tab_system,   text="System")
-        nb.add(self._tab_io,       text="IO Routing")
-        nb.add(self._tab_nco,      text="NCO")
-        nb.add(self._tab_rotation, text="Rotation")
-        nb.add(self._tab_fir,      text="FIR")
-        nb.add(self._tab_pid,      text="PID")
-        nb.add(self._tab_capture,  text="Frame Capture")
+        # Col 0: System, IO Routing
+        _SystemPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
+        _IORoutingPanel(col0, self).pack(fill=tk.X)
+
+        # Col 1: NCO, Rotation, FIR
+        _NCOPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
+        _RotationPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
+        _FIRPanel(col1, self).pack(fill=tk.X)
+
+        # Col 2: PID, Frame Capture
+        _PIDPanel(col2, self).pack(fill=tk.X, pady=(0, 4))
+        _FrameCapturePanel(col2, self).pack(fill=tk.X)
 
     # ── Status bar ────────────────────────────────────────────────────────────
 
@@ -125,15 +141,16 @@ class _App(tk.Tk):
                 self.after(0, lambda: on_success(result))
             except Exception as exc:
                 self.after(0, lambda: on_error(exc))
-        t = threading.Thread(target=worker, daemon=True)
-        t.start()
+        threading.Thread(target=worker, daemon=True).start()
 
 
-# ── Tab base ──────────────────────────────────────────────────────────────────
+# ── Panel base ────────────────────────────────────────────────────────────────
 
-class _Tab(ttk.Frame):
-    def __init__(self, parent: ttk.Notebook, app: _App) -> None:
-        super().__init__(parent, padding=10)
+class _Panel(ttk.LabelFrame):
+    """Base class for all control panels. Each panel is a LabelFrame."""
+
+    def __init__(self, parent, app: _App, title: str) -> None:
+        super().__init__(parent, text=title, padding=8)
         self.app = app
 
     def _conn(self) -> tuple[str, int]:
@@ -155,23 +172,23 @@ class _Tab(ttk.Frame):
         self.app.set_status(str(exc), ok=False)
 
 
-# ── System tab ────────────────────────────────────────────────────────────────
+# ── System panel ──────────────────────────────────────────────────────────────
 
-class _SystemTab(_Tab):
+class _SystemPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "System")
         self._build()
 
     def _build(self) -> None:
         # Reset
         reset_frm = ttk.LabelFrame(self, text="Reset", padding=6)
-        reset_frm.pack(fill=tk.X, pady=(0, 8))
+        reset_frm.pack(fill=tk.X, pady=(0, 6))
         self._reset_btn = ttk.Button(reset_frm, text="Reset FPGA", command=self._on_reset)
         self._reset_btn.pack(anchor=tk.W)
 
         # ADC readback
         adc_frm = ttk.LabelFrame(self, text="ADC", padding=6)
-        adc_frm.pack(fill=tk.X, pady=(0, 8))
+        adc_frm.pack(fill=tk.X, pady=(0, 6))
         self._read_adc_btn = ttk.Button(adc_frm, text="Read ADC", command=self._on_read_adc)
         self._read_adc_btn.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
         ttk.Label(adc_frm, text="IN1:").grid(row=1, column=0, sticky=tk.W)
@@ -183,15 +200,15 @@ class _SystemTab(_Tab):
 
         # DAC
         dac_frm = ttk.LabelFrame(self, text="DAC Register", padding=6)
-        dac_frm.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(dac_frm, text="DAC1 [-1, 1]:").grid(row=0, column=0, sticky=tk.W)
+        dac_frm.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(dac_frm, text="DAC1 [-1,1]:").grid(row=0, column=0, sticky=tk.W)
         self._dac1_var = tk.StringVar(value="0.0")
-        ttk.Entry(dac_frm, textvariable=self._dac1_var, width=10).grid(row=0, column=1, padx=4)
+        ttk.Entry(dac_frm, textvariable=self._dac1_var, width=8).grid(row=0, column=1, padx=4)
         self._dac1_btn = ttk.Button(dac_frm, text="Set DAC1", command=self._on_set_dac1)
         self._dac1_btn.grid(row=0, column=2)
-        ttk.Label(dac_frm, text="DAC2 [-1, 1]:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        ttk.Label(dac_frm, text="DAC2 [-1,1]:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
         self._dac2_var = tk.StringVar(value="0.0")
-        ttk.Entry(dac_frm, textvariable=self._dac2_var, width=10).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Entry(dac_frm, textvariable=self._dac2_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
         self._dac2_btn = ttk.Button(dac_frm, text="Set DAC2", command=self._on_set_dac2)
         self._dac2_btn.grid(row=1, column=2, pady=(4, 0))
 
@@ -200,7 +217,7 @@ class _SystemTab(_Tab):
         led_frm.pack(fill=tk.X)
         ttk.Label(led_frm, text="Pattern (0–255):").grid(row=0, column=0, sticky=tk.W)
         self._led_var = tk.StringVar(value="0")
-        ttk.Entry(led_frm, textvariable=self._led_var, width=10).grid(row=0, column=1, padx=4)
+        ttk.Entry(led_frm, textvariable=self._led_var, width=8).grid(row=0, column=1, padx=4)
         self._led_btn = ttk.Button(led_frm, text="Set LED", command=self._on_set_led)
         self._led_btn.grid(row=0, column=2)
 
@@ -231,15 +248,13 @@ class _SystemTab(_Tab):
             self.err(e)
         self.app.run_in_bg(api.api_get_adc, on_ok, on_err)
 
-    def _dac_call(self, var: tk.StringVar, sel: api.DacSel, btn: ttk.Button, label: str) -> None:
+    def _dac_call(self, var, sel, btn, label) -> None:
         try:
             v = float(var.get())
         except ValueError:
-            self.err(ValueError(f"Invalid DAC value: {var.get()!r}"))
-            return
+            self.err(ValueError(f"Invalid DAC value: {var.get()!r}")); return
         if not (-1.0 <= v <= 1.0):
-            self.err(ValueError(f"DAC value {v} out of range [-1, 1]"))
-            return
+            self.err(ValueError(f"DAC value {v} out of range [-1, 1]")); return
         ip, port = self._conn()
         self._prep_call(ip, port)
         self._busy(btn)
@@ -259,13 +274,11 @@ class _SystemTab(_Tab):
     def _on_set_led(self) -> None:
         raw = self._led_var.get().strip()
         try:
-            v = int(raw, 0)  # accept 0x prefix
+            v = int(raw, 0)
         except ValueError:
-            self.err(ValueError(f"Invalid LED value: {raw!r}"))
-            return
+            self.err(ValueError(f"Invalid LED value: {raw!r}")); return
         if not (0 <= v <= 255):
-            self.err(ValueError(f"LED value {v} out of range [0, 255]"))
-            return
+            self.err(ValueError(f"LED value {v} out of range [0, 255]")); return
         ip, port = self._conn()
         self._prep_call(ip, port)
         self._busy(self._led_btn)
@@ -277,57 +290,47 @@ class _SystemTab(_Tab):
         )
 
 
-# ── IO Routing tab ────────────────────────────────────────────────────────────
+# ── IO Routing panel ──────────────────────────────────────────────────────────
 
-class _IORoutingTab(_Tab):
+class _IORoutingPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "IO Routing")
         self._build()
 
     def _build(self) -> None:
-        # DAC1 source
         d1_frm = ttk.LabelFrame(self, text="DAC1 Source", padding=6)
         d1_frm.pack(fill=tk.X, pady=(0, 6))
         self._dac1_sel = tk.IntVar(value=int(api.DacDatSel.REGISTER))
-        for label, val in [("Register", api.DacDatSel.REGISTER),
-                           ("PID",      api.DacDatSel.PID),
-                           ("NCO 1",    api.DacDatSel.NCO_1),
-                           ("NCO 2",    api.DacDatSel.NCO_2)]:
+        for label, val in [("Register", api.DacDatSel.REGISTER), ("PID", api.DacDatSel.PID),
+                           ("NCO 1",    api.DacDatSel.NCO_1),   ("NCO 2", api.DacDatSel.NCO_2)]:
             ttk.Radiobutton(d1_frm, text=label, variable=self._dac1_sel,
-                            value=int(val)).pack(side=tk.LEFT, padx=4)
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
 
-        # DAC2 source
         d2_frm = ttk.LabelFrame(self, text="DAC2 Source", padding=6)
         d2_frm.pack(fill=tk.X, pady=(0, 6))
         self._dac2_sel = tk.IntVar(value=int(api.DacDatSel.REGISTER))
-        for label, val in [("Register", api.DacDatSel.REGISTER),
-                           ("PID",      api.DacDatSel.PID),
-                           ("NCO 1",    api.DacDatSel.NCO_1),
-                           ("NCO 2",    api.DacDatSel.NCO_2)]:
+        for label, val in [("Register", api.DacDatSel.REGISTER), ("PID", api.DacDatSel.PID),
+                           ("NCO 1",    api.DacDatSel.NCO_1),   ("NCO 2", api.DacDatSel.NCO_2)]:
             ttk.Radiobutton(d2_frm, text=label, variable=self._dac2_sel,
-                            value=int(val)).pack(side=tk.LEFT, padx=4)
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
 
-        # PID input
         pid_frm = ttk.LabelFrame(self, text="PID Input", padding=6)
         pid_frm.pack(fill=tk.X, pady=(0, 6))
         self._pid_sel = tk.IntVar(value=int(api.PidDatSel.I_FEED))
-        for label, val in [("I Feed",  api.PidDatSel.I_FEED),
-                           ("Q Feed",  api.PidDatSel.Q_FEED),
-                           ("ADC A",   api.PidDatSel.ADC_A),
-                           ("ADC B",   api.PidDatSel.ADC_B),
+        for label, val in [("I Feed",  api.PidDatSel.I_FEED), ("Q Feed",  api.PidDatSel.Q_FEED),
+                           ("ADC A",   api.PidDatSel.ADC_A),  ("ADC B",   api.PidDatSel.ADC_B),
                            ("FIR Out", api.PidDatSel.FIR_OUT)]:
             ttk.Radiobutton(pid_frm, text=label, variable=self._pid_sel,
-                            value=int(val)).pack(side=tk.LEFT, padx=4)
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
 
-        # Apply + feedback
         self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
         self._apply_btn.pack(anchor=tk.W, pady=(4, 2))
         self._fb_var = tk.StringVar(value="")
         ttk.Label(self, textvariable=self._fb_var, foreground="gray").pack(anchor=tk.W)
 
     def _on_apply(self) -> None:
-        d1 = api.DacDatSel(self._dac1_sel.get())
-        d2 = api.DacDatSel(self._dac2_sel.get())
+        d1  = api.DacDatSel(self._dac1_sel.get())
+        d2  = api.DacDatSel(self._dac2_sel.get())
         pid = api.PidDatSel(self._pid_sel.get())
         ip, port = self._conn()
         self._prep_call(ip, port)
@@ -343,39 +346,35 @@ class _IORoutingTab(_Tab):
         def on_err(e):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
-        self.app.run_in_bg(
-            lambda: api.api_config_io(d1, d2, pid), on_ok, on_err
-        )
+        self.app.run_in_bg(lambda: api.api_config_io(d1, d2, pid), on_ok, on_err)
 
 
-# ── NCO tab ───────────────────────────────────────────────────────────────────
+# ── NCO panel ─────────────────────────────────────────────────────────────────
 
-class _NCOTab(_Tab):
+class _NCOPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "NCO")
         self._build()
 
     def _build(self) -> None:
-        frm = ttk.LabelFrame(self, text="NCO Configuration", padding=8)
-        frm.pack(fill=tk.X)
-
-        ttk.Label(frm, text="Frequency (Hz):").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(self, text="Frequency (Hz):").grid(row=0, column=0, sticky=tk.W)
         self._freq_var = tk.StringVar(value="2000000")
-        ttk.Entry(frm, textvariable=self._freq_var, width=14).grid(row=0, column=1, padx=4)
+        ttk.Entry(self, textvariable=self._freq_var, width=14).grid(row=0, column=1, padx=4)
 
-        ttk.Label(frm, text="Phase shift (°):").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        ttk.Label(self, text="Phase shift (°):").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
         self._shift_var = tk.StringVar(value="0")
-        ttk.Entry(frm, textvariable=self._shift_var, width=14).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Entry(self, textvariable=self._shift_var, width=14).grid(row=1, column=1, padx=4, pady=(4, 0))
 
         self._en_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm, text="Enable", variable=self._en_var).grid(
+        ttk.Checkbutton(self, text="Enable", variable=self._en_var).grid(
             row=2, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
 
-        self._apply_btn = ttk.Button(frm, text="Apply", command=self._on_apply)
+        self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
         self._apply_btn.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
         self._fb_var = tk.StringVar(value="")
-        ttk.Label(self, textvariable=self._fb_var, foreground="gray").pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(self, textvariable=self._fb_var, foreground="gray",
+                  wraplength=300).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
 
     def _on_apply(self) -> None:
         try:
@@ -393,47 +392,39 @@ class _NCOTab(_Tab):
         self._busy(self._apply_btn)
         def on_ok(r):
             self._fb_var.set(
-                f"freq={r.registered_freq:.1f} Hz  "
-                f"freq_err={r.registered_freq_error:.2f} Hz  "
-                f"shift={r.registered_phase_shift:.2f}°  "
-                f"shift_err={r.registered_shift_error:.2f}°  "
-                f"en={r.en_cb}"
+                f"freq={r.registered_freq:.1f} Hz  err={r.registered_freq_error:.2f} Hz  "
+                f"shift={r.registered_phase_shift:.2f}°  en={r.en_cb}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok(f"NCO set  freq≈{r.registered_freq:.1f} Hz  en={r.en_cb}")
         def on_err(e):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
-        self.app.run_in_bg(
-            lambda: api.api_set_nco(freq, shift, en), on_ok, on_err
-        )
+        self.app.run_in_bg(lambda: api.api_set_nco(freq, shift, en), on_ok, on_err)
 
 
-# ── Rotation tab ──────────────────────────────────────────────────────────────
+# ── Rotation panel ────────────────────────────────────────────────────────────
 
-class _RotationTab(_Tab):
+class _RotationPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "IQ Rotation")
         self._build()
 
     def _build(self) -> None:
-        frm = ttk.LabelFrame(self, text="IQ Rotation", padding=8)
-        frm.pack(fill=tk.X)
-
-        ttk.Label(frm, text="Angle (°):").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(self, text="Angle (°):").grid(row=0, column=0, sticky=tk.W)
         self._angle_var = tk.DoubleVar(value=0.0)
-        ttk.Entry(frm, textvariable=self._angle_var, width=10).grid(row=0, column=1, padx=4)
+        ttk.Entry(self, textvariable=self._angle_var, width=10).grid(row=0, column=1, padx=4)
 
-        # slider for convenience
-        scale = ttk.Scale(frm, from_=-180, to=180, orient=tk.HORIZONTAL,
-                          variable=self._angle_var, length=240)
-        scale.grid(row=1, column=0, columnspan=3, sticky=tk.EW, pady=(4, 0))
+        scale = ttk.Scale(self, from_=-180, to=180, orient=tk.HORIZONTAL,
+                          variable=self._angle_var)
+        scale.grid(row=1, column=0, columnspan=2, sticky=tk.EW, pady=(4, 0))
 
-        self._apply_btn = ttk.Button(frm, text="Apply", command=self._on_apply)
+        self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
         self._apply_btn.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
         self._fb_var = tk.StringVar(value="")
-        ttk.Label(self, textvariable=self._fb_var, foreground="gray").pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(self, textvariable=self._fb_var, foreground="gray",
+                  wraplength=300).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
 
     def _on_apply(self) -> None:
         try:
@@ -446,55 +437,48 @@ class _RotationTab(_Tab):
         def on_ok(r):
             self._fb_var.set(
                 f"cos={r.cos_cb:.4f}  sin={r.sin_cb:.4f}  "
-                f"i_feed={r.i_feed_cb:.4f}  q_feed={r.q_feed_cb:.4f}"
+                f"i={r.i_feed_cb:.4f}  q={r.q_feed_cb:.4f}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok(f"Rotation set  θ={theta:.1f}°")
         def on_err(e):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
-        self.app.run_in_bg(
-            lambda: api.api_set_rotation(theta), on_ok, on_err
-        )
+        self.app.run_in_bg(lambda: api.api_set_rotation(theta), on_ok, on_err)
 
 
-# ── FIR tab ───────────────────────────────────────────────────────────────────
+# ── FIR panel ─────────────────────────────────────────────────────────────────
 
-class _FIRTab(_Tab):
+class _FIRPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "FIR")
         self._build()
 
     def _build(self) -> None:
-        # FIR input select
-        in_frm = ttk.LabelFrame(self, text="FIR Input", padding=6)
+        in_frm = ttk.LabelFrame(self, text="Input", padding=6)
         in_frm.pack(fill=tk.X, pady=(0, 6))
         self._input_sel = tk.IntVar(value=int(api.FirInputSel.ADC1))
-        for label, val in [("ADC 1",  api.FirInputSel.ADC1),
-                           ("ADC 2",  api.FirInputSel.ADC2),
-                           ("I Feed", api.FirInputSel.I_FEED),
-                           ("Q Feed", api.FirInputSel.Q_FEED)]:
+        for label, val in [("ADC 1",  api.FirInputSel.ADC1), ("ADC 2",  api.FirInputSel.ADC2),
+                           ("I Feed", api.FirInputSel.I_FEED), ("Q Feed", api.FirInputSel.Q_FEED)]:
             ttk.Radiobutton(in_frm, text=label, variable=self._input_sel,
-                            value=int(val)).pack(side=tk.LEFT, padx=4)
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
 
-        # Filter design
-        des_frm = ttk.LabelFrame(self, text="Filter Design", padding=8)
+        des_frm = ttk.LabelFrame(self, text="Filter Design", padding=6)
         des_frm.pack(fill=tk.X, pady=(0, 6))
 
         ttk.Label(des_frm, text="NTAPS:").grid(row=0, column=0, sticky=tk.W)
         ttk.Label(des_frm, text=str(FIR_NTAPS)).grid(row=0, column=1, sticky=tk.W, padx=4)
 
-        ttk.Label(des_frm, text="Corner freq (Hz):").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        ttk.Label(des_frm, text="Corner (Hz):").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
         self._corner_var = tk.StringVar(value="5000000")
-        ttk.Entry(des_frm, textvariable=self._corner_var, width=14).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Entry(des_frm, textvariable=self._corner_var, width=12).grid(row=1, column=1, padx=4, pady=(4, 0))
 
         ttk.Label(des_frm, text="Window:").grid(row=2, column=0, sticky=tk.W, pady=(4, 0))
         self._window_var = tk.StringVar(value="hann")
-        ttk.Combobox(des_frm, textvariable=self._window_var, width=12,
+        ttk.Combobox(des_frm, textvariable=self._window_var, width=10,
                      values=["hann", "hamming", "blackman", "rectangular"],
                      state="readonly").grid(row=2, column=1, padx=4, pady=(4, 0))
 
-        # Apply + feedback
         self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
         self._apply_btn.pack(anchor=tk.W, pady=(4, 2))
         self._fb_var = tk.StringVar(value="")
@@ -506,76 +490,65 @@ class _FIRTab(_Tab):
         except ValueError:
             self.err(ValueError(f"Invalid corner frequency: {self._corner_var.get()!r}")); return
         if corner <= 0 or corner >= FS / 2:
-            self.err(ValueError(f"Corner frequency must be in (0, {FS/2:.0f})")); return
-
+            self.err(ValueError(f"Corner must be in (0, {FS/2:.0f})")); return
         window = self._window_var.get()
         try:
             coeffs = design_lowpass(FIR_NTAPS, corner, window)
         except ValueError as e:
             self.err(e); return
-
         dc_gain  = sum(coeffs)
         max_coef = max(abs(c) for c in coeffs)
         sel = api.FirInputSel(self._input_sel.get())
-
         ip, port = self._conn()
         self._prep_call(ip, port)
         self._busy(self._apply_btn)
-
         def on_ok(r):
             self._fb_var.set(
-                f"ntaps={FIR_NTAPS}  DC gain={dc_gain:.4f}  "
-                f"max|coeff|={max_coef:.4f}  input={sel.name}"
+                f"DC gain={dc_gain:.4f}  max|c|={max_coef:.4f}  input={sel.name}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok(f"FIR set  corner={corner/1e6:.3f} MHz  window={window}  input={sel.name}")
         def on_err(e):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
-
-        self.app.run_in_bg(
-            lambda: api.api_set_fir_coeffs(coeffs, sel), on_ok, on_err
-        )
+        self.app.run_in_bg(lambda: api.api_set_fir_coeffs(coeffs, sel), on_ok, on_err)
 
 
-# ── PID tab ───────────────────────────────────────────────────────────────────
+# ── PID panel ─────────────────────────────────────────────────────────────────
 
-class _PIDTab(_Tab):
+class _PIDPanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "PID")
         self._build()
 
     def _build(self) -> None:
-        frm = ttk.LabelFrame(self, text="PID Parameters", padding=8)
-        frm.pack(fill=tk.X)
-
         fields = [
-            ("Kp [-1, 1):",     "kp",  "0.5"),
-            ("Ki [-1, 1):",     "ki",  "0.0"),
-            ("Kd [-1, 1):",     "kd",  "0.0"),
-            ("Setpoint [-1,1):", "sp", "0.0"),
-            ("Decimation:",     "dec", "100"),
-            ("Alpha (0–15):",   "alpha","4"),
-            ("Satwidth (15–31):","sat", "31"),
+            ("Kp [-1, 1):",      "kp",    "0.5"),
+            ("Ki [-1, 1):",      "ki",    "0.0"),
+            ("Kd [-1, 1):",      "kd",    "0.0"),
+            ("Setpoint [-1,1):", "sp",    "0.0"),
+            ("Decimation:",      "dec",   "100"),
+            ("Alpha (0–15):",    "alpha", "4"),
+            ("Satwidth (15–31):","sat",   "31"),
         ]
         self._vars: dict[str, tk.StringVar] = {}
         for row, (label, key, default) in enumerate(fields):
-            ttk.Label(frm, text=label).grid(row=row, column=0, sticky=tk.W, pady=1)
+            ttk.Label(self, text=label).grid(row=row, column=0, sticky=tk.W, pady=1)
             v = tk.StringVar(value=default)
             self._vars[key] = v
-            ttk.Entry(frm, textvariable=v, width=10).grid(row=row, column=1, padx=6, pady=1)
+            ttk.Entry(self, textvariable=v, width=10).grid(row=row, column=1, padx=6, pady=1)
 
         self._en_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm, text="Enable", variable=self._en_var).grid(
+        ttk.Checkbutton(self, text="Enable", variable=self._en_var).grid(
             row=len(fields), column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
 
-        self._apply_btn = ttk.Button(frm, text="Apply", command=self._on_apply)
-        self._apply_btn.grid(row=len(fields)+1, column=0, columnspan=2,
-                             sticky=tk.W, pady=(6, 0))
+        self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
+        self._apply_btn.grid(row=len(fields)+1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
         self._fb_var = tk.StringVar(value="")
         ttk.Label(self, textvariable=self._fb_var, foreground="gray",
-                  wraplength=480).pack(anchor=tk.W, pady=(4, 0))
+                  wraplength=300).grid(row=len(fields)+2, column=0, columnspan=2,
+                                       sticky=tk.W, pady=(4, 0))
 
     def _on_apply(self) -> None:
         try:
@@ -614,33 +587,29 @@ class _PIDTab(_Tab):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
         self.app.run_in_bg(
-            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en),
-            on_ok, on_err
+            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en), on_ok, on_err
         )
 
 
-# ── Frame Capture tab ─────────────────────────────────────────────────────────
+# ── Frame Capture panel ───────────────────────────────────────────────────────
 
-class _FrameCaptureTab(_Tab):
+class _FrameCapturePanel(_Panel):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        super().__init__(parent, app, "Frame Capture")
         self._build()
 
     def _build(self) -> None:
-        frm = ttk.LabelFrame(self, text="DMA Frame Capture", padding=8)
-        frm.pack(fill=tk.X)
-
-        ttk.Label(frm, text="Frame code:").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(self, text="Frame code:").grid(row=0, column=0, sticky=tk.W)
         self._fc_var = tk.StringVar(value=api.FrameCode.ANGLES_AND_ESIGS.name)
-        fc_names = [fc.name for fc in api.FrameCode]
-        ttk.Combobox(frm, textvariable=self._fc_var, values=fc_names,
-                     width=22, state="readonly").grid(row=0, column=1, padx=4)
+        ttk.Combobox(self, textvariable=self._fc_var,
+                     values=[fc.name for fc in api.FrameCode],
+                     width=20, state="readonly").grid(row=0, column=1, padx=4)
 
-        ttk.Label(frm, text="Decimation:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        ttk.Label(self, text="Decimation:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
         self._dec_var = tk.StringVar(value="1")
-        ttk.Entry(frm, textvariable=self._dec_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Entry(self, textvariable=self._dec_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
 
-        self._capture_btn = ttk.Button(frm, text="Capture Frame", command=self._on_capture)
+        self._capture_btn = ttk.Button(self, text="Capture Frame", command=self._on_capture)
         self._capture_btn.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
 
     def _on_capture(self) -> None:
@@ -658,9 +627,6 @@ class _FrameCaptureTab(_Tab):
         self._prep_call(ip, port)
         self._busy(self._capture_btn, "Capturing…")
 
-        def do_capture():
-            return api.api_get_frame(dec, fc)
-
         def on_ok(r: api.FrameResult):
             self._unbusy(self._capture_btn, "Capture Frame")
             self.ok(f"Captured {r.data.shape[0]} samples — {fc.name}")
@@ -670,23 +636,23 @@ class _FrameCaptureTab(_Tab):
             self._unbusy(self._capture_btn, "Capture Frame")
             self.err(e)
 
-        self.app.run_in_bg(do_capture, on_ok, on_err)
+        self.app.run_in_bg(lambda: api.api_get_frame(dec, fc), on_ok, on_err)
 
     def _plot_frame(self, r: api.FrameResult, fc: api.FrameCode, dec: int) -> None:
-        cols = r.columns
+        cols   = r.columns
         n_cols = len(cols) if cols else 1
-        data = r.data
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        data   = r.data
+        ts     = datetime.datetime.now().strftime("%H:%M:%S")
 
         fig, axes = plt.subplots(n_cols, 1, figsize=(10, 2.5 * n_cols), squeeze=False)
         fig.suptitle(f"{fc.name}  dec={dec}  {ts}", fontsize=10)
 
         for i, ax in enumerate(axes[:, 0]):
             if data.ndim == 2 and i < data.shape[1]:
-                y = data[:, i]
+                y        = data[:, i]
                 col_name = cols[i] if i < len(cols) else f"col{i}"
             elif data.ndim == 1 and i == 0:
-                y = data
+                y        = data
                 col_name = cols[0] if cols else "data"
             else:
                 continue
