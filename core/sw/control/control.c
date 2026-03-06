@@ -861,197 +861,74 @@ int cmd_test_frame(cmd_ctx_t* ctx)
 }
 
 
-//Note that this command may be destructive towards cmd_config_io and will override the PID setpoint
 #define DAC_ZERO 8192
-int cmd_lock_in(cmd_ctx_t* ctx)
+
+#define SWEEP_RAMP_OK           0
+#define SWEEP_RAMP_INVALID_RANGE  1
+#define SWEEP_RAMP_INVALID_POINTS 2
+#define SWEEP_RAMP_FOPEN_ERR    3
+
+int cmd_sweep_ramp(cmd_ctx_t* ctx)
 {
-    int return_code = LOCK_IN_OK;
-    size_t index = 0;
+    float    v0         = ctx->float_args[0];
+    float    v1         = ctx->float_args[1];
+    uint32_t num_points = ctx->uint_args[0];
+    uint32_t dac_sel    = ctx->uint_args[1];
+    uint32_t delay_us   = ctx->uint_args[2];
 
-    uint32_t dac_select = ctx->uint_args[0];
-    uint32_t pid_select = ctx->uint_args[1];
-    uint32_t num_points = ctx->uint_args[2];
-    uint32_t us_delay = ctx->uint_args[3];
-    bool log_data = (bool)ctx->uint_args[4];
+    if (v0 < -1.0f || v0 > 1.0f || v1 < -1.0f || v1 > 1.0f)
+        return SWEEP_RAMP_INVALID_RANGE;
+    if (num_points < 2 || num_points > 16384)
+        return SWEEP_RAMP_INVALID_POINTS;
 
-    if(dac_select > 1) return_code = LOCK_IN_INVALID_DAC;
-    if(pid_select > 3) return_code = LOCK_IN_INVALID_PID_FEED;
-    
-    FILE* f;
+    float step = (v1 - v0) / (float)num_points;
 
-    if(log_data)
+    pdh_cmd_t set_dac_cmd;
+    set_dac_cmd.raw = 0;
+    set_dac_cmd.dac_cmd.cmd     = CMD_SET_DAC;
+    set_dac_cmd.dac_cmd.dac_sel = dac_sel;
+
+    pdh_cmd_t cs_cmd;
+    cs_cmd.raw = 0;
+    cs_cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
+
+    static const cs_sel_e sels[4] = {
+        CHECK_ADC_DAT_A_16S,
+        CHECK_ADC_DAT_B_16S,
+        CHECK_I_FEED,
+        CHECK_Q_FEED,
+    };
+
+    FILE *f = fopen("sweep_log.csv", "w");
+    if (!f) return SWEEP_RAMP_FOPEN_ERR;
+
+    for (uint32_t i = 0; i < num_points; i++)
     {
-        f = fopen("lockin_log.csv", "w");
-        if (!f) return_code = LOCK_IN_FOPEN_ERR;
-    }
+        float v = v0 + i * step;
 
-    if(return_code == LOCK_IN_OK)
-    {
-        pdh_cmd_t cmd;
-        cmd.raw = 0;
-
-        /*
-        *  PROCEDURE:
-        *  1. Set register of target DAC to neutral
-        *  2. Switch target DAC to register, nontarget DAC to whatever it was before, controller feed to feed select
-        *  3. Disable PID module
-        *  4. Calculate sweep range and perform sweep, get results via selected ADC
-        *  5. Calculate new SP, reprogram controller to new SP
-        *  6. Route target DAC to controller and enable PID
-        * */
-        
-        cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
-        cmd.cs_cmd.reg_sel = CHECK_IO;
-        pdh_callback_t cb = pdh_execute_cmd(cmd);
-
-        uint8_t dac1_dat_sel = cb.check_io_cb.dac1_dat_sel_r;
-        uint8_t dac2_dat_sel = cb.check_io_cb.dac2_dat_sel_r;
-
-
-        //Set register to 0V
-        cmd.raw = 0;
-        cmd.dac_cmd.cmd = CMD_SET_DAC;
-        cmd.dac_cmd.dac_code = DAC_ZERO;
-        cmd.dac_cmd.dac_sel = dac_select;
-        cb = pdh_execute_cmd(cmd);
-
-        cmd.raw = 0;
-        cmd.config_io_cmd.cmd = CMD_CONFIG_IO;
-        if(dac_select == DAC_1)
-        {
-            cmd.config_io_cmd.dac1_dat_sel = SELECT_REGISTER;
-            cmd.config_io_cmd.dac2_dat_sel = dac2_dat_sel;
-            cmd.config_io_cmd.pid_dat_sel = pid_select;
-        }
-        else
-        {
-            cmd.config_io_cmd.dac1_dat_sel = dac1_dat_sel;
-            cmd.config_io_cmd.dac2_dat_sel = SELECT_REGISTER;
-            cmd.config_io_cmd.pid_dat_sel = pid_select;
-        }
-        cb = pdh_execute_cmd(cmd);
-        
-        cmd.raw = 0;
-        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = PID_SELECT_EN;
-        cmd.set_pid_cmd.payload = PID_DISABLE;
-        cb = pdh_execute_cmd(cmd);
-
-        uint16_t reg_sel;
-        switch(pid_select)
-        {
-            case I_FEED_R:
-                reg_sel = CHECK_I_FEED;
-                break;
-
-            case Q_FEED_R:
-                reg_sel = CHECK_Q_FEED;
-                break;
-
-            case DAT_A_16_S:
-                reg_sel = CHECK_ADC_DAT_A_16S;
-                break;
-
-            case DAT_B_16_S:
-                reg_sel = CHECK_ADC_DAT_B_16S;
-                break;
-
-            default:
-                reg_sel = CHECK_ADC_DAT_A_16S;
-                break;
-        }
-
-        float voltage_step_f = 1.0f/num_points;
-        int16_t voltage_step_i = lrintf(voltage_step_f * 16383.0);
-        
-        if(voltage_step_i < 0) return -1;
-
-        pdh_cmd_t set_dac_cmd, get_err_cmd;
-        set_dac_cmd.raw = 0;
-        get_err_cmd.raw = 0;
-        set_dac_cmd.dac_cmd.cmd = CMD_SET_DAC;
-        set_dac_cmd.dac_cmd.dac_sel = dac_select;
-        get_err_cmd.cs_cmd.cmd = CMD_CHECK_SIGNED;
-        get_err_cmd.cs_cmd.reg_sel = reg_sel;
-
-        int16_t voltage_code_i = 16383; //start sweep at -1V
-        uint16_t dac_init_code = DAC_ZERO;
-        int16_t sp = 0; //All valid feeds are zero-centered 16-bit signed
-        uint16_t best_delta = 0xFFFF;
-
-
-        size_t step = 0;
-        while(voltage_code_i >= 0)
-        {
-            uint16_t unsigned_voltage = (uint16_t)voltage_code_i;
-
-            set_dac_cmd.dac_cmd.dac_code = unsigned_voltage;
-            pdh_execute_cmd(set_dac_cmd);
-            usleep(us_delay);
-            cb = pdh_execute_cmd(get_err_cmd);
-
-            int16_t delta = (int16_t)cb.cs_cb.payload;
-            uint16_t abs_delta = ABS(delta);
-            if(abs_delta < best_delta)
-            {
-                best_delta = abs_delta;
-                dac_init_code = unsigned_voltage;
-                sp = delta;
-            }
-
-            if(log_data)
-            {
-                float voltage_code_converted = -(voltage_code_i - DAC_ZERO)/8192.0f;
-                float delta_converted = delta/8192.0f;
-                float sp_converted = sp/8192.0f;
-                uint32_t step_converted = (uint32_t)step;
-                fprintf(f, "%f, %f, %f, %u\n", voltage_code_converted, delta_converted, sp_converted, step_converted);
-                step++;
-            }
-
-            voltage_code_i -= voltage_step_i;
-        }
-
-        set_dac_cmd.dac_cmd.dac_code = dac_init_code;
+        int32_t code_i = DAC_ZERO - (int32_t)(v * 8192);
+        if (code_i < 0)     code_i = 0;
+        if (code_i > 16383) code_i = 16383;
+        set_dac_cmd.dac_cmd.dac_code = (uint16_t)code_i;
         pdh_execute_cmd(set_dac_cmd);
 
-        cmd.raw = 0;
-        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = PID_SELECT_SP; 
-        cmd.set_pid_cmd.payload = 0; //sp;
-        cb = pdh_execute_cmd(cmd);
+        if (delay_us > 0) usleep(delay_us);
 
-        cmd.raw = 0;
-        cmd.config_io_cmd.cmd = CMD_CONFIG_IO;
-        if(dac_select == DAC_1)
+        float vals[4] = {0};
+        for (int s = 0; s < 4; s++)
         {
-            cmd.config_io_cmd.dac1_dat_sel = SELECT_PID;
-            cmd.config_io_cmd.dac2_dat_sel = dac2_dat_sel;
-            cmd.config_io_cmd.pid_dat_sel = pid_select;
+            cs_cmd.cs_cmd.reg_sel = sels[s];
+            pdh_callback_t cb = pdh_execute_cmd(cs_cmd);
+            vals[s] = (int16_t)cb.cs_cb.payload / 8192.0f;
         }
-        else
-        {
-            cmd.config_io_cmd.dac1_dat_sel = dac1_dat_sel;
-            cmd.config_io_cmd.dac2_dat_sel = SELECT_PID;
-            cmd.config_io_cmd.pid_dat_sel = pid_select;
-        }
-        cb = pdh_execute_cmd(cmd);
 
-        cmd.raw = 0;
-        cmd.set_pid_cmd.cmd = CMD_SET_PID_COEFFS;
-        cmd.set_pid_cmd.coeff_sel = PID_SELECT_EN;
-        cmd.set_pid_cmd.payload = PID_ENABLE;
-        cb = pdh_execute_cmd(cmd);        
-        
-        float dac_init_converted = -((int16_t)dac_init_code - DAC_ZERO)/8192.0f;
-
-        push_ctx_cb(ctx, &index, &dac_init_converted, FLOAT_TAG, "DAC_LOCK_POINT");
-    }
-    
-    if(log_data) 
-    {
-        fclose(f);
+        fprintf(f, "%f,%f,%f,%f,%f\n", v, vals[0], vals[1], vals[2], vals[3]);
     }
 
-    return return_code;
+    fclose(f);
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &num_points, UINT_TAG, "NUM_POINTS_CB");
+
+    return SWEEP_RAMP_OK;
 }

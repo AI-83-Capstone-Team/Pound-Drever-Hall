@@ -114,9 +114,12 @@ The following rules must never be broken under any circumstances.
 
 
 # Python Environment
+Use the following venv for running any python code:
 ``` bash
 source myenv/bin/activate
 ```
+
+If you write code that requires a new library not already inside requirements.txt, update requirements.txt accordingly
 
 
 

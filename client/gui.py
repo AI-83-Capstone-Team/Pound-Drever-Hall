@@ -50,7 +50,7 @@ class _App(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("PDH Controller")
+        self.title("Pitaya Whisperer")
         self.resizable(True, True)
         self._build_settings_bar()
         self._build_panels()
@@ -96,9 +96,10 @@ class _App(tk.Tk):
         col1.grid(row=0, column=1, sticky=tk.NSEW, padx=4)
         col2.grid(row=0, column=2, sticky=tk.NSEW, padx=(4, 0))
 
-        # Col 0: System, IO Routing
+        # Col 0: System, IO Routing, Sweep Ramp
         _SystemPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
-        _IORoutingPanel(col0, self).pack(fill=tk.X)
+        _IORoutingPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
+        _SweepRampPanel(col0, self).pack(fill=tk.X)
 
         # Col 1: NCO, Rotation, FIR
         _NCOPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
@@ -662,6 +663,108 @@ class _FrameCapturePanel(_Panel):
             ax.set_xlabel("sample" if i == n_cols - 1 else "")
             ax.grid(True, alpha=0.3)
 
+        fig.tight_layout()
+        plt.show(block=False)
+
+
+# ── Sweep Ramp panel ──────────────────────────────────────────────────────────
+
+class _SweepRampPanel(_Panel):
+    def __init__(self, parent, app):
+        super().__init__(parent, app, "Sweep Ramp")
+        self._build()
+
+    def _build(self) -> None:
+        dac_frm = ttk.LabelFrame(self, text="DAC", padding=6)
+        dac_frm.pack(fill=tk.X, pady=(0, 6))
+        self._dac_sel = tk.IntVar(value=int(api.DacSel.DAC_1))
+        ttk.Radiobutton(dac_frm, text="DAC 1", variable=self._dac_sel,
+                        value=int(api.DacSel.DAC_1)).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(dac_frm, text="DAC 2", variable=self._dac_sel,
+                        value=int(api.DacSel.DAC_2)).pack(side=tk.LEFT, padx=4)
+
+        rng_frm = ttk.Frame(self)
+        rng_frm.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(rng_frm, text="V0:").grid(row=0, column=0, sticky=tk.W)
+        self._v0_var = tk.StringVar(value="-1.0")
+        ttk.Entry(rng_frm, textvariable=self._v0_var, width=8).grid(row=0, column=1, padx=4)
+        ttk.Label(rng_frm, text="V1:").grid(row=0, column=2, sticky=tk.W, padx=(8, 0))
+        self._v1_var = tk.StringVar(value="1.0")
+        ttk.Entry(rng_frm, textvariable=self._v1_var, width=8).grid(row=0, column=3, padx=4)
+
+        ttk.Label(rng_frm, text="Points:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        self._pts_var = tk.StringVar(value="100")
+        ttk.Entry(rng_frm, textvariable=self._pts_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Label(rng_frm, text="Delay µs:").grid(row=1, column=2, sticky=tk.W, padx=(8, 0), pady=(4, 0))
+        self._delay_var = tk.StringVar(value="0")
+        ttk.Entry(rng_frm, textvariable=self._delay_var, width=8).grid(row=1, column=3, padx=4, pady=(4, 0))
+
+        plot_frm = ttk.LabelFrame(self, text="Plot", padding=6)
+        plot_frm.pack(fill=tk.X, pady=(0, 6))
+        self._plot_adc_a = tk.BooleanVar(value=True)
+        self._plot_adc_b = tk.BooleanVar(value=True)
+        self._plot_i     = tk.BooleanVar(value=True)
+        self._plot_q     = tk.BooleanVar(value=True)
+        ttk.Checkbutton(plot_frm, text="ADC A", variable=self._plot_adc_a).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
+
+        self._run_btn = ttk.Button(self, text="Run Sweep", command=self._on_run)
+        self._run_btn.pack(anchor=tk.W, pady=(2, 0))
+
+    def _on_run(self) -> None:
+        try:
+            v0    = float(self._v0_var.get())
+            v1    = float(self._v1_var.get())
+            pts   = int(self._pts_var.get())
+            delay = int(self._delay_var.get())
+        except ValueError as e:
+            self.err(e); return
+        if not (-1.0 <= v0 <= 1.0 and -1.0 <= v1 <= 1.0):
+            self.err(ValueError("V0 and V1 must be in [-1.0, 1.0]")); return
+        if not (2 <= pts <= 16384):
+            self.err(ValueError("Points must be in [2, 16384]")); return
+        if delay < 0:
+            self.err(ValueError("Delay must be >= 0")); return
+
+        dac = api.DacSel(self._dac_sel.get())
+        active_cols = [
+            col for col, var in zip(
+                ["adc_a", "adc_b", "i_feed", "q_feed"],
+                [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
+            ) if var.get()
+        ]
+
+        ip, port = self._conn()
+        self._prep_call(ip, port)
+        self._busy(self._run_btn, "Running…")
+
+        def on_ok(r: api.SweepRampResult):
+            self._unbusy(self._run_btn, "Run Sweep")
+            self.ok(f"Sweep done  {r.num_points_cb} pts")
+            if active_cols and r.data.size > 0:
+                self._plot_sweep(r, active_cols)
+
+        def on_err(e):
+            self._unbusy(self._run_btn, "Run Sweep")
+            self.err(e)
+
+        self.app.run_in_bg(
+            lambda: api.api_sweep_ramp(v0, v1, pts, dac, write_delay_us=delay),
+            on_ok, on_err,
+        )
+
+    def _plot_sweep(self, r: api.SweepRampResult, active_cols: list[str]) -> None:
+        x = r.data[:, 0]  # dac_v
+        n = len(active_cols)
+        fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
+        for i, col in enumerate(active_cols):
+            idx = api.SWEEP_COLUMNS.index(col)
+            axes[i, 0].plot(x, r.data[:, idx], linewidth=0.8)
+            axes[i, 0].set_ylabel(col, fontsize=12)
+            axes[i, 0].grid(True, alpha=0.3)
+        axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=12)
         fig.tight_layout()
         plt.show(block=False)
 

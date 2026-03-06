@@ -5,7 +5,7 @@ Each api_* function sends one command to the C server, parses the response,
 and returns a typed result dataclass.  The @api_cmd decorator enforces
 status == 0, raising RuntimeError on any non-zero return code.
 
-CSV files (dma_log.csv, lockin_log.csv) are fetched from the Red Pitaya via
+CSV files (dma_log.csv, sweep_log.csv) are fetched from the Red Pitaya via
 SFTP and saved locally under LOCAL_DATA_DIR.  Plotting is left to the caller.
 """
 from __future__ import annotations
@@ -14,16 +14,16 @@ import math
 import os
 import socket
 from functools import wraps
-from typing import Optional
 
 import numpy as np
 import paramiko
 
 from .types import (
     CsSel, ConfigIoResult, DacDatSel, DacSel, FRAME_COLUMNS,
-    FirInputSel, FrameCode, FrameResult, LockInResult, PidDatSel,
+    FirInputSel, FrameCode, FrameResult, PidDatSel, SWEEP_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
     SetFirResult, SetLedResult, SetNcoResult, SetPidResult, SetRotResult,
+    SweepRampResult,
 )
 
 
@@ -34,9 +34,9 @@ SERVER_PORT = 5555
 SSH_USER    = "root"
 SSH_PASS    = "root"
 
-LOCAL_DATA_DIR    = "data"
-REMOTE_DMA_CSV    = "sw/build/dma_log.csv"
-REMOTE_LOCKIN_CSV = "sw/build/lockin_log.csv"
+LOCAL_DATA_DIR   = "data"
+REMOTE_DMA_CSV   = "sw/build/dma_log.csv"
+REMOTE_SWEEP_CSV = "sw/build/sweep_log.csv"
 
 
 # ── Public API surface ─────────────────────────────────────────────────────────
@@ -44,15 +44,16 @@ REMOTE_LOCKIN_CSV = "sw/build/lockin_log.csv"
 __all__ = [
     # enums / types re-exported for one-stop import
     "FrameCode", "DacSel", "DacDatSel", "PidDatSel", "CsSel", "FirInputSel",
+    "SWEEP_COLUMNS",
     # result dataclasses
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
-    "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "LockInResult",
+    "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "SweepRampResult",
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
     "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
-    "api_get_frame", "api_lock_in",
+    "api_get_frame", "api_sweep_ramp",
 ]
 
 
@@ -337,38 +338,34 @@ def api_get_frame(
 
 
 @api_cmd
-def api_lock_in(
-    dac_select: DacSel | int,
-    pid_select: PidDatSel | int,
+def api_sweep_ramp(
+    v0: float,
+    v1: float,
     num_points: int,
-    us_delay: int,
-    log_data: bool,
+    dac_sel: DacSel | int,
+    write_delay_us: int = 0,
     remote_dir: str = "sw/build",
-) -> LockInResult:
+) -> SweepRampResult:
     """
-    Sweep the selected DAC across its full range, find the error-signal zero
-    crossing, program that as the initial DAC value, then enable the PID.
+    Sweep the selected DAC from v0 to v1, reading all four signals (ADC_A,
+    ADC_B, I_FEED, Q_FEED) at every step via CMD_CHECK_SIGNED.
 
-    If log_data=True the sweep data is fetched from the RP and stored in
-    LockInResult.data as a (num_points, 4) ndarray with columns:
-        [dac_voltage, error_signal, setpoint, step_index]
-
-    NOTE: this command overrides config_io and the PID setpoint.
+    Writes sweep_log.csv on the RP; fetches and returns a (num_points, 5)
+    ndarray with columns: dac_v, adc_a, adc_b, i_feed, q_feed.
     """
     r = execute_cmd(
-        f"CMD:lock_in\n"
-        f"U:{int(dac_select)},{int(pid_select)},{num_points},{us_delay},{int(log_data)}\n"
+        f"CMD:sweep_ramp\n"
+        f"F:{v0},{v1}\n"
+        f"U:{num_points},{int(dac_sel)},{write_delay_us}\n"
     )
     status = r.get("status", -1)
-    data: Optional[np.ndarray] = None
-    if status == 0 and log_data:
-        local = _ssh_fetch_csv(
-            f"{remote_dir}/lockin_log.csv",
-            "lockin_log.csv",
-        )
-        data = np.loadtxt(local, delimiter=",")
-    return LockInResult(
+    data = np.empty((0, 5))
+    if status == 0:
+        local = _ssh_fetch_csv(f"{remote_dir}/sweep_log.csv", "sweep_log.csv")
+        data  = np.loadtxt(local, delimiter=",")
+    return SweepRampResult(
         status=status,
-        dac_lock_point=r.get("DAC_LOCK_POINT", float("nan")),
+        num_points_cb=r.get("NUM_POINTS_CB", 0),
         data=data,
+        columns=SWEEP_COLUMNS,
     )

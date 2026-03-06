@@ -25,7 +25,7 @@ import numpy as np
 from pdh_api import (
     DacDatSel, DacSel, FirInputSel, FrameCode, PidDatSel, CsSel,
     api_check_signed, api_config_io, api_get_adc, api_get_frame,
-    api_lock_in, api_reset_fpga, api_set_dac, api_set_led,
+    api_reset_fpga, api_set_dac, api_set_led,
     api_set_fir, api_set_nco, api_set_pid, api_set_rotation,
 )
 

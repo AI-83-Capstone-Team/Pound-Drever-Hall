@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Optional
-
 import numpy as np
 
 
@@ -167,11 +165,15 @@ class FrameResult:
     columns: list[str]
 
 
+SWEEP_COLUMNS = ["dac_v", "adc_a", "adc_b", "i_feed", "q_feed"]
+
+
 @dataclass
-class LockInResult:
-    status: int
-    dac_lock_point: float
-    data: Optional[np.ndarray]   # None when log_data=False
+class SweepRampResult:
+    status:        int
+    num_points_cb: int
+    data:          np.ndarray   # shape (num_points, 5): dac_v, adc_a, adc_b, i_feed, q_feed
+    columns:       list[str]    # always SWEEP_COLUMNS
 
 
 @dataclass

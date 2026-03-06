@@ -152,6 +152,14 @@ python gui.py
 
 The **IP** and **Port** fields at the top of the window default to `10.42.0.62` / `5555`. Change them before issuing any command to retarget a different device; the fields are read on every button press.
 
+### Layout
+
+```
+Col 0: System, IO Routing, Sweep Ramp
+Col 1: NCO, Rotation, FIR
+Col 2: PID, Frame Capture
+```
+
 ### Tabs
 
 #### System
@@ -238,6 +246,21 @@ Triggers a DMA snapshot and plots the result in a new matplotlib window.
 
 Click **Capture Frame** to start a capture. The button disables while the DMA transfer and SFTP retrieval complete (typically 0.5–2 s). On success, a new matplotlib window opens with one subplot per signal column; each click creates an additional independent window. The status bar at the bottom of the GUI shows the sample count and frame code on success, or the error message in red on failure.
 
+#### Sweep Ramp
+
+Steps a selected DAC from V0 to V1 and reads all four internal signals (ADC A, ADC B, I Feed, Q Feed) at every step via `CMD_CHECK_SIGNED`.
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| DAC | DAC 1 | Target DAC for the voltage ramp. |
+| V0 | −1.0 | Start voltage in [−1.0, 1.0] V. |
+| V1 | 1.0 | End voltage in [−1.0, 1.0] V (not included). |
+| Points | 100 | Number of steps [2, 16384]. |
+| Delay µs | 0 | Per-step settling delay in microseconds. |
+| Plot checkboxes | all on | Select which of the four signals to plot. |
+
+Click **Run Sweep** to execute. The CSV (`sweep_log.csv`) is fetched from the RP and plotted as one subplot per selected signal versus DAC voltage, with a shared x-axis. Each click creates an independent window.
+
 ### Status Bar
 
 The status bar at the bottom of the window shows the result of the most recent command:
@@ -314,7 +337,7 @@ All values are plain ASCII. The Python client's `_parse_response()` coerces each
 
 ### Server Dispatch Table
 
-`server.c` maintains a static table of 12 entries:
+`server.c` maintains a static table of 13 entries:
 
 ```c
 static cmd_entry_t gCmds[NUM_CMDS] = {
@@ -329,7 +352,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_pid",      cmd_set_pid,      4, 0, 4},
     {"set_nco",      cmd_set_nco,      2, 0, 1},
     {"config_io",    cmd_config_io,    0, 0, 3},
-    {"lock_in",      cmd_lock_in,      0, 0, 5},
+    {"sweep_ramp",   cmd_sweep_ramp,   2, 0, 3},
 };
 ```
 

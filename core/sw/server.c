@@ -39,7 +39,7 @@ static cmd_entry_t gCmds[NUM_CMDS] = {
     {"set_fir", cmd_set_fir, 0, 0, 1},
     {"set_nco", cmd_set_nco, 2, 0, 1},
     {"config_io", cmd_config_io, 0, 0, 3},
-    {"lock_in", cmd_lock_in, 0, 0, 5}
+    {"sweep_ramp", cmd_sweep_ramp, 2, 0, 3}
 };
 
 
