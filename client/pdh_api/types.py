@@ -177,6 +177,13 @@ class SweepRampResult:
 
 
 @dataclass
+class LockPointResult:
+    G:                 np.ndarray   # shape (num_points,), golden signal in volts
+    optimal_angle_deg: float        # degrees, for api_set_rotation
+    lock_point:        float        # recommended DAC voltage (zero crossing)
+
+
+@dataclass
 class SetFirResult:
     status: int
     input_sel_cb: int

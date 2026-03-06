@@ -20,7 +20,7 @@ import paramiko
 
 from .types import (
     CsSel, ConfigIoResult, DacDatSel, DacSel, FRAME_COLUMNS,
-    FirInputSel, FrameCode, FrameResult, PidDatSel, SWEEP_COLUMNS,
+    FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, SWEEP_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
     SetFirResult, SetLedResult, SetNcoResult, SetPidResult, SetRotResult,
     SweepRampResult,
@@ -49,11 +49,12 @@ __all__ = [
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
     "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "SweepRampResult",
+    "LockPointResult",
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
     "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
-    "api_get_frame", "api_sweep_ramp",
+    "api_get_frame", "api_sweep_ramp", "compute_lockpoint",
 ]
 
 
@@ -369,3 +370,39 @@ def api_sweep_ramp(
         data=data,
         columns=SWEEP_COLUMNS,
     )
+
+
+def compute_lockpoint(
+    data:         np.ndarray,   # SweepRampResult.data, shape (N, 5)
+    sign_sel:     str = "I",    # "I" or "Q"
+    invert_delta: bool = False,
+) -> LockPointResult:
+    """
+    Compute the optimal IQ rotation angle and PDH lock point from sweep data.
+
+    data:         SweepRampResult.data — columns: dac_v, adc_a, adc_b, i_feed, q_feed
+    sign_sel:     which feed sets the sign of the golden signal G ("I" or "Q")
+    invert_delta: flip the orientation condition (for setups with the opposite standard shape)
+    """
+    dac_v  = data[:, 0]
+    i_feed = data[:, 3]
+    q_feed = data[:, 4]
+
+    sign_basis = i_feed if sign_sel == "I" else q_feed
+    G = np.sqrt(i_feed**2 + q_feed**2) * np.sign(sign_basis)
+
+    ix_max = int(np.argmax(G))
+    ix_min = int(np.argmin(G))
+    delta  = dac_v[ix_max] - dac_v[ix_min]
+
+    should_flip = (delta > 0) if invert_delta else (delta < 0)
+    if should_flip:
+        G = -G
+        ix_max, ix_min = ix_min, ix_max
+
+    optimal_angle_deg = float(np.degrees(np.arctan2(
+        np.dot(q_feed, G), np.dot(i_feed, G)
+    )))
+    lock_point = float((dac_v[ix_max] + dac_v[ix_min]) / 2.0)
+
+    return LockPointResult(G=G, optimal_angle_deg=optimal_angle_deg, lock_point=lock_point)

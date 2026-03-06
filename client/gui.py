@@ -710,8 +710,47 @@ class _SweepRampPanel(_Panel):
         ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
         ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
 
+        lp_frm = ttk.LabelFrame(self, text="Lock Point", padding=6)
+        lp_frm.pack(fill=tk.X, pady=(0, 6))
+
+        self._compute_lp_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(lp_frm, text="Compute lock point",
+                        variable=self._compute_lp_var,
+                        command=self._on_lp_toggle).pack(anchor=tk.W)
+
+        opts_frm = ttk.Frame(lp_frm)
+        opts_frm.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(opts_frm, text="Sign:").pack(side=tk.LEFT)
+        self._sign_sel_var = tk.StringVar(value="I")
+        self._sign_i_rb = ttk.Radiobutton(opts_frm, text="I", variable=self._sign_sel_var, value="I")
+        self._sign_q_rb = ttk.Radiobutton(opts_frm, text="Q", variable=self._sign_sel_var, value="Q")
+        self._sign_i_rb.pack(side=tk.LEFT, padx=(4, 2))
+        self._sign_q_rb.pack(side=tk.LEFT, padx=2)
+        self._invert_delta_var = tk.BooleanVar(value=False)
+        self._invert_cb = ttk.Checkbutton(opts_frm, text="Invert delta",
+                                          variable=self._invert_delta_var)
+        self._invert_cb.pack(side=tk.LEFT, padx=(8, 0))
+
+        res_frm = ttk.Frame(lp_frm)
+        res_frm.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(res_frm, text="Angle:").pack(side=tk.LEFT)
+        self._lp_angle_var = tk.StringVar(value="—")
+        ttk.Label(res_frm, textvariable=self._lp_angle_var, width=12).pack(side=tk.LEFT, padx=(2, 8))
+        ttk.Label(res_frm, text="Lock:").pack(side=tk.LEFT)
+        self._lp_lock_var = tk.StringVar(value="—")
+        ttk.Label(res_frm, textvariable=self._lp_lock_var, width=12).pack(side=tk.LEFT, padx=2)
+
+        # Initialise widget states
+        self._on_lp_toggle()
+
         self._run_btn = ttk.Button(self, text="Run Sweep", command=self._on_run)
         self._run_btn.pack(anchor=tk.W, pady=(2, 0))
+
+    def _on_lp_toggle(self) -> None:
+        state = tk.NORMAL if self._compute_lp_var.get() else tk.DISABLED
+        self._sign_i_rb.configure(state=state)
+        self._sign_q_rb.configure(state=state)
+        self._invert_cb.configure(state=state)
 
     def _on_run(self) -> None:
         try:
@@ -743,8 +782,20 @@ class _SweepRampPanel(_Panel):
         def on_ok(r: api.SweepRampResult):
             self._unbusy(self._run_btn, "Run Sweep")
             self.ok(f"Sweep done  {r.num_points_cb} pts")
+            lp = None
+            if self._compute_lp_var.get() and r.data.size > 0:
+                try:
+                    lp = api.compute_lockpoint(
+                        r.data,
+                        sign_sel=self._sign_sel_var.get(),
+                        invert_delta=self._invert_delta_var.get(),
+                    )
+                    self._lp_angle_var.set(f"{lp.optimal_angle_deg:.2f}°")
+                    self._lp_lock_var.set(f"{lp.lock_point:.4f} V")
+                except Exception as exc:
+                    self.err(exc)
             if active_cols and r.data.size > 0:
-                self._plot_sweep(r, active_cols)
+                self._plot_sweep(r, active_cols, lp)
 
         def on_err(e):
             self._unbusy(self._run_btn, "Run Sweep")
@@ -755,15 +806,24 @@ class _SweepRampPanel(_Panel):
             on_ok, on_err,
         )
 
-    def _plot_sweep(self, r: api.SweepRampResult, active_cols: list[str]) -> None:
+    def _plot_sweep(self, r: api.SweepRampResult, active_cols: list[str],
+                    lp: api.LockPointResult | None = None) -> None:
         x = r.data[:, 0]  # dac_v
-        n = len(active_cols)
+        n = len(active_cols) + (1 if lp is not None else 0)
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
         for i, col in enumerate(active_cols):
             idx = api.SWEEP_COLUMNS.index(col)
             axes[i, 0].plot(x, r.data[:, idx], linewidth=0.8)
             axes[i, 0].set_ylabel(col, fontsize=12)
             axes[i, 0].grid(True, alpha=0.3)
+        if lp is not None:
+            ax_g = axes[len(active_cols), 0]
+            ax_g.plot(x, lp.G, linewidth=0.8)
+            ax_g.set_ylabel("G (V)", fontsize=12)
+            ax_g.grid(True, alpha=0.3)
+            ax_g.axvline(lp.lock_point, color="red", linestyle="--", linewidth=1.0,
+                         label=f"lock={lp.lock_point:.4f} V")
+            ax_g.legend(fontsize=9)
         axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=12)
         fig.tight_layout()
         plt.show(block=False)
