@@ -250,16 +250,16 @@ def main() -> None:
         fig.tight_layout()
         figs.append(fig)
 
-    # ── 11. ANGLES_AND_ESIGS frame ────────────────────────────────────────────
-    _section("11. Frame: ANGLES_AND_ESIGS (demodulated IQ)")
-    ang = api_get_frame(1, FrameCode.ANGLES_AND_ESIGS, REMOTE_DIR)
-    _check("ANGLES_AND_ESIGS frame received", ang.data.size > 0)
+    # ── 11. ADC_DATA_IN frame ────────────────────────────────────────────
+    _section("11. Frame: ADC_DATA_IN (demodulated IQ)")
+    ang = api_get_frame(1, FrameCode.ADC_DATA_IN, REMOTE_DIR)
+    _check("ADC_DATA_IN frame received", ang.data.size > 0)
     if ang.data.size > 0:
         fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
         t = np.arange(len(ang.data))
         axes[0].plot(t, ang.data[:, 0], label="adc_a", linewidth=0.7)
         axes[0].plot(t, ang.data[:, 1], label="adc_b", linewidth=0.7)
-        axes[0].set_title("ANGLES_AND_ESIGS — Raw ADC inputs")
+        axes[0].set_title("ADC_DATA_IN — Raw ADC inputs")
         axes[0].set_ylabel("Code (14-bit signed)")
         axes[0].legend(); axes[0].grid(True, alpha=0.4)
         axes[1].plot(t, ang.data[:, 2], label="i_feed", linewidth=0.7)

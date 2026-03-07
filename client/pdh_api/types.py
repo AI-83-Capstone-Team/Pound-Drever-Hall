@@ -11,7 +11,7 @@ import numpy as np
 # ── Enums (mirror hw_common.h / control code) ─────────────────────────────────
 
 class FrameCode(IntEnum):
-    ANGLES_AND_ESIGS = 0b0000
+    ADC_DATA_IN = 0b0000
     PID_ERR_TAPS     = 0b0001
     IO_SUM_ERR       = 0b0010
     OSC_INSPECT      = 0b0011
@@ -63,7 +63,7 @@ class CsSel(IntEnum):
 
 # Column labels for each frame type, in CSV column order (matches C fprintf order).
 FRAME_COLUMNS: dict[FrameCode, list[str]] = {
-    FrameCode.ANGLES_AND_ESIGS: ["adc_a",    "adc_b",     "i_feed",    "q_feed"],
+    FrameCode.ADC_DATA_IN: ["adc_a",    "adc_b",     "i_feed",    "q_feed"],
     FrameCode.PID_ERR_TAPS:    ["err",       "perr",      "derr",      "ierr"],
     FrameCode.IO_SUM_ERR:      ["err",       "pid_out",   "sum_err"],           # 3 cols
     FrameCode.OSC_INSPECT:     ["nco_out1",  "nco_out2",  "nco_feed1", "nco_feed2"],
@@ -191,3 +191,12 @@ class SetFirResult:
     mem_wen_en_cb: int
     mem_wen_dis_cb: int
     chain_wen_cb: int
+
+
+@dataclass
+class PSDResult:
+    status:  int
+    freqs:   np.ndarray   # shape (N_freq,), Hz
+    psd:     np.ndarray   # shape (N_freq, 4): adc_a, adc_b, i_feed, q_feed
+    fs:      float        # effective sample rate: 125e6 / decimation
+    columns: list[str]    # always ["adc_a", "adc_b", "i_feed", "q_feed"]

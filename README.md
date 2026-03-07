@@ -241,7 +241,7 @@ Triggers a DMA snapshot and plots the result in a new matplotlib window.
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| Frame code | `ANGLES_AND_ESIGS` | Selects which signals are packed into each 64-bit DMA word (see [Frame Types](#frame-types)). |
+| Frame code | `ADC_DATA_IN` | Selects which signals are packed into each 64-bit DMA word (see [Frame Types](#frame-types)). |
 | Decimation | 1 | Sample rate divisor (1 = full 125 MHz rate; N = every Nth sample). |
 
 Click **Capture Frame** to start a capture. The button disables while the DMA transfer and SFTP retrieval complete (typically 0.5–2 s). On success, a new matplotlib window opens with one subplot per signal column; each click creates an additional independent window. The status bar at the bottom of the GUI shows the sample count and frame code on success, or the error message in red on failure.
@@ -847,12 +847,14 @@ The `frame_code` field selects which internal signals are packed into each 64-bi
 
 | Frame Code          | CSV Columns (in order)                              | Description                         |
 |---------------------|-----------------------------------------------------|-------------------------------------|
-| `ANGLES_AND_ESIGS`  | adc_a, adc_b, i_feed, q_feed                       | Raw ADC (signed) and IQ demod       |
+| `ADC_DATA_IN`       | adc_a, adc_b, i_feed, q_feed                       | Raw ADC (signed) and IQ demod       |
 | `PID_ERR_TAPS`      | err, perr, derr, ierr                               | PID error, P, D, I contributions    |
 | `IO_SUM_ERR`        | err, pid_out, sum_err                               | Error, DAC code, integrator state   |
 | `OSC_INSPECT`       | nco_out1, nco_out2, nco_feed1, nco_feed2           | NCO signed outputs and DAC codes    |
 | `OSC_ADDR_CHECK`    | phi1, phi2, addr1, addr2                            | Phase accumulators and ROM addresses|
 | `LOOPBACK`          | dac1_feed, dac2_feed, adc_a, adc_b                  | DAC outputs vs. raw ADC (offset-binary) |
+
+`api_psd(decimation)` wraps `ADC_DATA_IN` capture and computes a one-sided PSD for all four channels via the Wiener-Khinchin theorem (FFT of the autocorrelation). Effective sample rate is `125e6 / decimation` Hz; frequency resolution is `fs / (2N − 1)` where N = 16384 samples.
 
 ---
 

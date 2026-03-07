@@ -540,7 +540,7 @@ fir # (
 
     typedef enum logic [3:0]
     {
-        ANGLES_AND_ESIGS = 4'b0000,
+        ADC_DATA_IN = 4'b0000,
         PID_ERR_TAPS = 4'b0001,
         IO_SUM_ERR = 4'b0010,
         OSC_INSPECT = 4'b0011,
@@ -553,7 +553,7 @@ fir # (
     logic [63:0] dma_data_r, dma_data_w;
     always_comb begin
         unique case(frame_code_r)
-            ANGLES_AND_ESIGS: dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r}; 
+            ADC_DATA_IN: dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r};
             PID_ERR_TAPS: dma_data_w = {err_tap_w, perr_tap_w, derr_tap_w, ierr_tap_w};
             IO_SUM_ERR: dma_data_w = {err_tap_w, 2'b0, pid_out_w, sum_err_tap_w};
             OSC_INSPECT: dma_data_w = {2'b0, nco_feed2_r, 2'b0, nco_feed1_r, nco_out2_r, nco_out1_r};
@@ -805,7 +805,7 @@ fir # (
             q_feed_r <= '0;
 
             dma_decimation_code_r <= 22'd1;
-            frame_code_r <= ANGLES_AND_ESIGS;
+            frame_code_r <= ADC_DATA_IN;
             dma_enable_r <= 1'b0;
             bram_enable_r <= 1'b0;
             bram_edge_acquired_r <= 1'b0;

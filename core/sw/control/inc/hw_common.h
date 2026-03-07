@@ -295,7 +295,7 @@ typedef enum
 
 typedef enum
 {
-    ANGLES_AND_ESIGS = 0b0000,
+    ADC_DATA_IN = 0b0000,
     PID_ERR_TAPS = 0b0001,
     IO_SUM_ERR = 0b0010,
     OSC_INSPECT = 0b0011,
@@ -546,7 +546,7 @@ typedef union __attribute__((packed))
         uint64_t adc_dat_a_16s  : 16;
         uint64_t q_feed_w       : 16;
         uint64_t i_feed_w       : 16;
-    }   angles_and_esigs_frame;
+    }   adc_data_in_frame;
     
     struct __attribute__((packed))
     {

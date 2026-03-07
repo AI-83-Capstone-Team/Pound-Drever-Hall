@@ -6,9 +6,9 @@ API calls run in background daemon threads; results are posted back
 to the main thread via root.after(0, callback).
 
 Layout: three side-by-side columns of labelled panels, all visible at once.
-  Col 0: System, IO Routing
+  Col 0: System, IO Routing, Sweep Ramp
   Col 1: NCO, Rotation, FIR
-  Col 2: PID, Frame Capture
+  Col 2: PID, Frame Capture, PSD
 
 Usage:
     cd client
@@ -19,7 +19,10 @@ from __future__ import annotations
 import datetime
 import threading
 import tkinter as tk
+import tkinter.filedialog as _fd
 from tkinter import messagebox, ttk
+
+import numpy as np
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -34,6 +37,9 @@ DEFAULT_IP   = "10.42.0.62"
 DEFAULT_PORT = 5555
 FIR_NTAPS    = 32       # must match compiled FPGA
 
+PLOT_LINEWIDTH = 0.9    # base line width (≈ 50% thicker than previous 0.6)
+PLOT_FONTSIZE  = 20     # base font size (2× previous 10–12 pt labels)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +47,90 @@ def _update_connection(ip: str, port: int) -> None:
     """Push IP/port into the api module (called before every command)."""
     api.api.SERVER_IP   = ip
     api.api.SERVER_PORT = port
+
+
+def _apply_figure_style(fig, linewidth: float, fontsize: float) -> None:
+    """Apply uniform linewidth and fontsize to all axes in fig."""
+    tick_fs = fontsize * 0.85
+    for ax in fig.get_axes():
+        for line in ax.get_lines():
+            line.set_linewidth(linewidth)
+        ax.xaxis.label.set_fontsize(fontsize)
+        ax.yaxis.label.set_fontsize(fontsize)
+        ax.tick_params(labelsize=tick_fs)
+        legend = ax.get_legend()
+        if legend:
+            for t in legend.get_texts():
+                t.set_fontsize(tick_fs)
+    if fig.texts:
+        fig.texts[0].set_fontsize(fontsize)
+    fig.canvas.draw_idle()
+
+
+def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list) -> None:
+    """Attach Style and Export menu bar to the figure's Tk window."""
+    win = fig.canvas.manager.window
+
+    menubar = tk.Menu(win)
+
+    # ── Style cascade ──────────────────────────────────────────────────────────
+    style_menu = tk.Menu(menubar, tearoff=0)
+
+    def open_style_dialog():
+        dlg = tk.Toplevel(win)
+        dlg.title("Adjust Style")
+        dlg.resizable(False, False)
+
+        cur_lw = PLOT_LINEWIDTH
+        cur_fs = PLOT_FONTSIZE
+        lines = [l for ax in fig.get_axes() for l in ax.get_lines()]
+        if lines:
+            cur_lw = lines[0].get_linewidth()
+        texts = [ax.xaxis.label for ax in fig.get_axes() if ax.xaxis.label.get_text()]
+        if texts:
+            cur_fs = texts[0].get_fontsize()
+
+        tk.Label(dlg, text="Line width:").grid(row=0, column=0, padx=8, pady=(8, 2), sticky=tk.W)
+        lw_scale = tk.Scale(dlg, from_=0.1, to=8.0, resolution=0.1,
+                            orient=tk.HORIZONTAL, length=220)
+        lw_scale.set(cur_lw)
+        lw_scale.grid(row=0, column=1, padx=8, pady=(8, 2))
+
+        tk.Label(dlg, text="Font size:").grid(row=1, column=0, padx=8, pady=2, sticky=tk.W)
+        fs_scale = tk.Scale(dlg, from_=6, to=40, resolution=1,
+                            orient=tk.HORIZONTAL, length=220)
+        fs_scale.set(int(cur_fs))
+        fs_scale.grid(row=1, column=1, padx=8, pady=2)
+
+        def on_apply():
+            _apply_figure_style(fig, lw_scale.get(), fs_scale.get())
+
+        btn_frm = tk.Frame(dlg)
+        btn_frm.grid(row=2, column=0, columnspan=2, pady=8)
+        ttk.Button(btn_frm, text="Apply", command=on_apply).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frm, text="Close", command=dlg.destroy).pack(side=tk.LEFT, padx=4)
+
+    style_menu.add_command(label="Adjust…", command=open_style_dialog)
+    menubar.add_cascade(label="Style", menu=style_menu)
+
+    # ── Export cascade ─────────────────────────────────────────────────────────
+    export_menu = tk.Menu(menubar, tearoff=0)
+
+    def save_csv():
+        path = _fd.asksaveasfilename(
+            parent=win,
+            title="Export CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if path:
+            header = ",".join(csv_columns)
+            np.savetxt(path, csv_data, delimiter=",", header=header, comments="")
+
+    export_menu.add_command(label="Save CSV…", command=save_csv)
+    menubar.add_cascade(label="Export", menu=export_menu)
+
+    win.config(menu=menubar)
 
 
 # ── Application ───────────────────────────────────────────────────────────────
@@ -106,9 +196,10 @@ class _App(tk.Tk):
         _RotationPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
         _FIRPanel(col1, self).pack(fill=tk.X)
 
-        # Col 2: PID, Frame Capture
+        # Col 2: PID, Frame Capture, PSD
         _PIDPanel(col2, self).pack(fill=tk.X, pady=(0, 4))
-        _FrameCapturePanel(col2, self).pack(fill=tk.X)
+        _FrameCapturePanel(col2, self).pack(fill=tk.X, pady=(0, 4))
+        _PSDPanel(col2, self).pack(fill=tk.X)
 
     # ── Status bar ────────────────────────────────────────────────────────────
 
@@ -605,7 +696,7 @@ class _FrameCapturePanel(_Panel):
 
     def _build(self) -> None:
         ttk.Label(self, text="Frame code:").grid(row=0, column=0, sticky=tk.W)
-        self._fc_var = tk.StringVar(value=api.FrameCode.ANGLES_AND_ESIGS.name)
+        self._fc_var = tk.StringVar(value=api.FrameCode.ADC_DATA_IN.name)
         ttk.Combobox(self, textvariable=self._fc_var,
                      values=[fc.name for fc in api.FrameCode],
                      width=20, state="readonly").grid(row=0, column=1, padx=4)
@@ -651,7 +742,7 @@ class _FrameCapturePanel(_Panel):
 
         fig, axes = plt.subplots(n_cols, 1, figsize=(10, 2.5 * n_cols), squeeze=False,
                                  sharex=True)
-        fig.suptitle(f"{fc.name}  dec={dec}  {ts}", fontsize=10)
+        fig.suptitle(f"{fc.name}  dec={dec}  {ts}", fontsize=PLOT_FONTSIZE)
 
         for i, ax in enumerate(axes[:, 0]):
             if data.ndim == 2 and i < data.shape[1]:
@@ -662,12 +753,15 @@ class _FrameCapturePanel(_Panel):
                 col_name = cols[0] if cols else "data"
             else:
                 continue
-            ax.plot(y, linewidth=0.6)
-            ax.set_ylabel(col_name, fontsize=12)
-            ax.set_xlabel("sample" if i == n_cols - 1 else "")
+            ax.plot(y, linewidth=PLOT_LINEWIDTH)
+            ax.set_ylabel(col_name, fontsize=PLOT_FONTSIZE)
+            ax.set_xlabel("sample" if i == n_cols - 1 else "", fontsize=PLOT_FONTSIZE)
+            ax.tick_params(labelsize=PLOT_FONTSIZE * 0.85)
             ax.grid(True, alpha=0.3)
 
         fig.tight_layout()
+        csv_data = data if data.ndim == 2 else data.reshape(-1, 1)
+        _add_figure_menu(fig, csv_data, cols)
         plt.show(block=False)
 
 
@@ -817,19 +911,131 @@ class _SweepRampPanel(_Panel):
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
         for i, col in enumerate(active_cols):
             idx = api.SWEEP_COLUMNS.index(col)
-            axes[i, 0].plot(x, r.data[:, idx], linewidth=0.8)
-            axes[i, 0].set_ylabel(col, fontsize=12)
+            axes[i, 0].plot(x, r.data[:, idx], linewidth=PLOT_LINEWIDTH)
+            axes[i, 0].set_ylabel(col, fontsize=PLOT_FONTSIZE)
+            axes[i, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
             axes[i, 0].grid(True, alpha=0.3)
         if lp is not None:
             ax_g = axes[len(active_cols), 0]
-            ax_g.plot(x, lp.G, linewidth=0.8)
-            ax_g.set_ylabel("G (V)", fontsize=12)
+            ax_g.plot(x, lp.G, linewidth=PLOT_LINEWIDTH)
+            ax_g.set_ylabel("G (V)", fontsize=PLOT_FONTSIZE)
+            ax_g.tick_params(labelsize=PLOT_FONTSIZE * 0.85)
             ax_g.grid(True, alpha=0.3)
-            ax_g.axvline(lp.lock_point, color="red", linestyle="--", linewidth=1.0,
+            ax_g.axvline(lp.lock_point, color="red", linestyle="--",
+                         linewidth=PLOT_LINEWIDTH * 1.25,
                          label=f"lock={lp.lock_point:.4f} V")
-            ax_g.legend(fontsize=9)
-        axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=12)
+            ax_g.legend(fontsize=PLOT_FONTSIZE * 0.85)
+        axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=PLOT_FONTSIZE)
+        axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
         fig.tight_layout()
+        _add_figure_menu(fig, r.data, list(api.SWEEP_COLUMNS))
+        plt.show(block=False)
+
+
+# ── PSD panel ─────────────────────────────────────────────────────────────────
+
+class _PSDPanel(_Panel):
+    def __init__(self, parent, app):
+        super().__init__(parent, app, "PSD")
+        self._build()
+
+    def _build(self) -> None:
+        plot_frm = ttk.LabelFrame(self, text="Channels", padding=6)
+        plot_frm.pack(fill=tk.X, pady=(0, 6))
+        self._plot_adc_a = tk.BooleanVar(value=True)
+        self._plot_adc_b = tk.BooleanVar(value=True)
+        self._plot_i     = tk.BooleanVar(value=True)
+        self._plot_q     = tk.BooleanVar(value=True)
+        ttk.Checkbutton(plot_frm, text="ADC A", variable=self._plot_adc_a).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
+
+        params_frm = ttk.Frame(self)
+        params_frm.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(params_frm, text="Decimation:").grid(row=0, column=0, sticky=tk.W)
+        self._dec_var = tk.StringVar(value="1")
+        ttk.Entry(params_frm, textvariable=self._dec_var, width=8).grid(row=0, column=1, padx=4)
+
+        ttk.Label(params_frm, text="f start (Hz):").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        self._fstart_var = tk.StringVar(value="0")
+        ttk.Entry(params_frm, textvariable=self._fstart_var, width=10).grid(row=1, column=1, padx=4, pady=(4, 0))
+
+        ttk.Label(params_frm, text="f stop (Hz):").grid(row=2, column=0, sticky=tk.W, pady=(4, 0))
+        self._fstop_var = tk.StringVar(value="5000000")
+        ttk.Entry(params_frm, textvariable=self._fstop_var, width=10).grid(row=2, column=1, padx=4, pady=(4, 0))
+
+        self._run_btn = ttk.Button(self, text="Compute PSD", command=self._on_run)
+        self._run_btn.pack(anchor=tk.W, pady=(2, 0))
+
+    def _on_run(self) -> None:
+        try:
+            dec    = int(self._dec_var.get())
+            fstart = float(self._fstart_var.get())
+            fstop  = float(self._fstop_var.get())
+        except ValueError as e:
+            self.err(e); return
+        if dec < 1:
+            self.err(ValueError("Decimation must be >= 1")); return
+        if not (0 <= fstart < fstop):
+            self.err(ValueError("Require 0 <= f start < f stop")); return
+
+        active_cols = [
+            col for col, var in zip(
+                ["adc_a", "adc_b", "i_feed", "q_feed"],
+                [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
+            ) if var.get()
+        ]
+        if not active_cols:
+            self.err(ValueError("Select at least one channel")); return
+
+        nyquist = api.FPGA_FS / (2 * dec)
+        if fstop > nyquist:
+            self.ok(f"Warning: f stop {fstop/1e6:.3f} MHz exceeds Nyquist {nyquist/1e6:.3f} MHz")
+
+        ip, port = self._conn()
+        self._prep_call(ip, port)
+        self._busy(self._run_btn, "Capturing…")
+
+        def on_ok(r: api.PSDResult):
+            self._unbusy(self._run_btn, "Compute PSD")
+            if r.freqs.size == 0:
+                self.err(RuntimeError("PSD capture returned no data")); return
+            self.ok(f"PSD done  fs={r.fs/1e6:.3f} MHz  {r.freqs.size} bins")
+            self._plot_psd(r, active_cols, fstart, fstop, dec)
+
+        def on_err(e):
+            self._unbusy(self._run_btn, "Compute PSD")
+            self.err(e)
+
+        self.app.run_in_bg(lambda: api.api_psd(dec), on_ok, on_err)
+
+    def _plot_psd(self, r: api.PSDResult, active_cols: list[str],
+                  fstart: float, fstop: float, dec: int) -> None:
+        mask = (r.freqs >= fstart) & (r.freqs <= fstop)
+        freqs_khz = r.freqs[mask] / 1e3
+        n   = len(active_cols)
+        ts  = datetime.datetime.now().strftime("%H:%M:%S")
+        fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
+        fig.suptitle(f"PSD  dec={dec}  fs={r.fs/1e6:.3f} MHz  {ts}", fontsize=PLOT_FONTSIZE)
+        for i, col in enumerate(active_cols):
+            idx = r.columns.index(col)
+            psd_col = r.psd[mask, idx]
+            axes[i, 0].semilogy(freqs_khz, psd_col, linewidth=PLOT_LINEWIDTH)
+            axes[i, 0].set_ylabel(f"{col}\n(cts²/Hz)", fontsize=PLOT_FONTSIZE)
+            axes[i, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+            axes[i, 0].grid(True, alpha=0.3, which='both')
+            com_khz = np.sum(freqs_khz * psd_col) / np.sum(psd_col)
+            ymin = axes[i, 0].get_ylim()[0]
+            axes[i, 0].plot(com_khz, ymin, 'o', color='orange', markersize=8,
+                            clip_on=False, zorder=5)
+        axes[-1, 0].set_xlabel("Frequency (kHz)", fontsize=PLOT_FONTSIZE)
+        axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+        fig.tight_layout()
+        col_indices = [r.columns.index(col) for col in active_cols]
+        csv_data = np.column_stack([r.freqs[mask]] + [r.psd[mask, i] for i in col_indices])
+        _add_figure_menu(fig, csv_data, ["freq_hz"] + active_cols)
         plt.show(block=False)
 
 

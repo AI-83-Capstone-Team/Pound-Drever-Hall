@@ -759,8 +759,8 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
 
             switch(frame_code) 
             {
-                case ANGLES_AND_ESIGS:
-                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.angles_and_esigs_frame.adc_dat_a_16s, (int16_t)frame.angles_and_esigs_frame.adc_dat_b_16s, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
+                case ADC_DATA_IN:
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.adc_data_in_frame.adc_dat_a_16s, (int16_t)frame.adc_data_in_frame.adc_dat_b_16s, (int16_t)frame.adc_data_in_frame.i_feed_w, (int16_t)frame.adc_data_in_frame.q_feed_w);
                     break;
 
                 case PID_ERR_TAPS:
@@ -788,7 +788,7 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
                     break;
 
                 default:
-                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.angles_and_esigs_frame.adc_dat_a_16s, (int16_t)frame.angles_and_esigs_frame.adc_dat_b_16s, (int16_t)frame.angles_and_esigs_frame.i_feed_w, (int16_t)frame.angles_and_esigs_frame.q_feed_w); 
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.adc_data_in_frame.adc_dat_a_16s, (int16_t)frame.adc_data_in_frame.adc_dat_b_16s, (int16_t)frame.adc_data_in_frame.i_feed_w, (int16_t)frame.adc_data_in_frame.q_feed_w); 
                     break;
             }
         }
@@ -855,19 +855,19 @@ int cmd_test_frame(cmd_ctx_t* ctx)
     // dma_frame_t frame;
     // frame.raw = dma_get_frame(byte_offset);
     //
-    // ctx->output.output_items[0].data.i = (int16_t)frame.angles_and_esigs_frame.sin_theta_r;
+    // ctx->output.output_items[0].data.i = (int16_t)frame.adc_data_in_frame.sin_theta_r;
     // ctx->output.output_items[0].tag = INT_TAG;
     // strcpy(ctx->output.output_items[0].name, "sin_theta_r");
     //
-    // ctx->output.output_items[1].data.i = (int16_t)frame.angles_and_esigs_frame.cos_theta_r;
+    // ctx->output.output_items[1].data.i = (int16_t)frame.adc_data_in_frame.cos_theta_r;
     // ctx->output.output_items[1].tag = INT_TAG;
     // strcpy(ctx->output.output_items[1].name, "cos_theta_r");
     //
-    // ctx->output.output_items[2].data.i = (int16_t)frame.angles_and_esigs_frame.q_feed_w;
+    // ctx->output.output_items[2].data.i = (int16_t)frame.adc_data_in_frame.q_feed_w;
     // ctx->output.output_items[2].tag = INT_TAG;
     // strcpy(ctx->output.output_items[2].name, "q_feed_w");
     //
-    // ctx->output.output_items[3].data.i = (int16_t)frame.angles_and_esigs_frame.i_feed_w;
+    // ctx->output.output_items[3].data.i = (int16_t)frame.adc_data_in_frame.i_feed_w;
     // ctx->output.output_items[3].tag = INT_TAG;
     // strcpy(ctx->output.output_items[3].name, "i_feed_w");
     //

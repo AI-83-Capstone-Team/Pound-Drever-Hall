@@ -20,11 +20,17 @@ import paramiko
 
 from .types import (
     CsSel, ConfigIoResult, DacDatSel, DacSel, FRAME_COLUMNS,
-    FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, SWEEP_COLUMNS,
+    FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, PSDResult,
+    SWEEP_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
     SetFirResult, SetLedResult, SetNcoResult, SetPidResult, SetRotResult,
     SweepRampResult,
 )
+
+
+# ── Hardware constants ─────────────────────────────────────────────────────────
+
+FPGA_FS = 125e6     # base FPGA sample rate (Hz)
 
 
 # ── Connection parameters ──────────────────────────────────────────────────────
@@ -42,6 +48,8 @@ REMOTE_SWEEP_CSV = "sw/build/sweep_log.csv"
 # ── Public API surface ─────────────────────────────────────────────────────────
 
 __all__ = [
+    # constants
+    "FPGA_FS",
     # enums / types re-exported for one-stop import
     "FrameCode", "DacSel", "DacDatSel", "PidDatSel", "CsSel", "FirInputSel",
     "SWEEP_COLUMNS",
@@ -49,12 +57,12 @@ __all__ = [
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
     "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "SweepRampResult",
-    "LockPointResult",
+    "LockPointResult", "PSDResult",
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
     "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
-    "api_get_frame", "api_sweep_ramp", "compute_lockpoint",
+    "api_get_frame", "api_sweep_ramp", "compute_lockpoint", "api_psd",
 ]
 
 
@@ -409,3 +417,42 @@ def compute_lockpoint(
     lock_point = float((dac_v[ix_max] + dac_v[ix_min]) / 2.0)
 
     return LockPointResult(G=G, optimal_angle_deg=optimal_angle_deg, lock_point=lock_point)
+
+
+def api_psd(decimation: int = 1) -> PSDResult:
+    """
+    Capture an ADC_DATA_IN DMA frame and compute PSD for all four channels
+    (adc_a, adc_b, i_feed, q_feed) via the Wiener-Khinchin theorem
+    (FFT of the autocorrelation function).
+
+    decimation: BRAM decimation factor (>= 1).
+                Effective sample rate = 125e6 / decimation Hz.
+                Nyquist = 62.5e6 / decimation Hz.
+
+    Returns a PSDResult with:
+        freqs   -- frequency bins in Hz, shape (N_freq,)
+        psd     -- one-sided PSD in counts²/Hz, shape (N_freq, 4)
+        fs      -- effective sample rate used
+        columns -- ["adc_a", "adc_b", "i_feed", "q_feed"]
+    """
+    r = api_get_frame(decimation, FrameCode.ADC_DATA_IN)
+    fs   = FPGA_FS / decimation
+    cols = ["adc_a", "adc_b", "i_feed", "q_feed"]
+
+    freqs = np.empty(0)
+    psd   = np.empty((0, 4))
+
+    if r.status == 0 and r.data.ndim == 2 and r.data.shape[1] == 4:
+        N    = r.data.shape[0]
+        psds = []
+        for i in range(4):
+            x   = r.data[:, i].astype(float)
+            x  -= x.mean()                           # remove DC offset
+            acf = np.correlate(x, x, mode='full')    # autocorrelation, length 2N-1
+            S   = np.abs(np.fft.rfft(acf))           # Wiener-Khinchin: PSD = FFT(ACF)
+            S  /= (fs * N)                            # normalise to counts²/Hz
+            psds.append(S)
+        freqs = np.fft.rfftfreq(2 * N - 1, d=1.0 / fs)
+        psd   = np.column_stack(psds)
+
+    return PSDResult(status=r.status, freqs=freqs, psd=psd, fs=fs, columns=cols)
