@@ -209,6 +209,7 @@ def api_set_nco(freq: float, shift_deg: float, en: int) -> SetNcoResult:
 def api_set_pid(
     kp: float, kd: float, ki: float, sp: float,
     dec: int, alpha: int, sat: int, en: int,
+    gain: float = 1.0,
 ) -> SetPidResult:
     """
     Configure the PID controller.
@@ -219,9 +220,10 @@ def api_set_pid(
     alpha:      IIR filter exponent (0-15).
     sat:        output saturation bits (0-31).
     en:         1 to enable, 0 to disable.
+    gain:       output scalar in Q10 range [-32, 32).
     """
     r = execute_cmd(
-        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp}\nU:{dec},{alpha},{sat},{en}\n"
+        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp},{gain}\nU:{dec},{alpha},{sat},{en}\n"
     )
     return SetPidResult(
         status=r.get("status", -1),
@@ -233,6 +235,7 @@ def api_set_pid(
         alpha_cb=r.get("ALPHA_CB", 0),
         sat_cb=r.get("SAT_CB", 0),
         en_cb=r.get("EN_CB", 0),
+        gain_cb=r.get("GAIN_CB", float("nan")),
     )
 
 

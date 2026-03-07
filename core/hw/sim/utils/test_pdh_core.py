@@ -39,6 +39,7 @@ PID_SELECT_SP    = 0b0100
 PID_SELECT_ALPHA = 0b0101
 PID_SELECT_SAT   = 0b0110
 PID_SELECT_EN    = 0b0111
+PID_SELECT_GAIN  = 0b1000
 
 # ── NCO coeff selects ──────────────────────────────────────────────────────────
 
@@ -142,6 +143,11 @@ def _float_to_q15(x: float) -> int:
 def _float_to_q13(x: float) -> int:
     """Convert float in [-1, 1) to signed Q13 integer."""
     return max(-8192, min(8191, round(x * 8192.0)))
+
+
+def _float_to_q10(x: float) -> int:
+    """Convert float gain to signed Q10 integer (range [-32, 32))."""
+    return max(-32768, min(32767, round(x * 1024.0)))
 
 
 # ── AXI word packing ───────────────────────────────────────────────────────────
@@ -466,6 +472,13 @@ async def test_pdh_core(dut):
     f  = _cb_pid(cb)
     _check("pid: en echo",    f["payload"] == PID_EN,    f"got={f['payload']}")
 
+    PID_GAIN = 2.5
+    gain_i = _float_to_q10(PID_GAIN)
+    cb = await _pid(PID_SELECT_GAIN, gain_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: gain echo",
+                  _as_signed16(f["payload"]) / 1024.0, PID_GAIN, 0.002)
+
     # ── 9. Config IO — NCO drives DACs ────────────────────────────────────────
     _section("9. Config IO — NCO drives DACs")
     io_data = DAC_SEL_NCO1 | (DAC_SEL_NCO2 << 3) | (PID_SEL_ADCA << 6)
@@ -531,6 +544,69 @@ async def test_pdh_core(dut):
     cb = await _fir(FIR_SELECT_CHAIN_WRITE_EN, 0)
     f  = _cb_fir(cb)
     _check("fir: chain_wr_en=0",   f["payload"]    == 0)
+
+    # ── 12. PID gain functional test ───────────────────────────────────────────
+    # Route both DACs to PID output so dac_dat_o == pid_out_w regardless of dac_sel_r.
+    # Route PID input from ADC_A.
+    # With kp=0.5, ki=kd=0, sp=0, error = -2048:
+    #   gain=1.0 → pid_out = 7167  (deviation from midpoint 8191 = -1024)
+    #   gain=2.0 → pid_out = 6143  (deviation = -2048 = 2 × -1024)
+    #   gain=0.5 → pid_out = 7679  (deviation = -512  = 0.5 × -1024)
+    _section("12. PID gain functional test")
+
+    io_data = DAC_SEL_PID | (DAC_SEL_PID << 3) | (PID_SEL_ADCA << 6)
+    await _send(dut, CMD_CONFIG_IO, io_data)
+
+    # Drive ADC_A above the midpoint (0x2000) to produce a known signed error.
+    # adc_dat_a_16s_r = -(0x2800 - 0x2000) = -2048
+    ADC_GAIN_TEST = 0x2800
+    dut.adc_dat_a_i.value = ADC_GAIN_TEST
+    await ClockCycles(dut.clk, 4)
+
+    kp_i = _float_to_q15(0.5)
+
+    # Set kp=0.5, ki=kd=0, sp=0, dec=1, alpha=4, sat=31, gain=1.0, then enable.
+    await _pid(PID_SELECT_KP,    kp_i & 0xFFFF)
+    await _pid(PID_SELECT_KI,    0)
+    await _pid(PID_SELECT_KD,    0)
+    await _pid(PID_SELECT_SP,    0)
+    await _pid(PID_SELECT_DEC,   1)
+    await _pid(PID_SELECT_ALPHA, 4)
+    await _pid(PID_SELECT_SAT,   31)
+    await _pid(PID_SELECT_GAIN,  _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_EN,    1)
+
+    await ClockCycles(dut.clk, 20)
+    out_gain1 = int(dut.dac_dat_o.value)
+
+    await _pid(PID_SELECT_GAIN, _float_to_q10(2.0) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_gain2 = int(dut.dac_dat_o.value)
+
+    await _pid(PID_SELECT_GAIN, _float_to_q10(0.5) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_gain_half = int(dut.dac_dat_o.value)
+
+    # Restore and disable.
+    await _pid(PID_SELECT_GAIN, _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_EN, 0)
+
+    # The PID DAC offset is 8191.  Signed deviation from that midpoint scales with gain.
+    PID_MID = 8191
+    dev1    = out_gain1    - PID_MID
+    dev2    = out_gain2    - PID_MID
+    dev_half= out_gain_half - PID_MID
+
+    _check("gain=1.0: pid output != midpoint", dev1 != 0,
+           f"pid_out={out_gain1}  dev={dev1}")
+    _check("gain=1.0: pid output exact",       out_gain1 == 7167,
+           f"got={out_gain1}  exp=7167")
+    _check("gain=2.0: pid output exact",       out_gain2 == 6143,
+           f"got={out_gain2}  exp=6143")
+    _check("gain=0.5: pid output exact",       out_gain_half == 7679,
+           f"got={out_gain_half}  exp=7679")
+    _check_approx("gain=2.0 doubles deviation",   float(dev2),    dev1 * 2.0,   1.0)
+    _check_approx("gain=0.5 halves deviation",    float(dev_half), dev1 * 0.5,  1.0)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()

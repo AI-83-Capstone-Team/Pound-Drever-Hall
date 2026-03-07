@@ -131,6 +131,7 @@ class SetPidResult:
     alpha_cb: int
     sat_cb: int
     en_cb: int
+    gain_cb: float      # echoed gain in Q10 float (gain_i / 1024.0)
 
 
 @dataclass

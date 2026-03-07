@@ -71,6 +71,7 @@ module pdh_core #
     localparam int unsigned PID_DEC_INIT      = 1;   // update every sample (no decimation)
     localparam int unsigned PID_ALPHA_INIT    = 4;   // EMA smoothing shift: α = 2^(-4)
     localparam int unsigned PID_SATWIDTH_INIT = 31;  // integrator saturation at ±2^31
+    localparam int unsigned PID_GAIN_INIT     = 1024; // gain = 1.0 in Q10
 
     // NCO power-on reset default
     localparam int unsigned NCO_STRIDE_INIT = 1;     // minimum stride ≈ 7629 Hz
@@ -132,6 +133,7 @@ module pdh_core #
     logic signed [15:0] cos_theta_r, next_cos_theta_w, rot_cos_theta_r, next_rot_cos_theta_w, sin_theta_r, next_sin_theta_w, rot_sin_theta_r, next_rot_sin_theta_w;
 
     logic signed [15:0] kp_r, kd_r, ki_r, kp_w, kd_w, ki_w;
+    logic signed [15:0] gain_r, gain_w;
     logic signed [13:0] sp_w, sp_r;
     logic [13:0] dec_w, dec_r;
     logic [3:0] alpha_w, alpha_r;
@@ -219,7 +221,8 @@ module pdh_core #
         PID_SELECT_SP    = 4'b0100,
         PID_SELECT_ALPHA = 4'b0101,
         PID_SELECT_SAT   = 4'b0110,
-        PID_SELECT_EN    = 4'b0111
+        PID_SELECT_EN    = 4'b0111,
+        PID_SELECT_GAIN  = 4'b1000
     }   pid_coeff_sel_t;
 
 
@@ -259,6 +262,10 @@ module pdh_core #
             end
             PID_SELECT_EN: begin
                 pid_payload_w = {15'b0, pid_enable_r};
+            end
+
+            PID_SELECT_GAIN: begin
+                pid_payload_w = gain_r;
             end
 
             default: begin
@@ -522,6 +529,7 @@ fir # (
         .satwidth_i(satwidth_r),
         .dat_i(pid_in_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
+        .gain_i(gain_r),
         .pid_out(pid_out_w),
         .err_tap(err_tap_w),
         .perr_tap(perr_tap_w),
@@ -630,6 +638,7 @@ fir # (
     assign alpha_w     = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_ALPHA)) ? data_w[3:0]  : alpha_r;
     assign satwidth_w  = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_SAT))   ? data_w[4:0]  : satwidth_r;
     assign pid_enable_w= (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_EN))    ? data_w[0]    : pid_enable_r;
+    assign gain_w      = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_GAIN))  ? data_w[15:0] : gain_r;
 
 
     typedef enum logic [2:0]
@@ -813,6 +822,7 @@ fir # (
             alpha_r <= 4'(PID_ALPHA_INIT);
             satwidth_r <= 5'(PID_SATWIDTH_INIT);
             pid_enable_r <= 1'b0;
+            gain_r <= 16'(PID_GAIN_INIT);
 
             nco_shift_r <= '0;
             nco_stride_r <= 12'(NCO_STRIDE_INIT);
@@ -869,6 +879,7 @@ fir # (
             alpha_r <= alpha_w;
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
+            gain_r <= gain_w;
 
             nco_shift_r <= nco_shift_w;
             nco_stride_r <= nco_stride_w;

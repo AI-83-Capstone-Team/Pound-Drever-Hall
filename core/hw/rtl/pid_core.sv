@@ -28,6 +28,7 @@ module pid_core
 
 
     input logic enable_i,
+    input logic signed [S16_W-1:0] gain_i,   // Q10 output gain: gain_float = gain_i / 1024
 
     output logic [13:0] pid_out,
 
@@ -40,6 +41,7 @@ module pid_core
 
 
     logic signed [S16_W-1:0] kp_r, kd_r, ki_r;
+    logic signed [S16_W-1:0] gain_r;
     logic signed [13:0] sp_r;
     logic [3:0] alpha_r;
     logic [4:0] satwidth_r;
@@ -72,6 +74,13 @@ module pid_core
         if($signed(x) > $signed({{(W2U-W1U){1'b0}}, {W1U{1'b1}}})) sat_unsigned_from_signed = {W1U{1'b1}};
         else if(x[W2U-1] == 1) sat_unsigned_from_signed = {W1U{1'b0}};
         else sat_unsigned_from_signed = x[W1U-1:0];
+    endfunction
+
+    // Saturate a 26-bit signed value to 20-bit signed range.
+    function automatic logic signed [19:0] sat20_from_26(input logic signed [25:0] x);
+        if      ($signed(x) >  26'sd524287)  sat20_from_26 =  20'sd524287;  // 2^19 − 1
+        else if ($signed(x) < -26'sd524288)  sat20_from_26 = -20'sd524288;  // −2^19
+        else                                 sat20_from_26 = x[19:0];
     endfunction
 
 
@@ -132,10 +141,11 @@ module pid_core
     //assume rst, enable are synchronous with feeder block (pdh_core)
     always_ff @(posedge clk) begin
         if(rst) begin
-            {kp_r, kd_r, ki_r, sp_r} <= '0; 
+            {kp_r, kd_r, ki_r, sp_r} <= '0;
             alpha_r <= '0;
             decimate_r <= {{(DEC_W-1){1'b0}}, 1'b1};
             satwidth_r <= 5'd31;
+            gain_r <= 16'sd1024;   // power-on default: gain = 1.0
 
             sum_error_r <= '0;
             error_pipe1_r <= '0;
@@ -147,7 +157,8 @@ module pid_core
             {kp_r, kd_r, ki_r, sp_r} <= {kp_i, kd_i, ki_i, sp_i};
             alpha_r <= alpha_i;
             decimate_r <= (decimate_i < 1)? 1 : decimate_i;
-            satwidth_r <= next_satwidth_w; 
+            satwidth_r <= next_satwidth_w;
+            gain_r <= gain_i;
 
             sum_error_r <= sum_error2_w;
             error_pipe1_r <= error_w;
@@ -160,6 +171,7 @@ module pid_core
             alpha_r <= alpha_r;
             decimate_r <= decimate_r;
             satwidth_r <= satwidth_r;
+            gain_r <= gain_r;
 
             sum_error_r <= '0;
             error_pipe1_r <= '0;
@@ -171,7 +183,14 @@ module pid_core
     end
 
 
-    assign pid_out = sat_unsigned_from_signed(total_error_wide_w + 20'sd8191);
+    // Apply Q10 output gain to the signed PID sum before the DAC offset.
+    logic signed [35:0] gain_prod_w;
+    logic signed [25:0] gain_shifted_w;
+    logic signed [19:0] gained_wide_w;
+    assign gain_prod_w    = $signed(total_error_wide_w) * $signed(gain_r);
+    assign gain_shifted_w = $signed(gain_prod_w[35:10]);  // >>> 10 for Q10 scaling
+    assign gained_wide_w  = sat20_from_26(gain_shifted_w);
+    assign pid_out = sat_unsigned_from_signed(gained_wide_w + 20'sd8191);
 
     assign err_tap = error_pipe1_r;
     assign perr_tap = p_error_shifted_w;

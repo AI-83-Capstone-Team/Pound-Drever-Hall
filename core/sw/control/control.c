@@ -306,6 +306,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     float kd_f = ctx->float_args[1];
     float ki_f = ctx->float_args[2];
     float sp_f = ctx->float_args[3];
+    float gain_f = ctx->float_args[4];
     uint32_t dec = ctx->uint_args[0];
     uint32_t alpha = ctx->uint_args[1];
     uint32_t sat = ctx->uint_args[2];
@@ -320,6 +321,11 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     else if(sp_inter < -8192) sp_inter = -8192;
 
     int16_t sp_i = (int16_t)sp_inter;
+
+    int32_t gain_inter = (int32_t)lrintf(gain_f * 1024.0f);
+    if (gain_inter > 32767)  gain_inter = 32767;
+    if (gain_inter < -32768) gain_inter = -32768;
+    int16_t gain_i = (int16_t)gain_inter;
 
     if(dec > MAX_DEC) dec = MAX_DEC;
     if(alpha > MAX_ALPHA) alpha = MAX_ALPHA; 
@@ -388,6 +394,15 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     uint32_t echo_en = cb.set_pid_cb.payload_r;
     return_code = validate_cb(&echo_en, &en, UINT_TAG, __func__, "EN_CB", return_code, SET_PID_INVALID_EN);
     push_ctx_cb(ctx, &index, &echo_en, UINT_TAG, "EN_CB");
+
+    cmd.set_pid_cmd.payload   = gain_i;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_GAIN;
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_gain = (int16_t)cb.set_pid_cb.payload_r;
+    float gain_converted = echo_gain / 1024.0f;
+    return_code = validate_cb(&echo_gain, &gain_i, INT16_TAG, __func__, "GAIN_CB",
+                              return_code, SET_PID_INVALID_GAIN);
+    push_ctx_cb(ctx, &index, &gain_converted, FLOAT_TAG, "GAIN_CB");
 
     return return_code;
 }
