@@ -458,7 +458,7 @@ fir # (
     always_comb begin
         unique case(dac1_dat_sel_r)
             SELECT_DAC:   dac1_feed_w = dac1_dat_r;
-            SELECT_PID:   dac1_feed_w = pid_out_w;
+            SELECT_PID:   dac1_feed_w = pid_out_w + dac1_dat_r;
             SELECT_NCO_1: dac1_feed_w = nco_feed1_r;
             SELECT_NCO_2: dac1_feed_w = nco_feed2_r;
             default:      dac1_feed_w = DAC_INIT;
@@ -468,7 +468,7 @@ fir # (
     always_comb begin
         unique case(dac2_dat_sel_r)
             SELECT_DAC:   dac2_feed_w = dac2_dat_r;
-            SELECT_PID:   dac2_feed_w = pid_out_w;
+            SELECT_PID:   dac2_feed_w = pid_out_w + dac1_dat_r; //CHANGE THIS BACK
             SELECT_NCO_1: dac2_feed_w = nco_feed1_r;
             SELECT_NCO_2: dac2_feed_w = nco_feed2_r;
             default:      dac2_feed_w = DAC_INIT;
