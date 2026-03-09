@@ -972,6 +972,9 @@ class _PSDPanel(_Panel):
         ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
         ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
         ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
+        ttk.Separator(plot_frm, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        self._show_mass = tk.BooleanVar(value=False)
+        ttk.Checkbutton(plot_frm, text="Show mass", variable=self._show_mass).pack(side=tk.LEFT, padx=4)
 
         params_frm = ttk.Frame(self)
         params_frm.pack(fill=tk.X, pady=(0, 4))
@@ -1019,13 +1022,14 @@ class _PSDPanel(_Panel):
         ip, port = self._conn()
         self._prep_call(ip, port)
         self._busy(self._run_btn, "Capturing…")
+        show_mass = self._show_mass.get()
 
         def on_ok(r: api.PSDResult):
             self._unbusy(self._run_btn, "Compute PSD")
             if r.freqs.size == 0:
                 self.err(RuntimeError("PSD capture returned no data")); return
             self.ok(f"PSD done  fs={r.fs/1e6:.3f} MHz  {r.freqs.size} bins")
-            self._plot_psd(r, active_cols, fstart, fstop, dec)
+            self._plot_psd(r, active_cols, fstart, fstop, dec, show_mass)
 
         def on_err(e):
             self._unbusy(self._run_btn, "Compute PSD")
@@ -1034,7 +1038,8 @@ class _PSDPanel(_Panel):
         self.app.run_in_bg(lambda: api.api_psd(dec), on_ok, on_err)
 
     def _plot_psd(self, r: api.PSDResult, active_cols: list[str],
-                  fstart: float, fstop: float, dec: int) -> None:
+                  fstart: float, fstop: float, dec: int,
+                  show_mass: bool = False) -> None:
         mask = (r.freqs >= fstart) & (r.freqs <= fstop)
         freqs_khz = r.freqs[mask] / 1e3
         n   = len(active_cols)
@@ -1052,6 +1057,15 @@ class _PSDPanel(_Panel):
             ymin = axes[i, 0].get_ylim()[0]
             axes[i, 0].plot(com_khz, ymin, 'o', color='orange', markersize=8,
                             clip_on=False, zorder=5)
+            if show_mass:
+                mass = np.trapezoid(psd_col, r.freqs[mask])
+                axes[i, 0].text(
+                    0.98, 0.97, f"mass = {mass:.3g} cts²",
+                    transform=axes[i, 0].transAxes,
+                    ha="right", va="top",
+                    fontsize=PLOT_FONTSIZE * 0.7,
+                    bbox=dict(boxstyle="round", fc="white", alpha=0.7),
+                )
         axes[-1, 0].set_xlabel("Frequency (kHz)", fontsize=PLOT_FONTSIZE)
         axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
         fig.tight_layout()
