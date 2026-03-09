@@ -307,6 +307,7 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     float ki_f = ctx->float_args[2];
     float sp_f = ctx->float_args[3];
     float gain_f = ctx->float_args[4];
+    float bias_f = ctx->float_args[5];  // optional, default 0.0 (zero-init ctx)
     uint32_t dec = ctx->uint_args[0];
     uint32_t alpha = ctx->uint_args[1];
     uint32_t sat = ctx->uint_args[2];
@@ -326,6 +327,11 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     if (gain_inter > 32767)  gain_inter = 32767;
     if (gain_inter < -32768) gain_inter = -32768;
     int16_t gain_i = (int16_t)gain_inter;
+
+    int32_t bias_inter = (int32_t)lrintf(bias_f * 8191.0f);
+    if (bias_inter > 8191)  bias_inter = 8191;
+    if (bias_inter < -8191) bias_inter = -8191;
+    int16_t bias_i = (int16_t)bias_inter;
 
     if(dec > MAX_DEC) dec = MAX_DEC;
     if(alpha > MAX_ALPHA) alpha = MAX_ALPHA; 
@@ -403,6 +409,15 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     return_code = validate_cb(&echo_gain, &gain_i, INT16_TAG, __func__, "GAIN_CB",
                               return_code, SET_PID_INVALID_GAIN);
     push_ctx_cb(ctx, &index, &gain_converted, FLOAT_TAG, "GAIN_CB");
+
+    cmd.set_pid_cmd.payload   = (uint16_t)bias_i;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_BIAS;
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_bias = (int16_t)cb.set_pid_cb.payload_r;
+    float bias_converted = echo_bias / 8191.0f;
+    return_code = validate_cb(&echo_bias, &bias_i, INT16_TAG, __func__, "BIAS_CB",
+                              return_code, SET_PID_INVALID_BIAS);
+    push_ctx_cb(ctx, &index, &bias_converted, FLOAT_TAG, "BIAS_CB");
 
     return return_code;
 }

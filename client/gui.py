@@ -67,7 +67,10 @@ def _apply_figure_style(fig, linewidth: float, fontsize: float) -> None:
     fig.canvas.draw_idle()
 
 
-def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list) -> None:
+def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list,
+                     extra_csv_data: np.ndarray | None = None,
+                     extra_csv_columns: list | None = None,
+                     extra_csv_label: str = "Save DMA CSV…") -> None:
     """Attach Style and Export menu bar to the figure's Tk window."""
     win = fig.canvas.manager.window
 
@@ -128,6 +131,21 @@ def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list) -> None:
             np.savetxt(path, csv_data, delimiter=",", header=header, comments="")
 
     export_menu.add_command(label="Save CSV…", command=save_csv)
+
+    if extra_csv_data is not None and extra_csv_columns is not None:
+        def save_extra_csv():
+            path = _fd.asksaveasfilename(
+                parent=win,
+                title="Export DMA CSV",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            )
+            if path:
+                header = ",".join(extra_csv_columns)
+                np.savetxt(path, extra_csv_data, delimiter=",", header=header, comments="")
+
+        export_menu.add_command(label=extra_csv_label, command=save_extra_csv)
+
     menubar.add_cascade(label="Export", menu=export_menu)
 
     win.config(menu=menubar)
@@ -623,6 +641,7 @@ class _PIDPanel(_Panel):
             ("Alpha (0–15):",    "alpha", "4"),
             ("Satwidth (15–31):","sat",   "31"),
             ("Gain [-32, 32):",  "gain",  "1.0"),
+            ("Bias [-1V, 1V]:",  "bias",  "0.0"),
         ]
         self._vars: dict[str, tk.StringVar] = {}
         for row, (label, key, default) in enumerate(fields):
@@ -653,6 +672,7 @@ class _PIDPanel(_Panel):
             alpha = int(self._vars["alpha"].get())
             sat   = int(self._vars["sat"].get())
             gain  = float(self._vars["gain"].get())
+            bias  = float(self._vars["bias"].get())
         except ValueError as e:
             self.err(e); return
         for name, v, lo, hi in [("kp", kp, -1.0, 1.0), ("ki", ki, -1.0, 1.0),
@@ -667,6 +687,8 @@ class _PIDPanel(_Panel):
             self.err(ValueError(f"Satwidth {sat} not in [15, 31]")); return
         if not (-32.0 <= gain < 32.0):
             self.err(ValueError(f"gain={gain} not in [-32, 32)")); return
+        if not (-1.0 <= bias <= 1.0):
+            self.err(ValueError(f"bias={bias} not in [-1.0, 1.0]")); return
         en = int(self._en_var.get())
         ip, port = self._conn()
         self._prep_call(ip, port)
@@ -675,7 +697,7 @@ class _PIDPanel(_Panel):
             self._fb_var.set(
                 f"kp={r.kp_cb:.4f}  ki={r.ki_cb:.4f}  kd={r.kd_cb:.4f}  "
                 f"sp={r.sp_cb:.4f}  dec={r.dec_cb}  alpha={r.alpha_cb}  "
-                f"sat={r.sat_cb}  en={r.en_cb}  gain={r.gain_cb:.4f}"
+                f"sat={r.sat_cb}  en={r.en_cb}  gain={r.gain_cb:.4f}  bias={r.bias_cb:.4f}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok(f"PID set  kp={r.kp_cb:.4f}  en={r.en_cb}")
@@ -683,7 +705,7 @@ class _PIDPanel(_Panel):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
         self.app.run_in_bg(
-            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en, gain), on_ok, on_err
+            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en, gain, bias=bias), on_ok, on_err
         )
 
 
@@ -1035,7 +1057,9 @@ class _PSDPanel(_Panel):
         fig.tight_layout()
         col_indices = [r.columns.index(col) for col in active_cols]
         csv_data = np.column_stack([r.freqs[mask]] + [r.psd[mask, i] for i in col_indices])
-        _add_figure_menu(fig, csv_data, ["freq_hz"] + active_cols)
+        _add_figure_menu(fig, csv_data, ["freq_hz"] + active_cols,
+                         extra_csv_data=r.raw_data,
+                         extra_csv_columns=r.columns)
         plt.show(block=False)
 
 

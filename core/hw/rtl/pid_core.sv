@@ -29,6 +29,7 @@ module pid_core
 
     input logic enable_i,
     input logic signed [S16_W-1:0] gain_i,   // Q10 output gain: gain_float = gain_i / 1024
+    input logic signed [13:0] bias_i,
 
     output logic [13:0] pid_out,
 
@@ -42,6 +43,7 @@ module pid_core
 
     logic signed [S16_W-1:0] kp_r, kd_r, ki_r;
     logic signed [S16_W-1:0] gain_r;
+    logic signed [13:0] bias_r;
     logic signed [13:0] sp_r;
     logic [3:0] alpha_r;
     logic [4:0] satwidth_r;
@@ -146,6 +148,7 @@ module pid_core
             decimate_r <= {{(DEC_W-1){1'b0}}, 1'b1};
             satwidth_r <= 5'd31;
             gain_r <= 16'sd1024;   // power-on default: gain = 1.0
+            bias_r <= '0;
 
             sum_error_r <= '0;
             error_pipe1_r <= '0;
@@ -159,6 +162,7 @@ module pid_core
             decimate_r <= (decimate_i < 1)? 1 : decimate_i;
             satwidth_r <= next_satwidth_w;
             gain_r <= gain_i;
+            bias_r <= bias_i;
 
             sum_error_r <= sum_error2_w;
             error_pipe1_r <= error_w;
@@ -172,6 +176,7 @@ module pid_core
             decimate_r <= decimate_r;
             satwidth_r <= satwidth_r;
             gain_r <= gain_r;
+            bias_r <= bias_r;
 
             sum_error_r <= '0;
             error_pipe1_r <= '0;
@@ -190,7 +195,7 @@ module pid_core
     assign gain_prod_w    = $signed(total_error_wide_w) * $signed(gain_r);
     assign gain_shifted_w = $signed(gain_prod_w[35:10]);  // >>> 10 for Q10 scaling
     assign gained_wide_w  = sat20_from_26(gain_shifted_w);
-    assign pid_out = sat_unsigned_from_signed(gained_wide_w + 20'sd8191);
+    assign pid_out = sat_unsigned_from_signed(gained_wide_w + 20'sd8191 + {{6{bias_r[13]}}, bias_r});
 
     assign err_tap = error_pipe1_r;
     assign perr_tap = p_error_shifted_w;

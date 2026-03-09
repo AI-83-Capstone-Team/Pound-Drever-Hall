@@ -209,12 +209,14 @@ def main() -> None:
     )
     print(f"  kp_cb={pid.kp_cb:.4f}  kd_cb={pid.kd_cb:.4f}  ki_cb={pid.ki_cb:.4f}")
     print(f"  sp_cb={pid.sp_cb:.4f}  dec_cb={pid.dec_cb}  en_cb={pid.en_cb}")
+    print(f"  gain_cb={pid.gain_cb:.4f}  bias_cb={pid.bias_cb:.4f}")
     _check_approx("kp echo", pid.kp_cb, PID_KP, 0.01)
     _check_approx("kd echo", pid.kd_cb, PID_KD, 0.01)
     _check_approx("ki echo", pid.ki_cb, PID_KI, 0.01)
     _check_approx("sp echo", pid.sp_cb, PID_SP, 0.01)
     _check("dec echo", pid.dec_cb == PID_DEC, f"got={pid.dec_cb}")
     _check("en=0 echo", pid.en_cb == 0)
+    _check_approx("bias echo", pid.bias_cb, 0.0, 0.01)
 
     # ── 9. OSC_INSPECT frame ──────────────────────────────────────────────────
     _section("9. Frame: OSC_INSPECT")

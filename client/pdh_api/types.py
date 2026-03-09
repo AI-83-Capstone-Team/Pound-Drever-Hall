@@ -132,6 +132,7 @@ class SetPidResult:
     sat_cb: int
     en_cb: int
     gain_cb: float      # echoed gain in Q10 float (gain_i / 1024.0)
+    bias_cb: float      # echoed bias in volts (bias_i / 8191.0)
 
 
 @dataclass
@@ -195,8 +196,9 @@ class SetFirResult:
 
 @dataclass
 class PSDResult:
-    status:  int
-    freqs:   np.ndarray   # shape (N_freq,), Hz
-    psd:     np.ndarray   # shape (N_freq, 4): adc_a, adc_b, i_feed, q_feed
-    fs:      float        # effective sample rate: 125e6 / decimation
-    columns: list[str]    # always ["adc_a", "adc_b", "i_feed", "q_feed"]
+    status:   int
+    freqs:    np.ndarray   # shape (N_freq,), Hz
+    psd:      np.ndarray   # shape (N_freq, 4): adc_a, adc_b, i_feed, q_feed
+    fs:       float        # effective sample rate: 125e6 / decimation
+    columns:  list[str]    # always ["adc_a", "adc_b", "i_feed", "q_feed"]
+    raw_data: np.ndarray   # shape (N_samples, 4): raw DMA frame used for PSD

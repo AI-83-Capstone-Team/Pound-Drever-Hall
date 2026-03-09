@@ -186,6 +186,7 @@ typedef enum
     SET_PID_INVALID_SAT,
     SET_PID_INVALID_EN,
     SET_PID_INVALID_GAIN,
+    SET_PID_INVALID_BIAS,
 }   set_pid_e;
 
 typedef enum
@@ -199,6 +200,7 @@ typedef enum
     PID_SELECT_SAT = 0b0110,
     PID_SELECT_EN = 0b0111,
     PID_SELECT_GAIN = 0b1000,
+    PID_SELECT_BIAS = 0b1001,
 }   pid_coeff_sel_e;
 
 typedef enum

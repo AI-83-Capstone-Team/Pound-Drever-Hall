@@ -218,6 +218,7 @@ def api_set_pid(
     kp: float, kd: float, ki: float, sp: float,
     dec: int, alpha: int, sat: int, en: int,
     gain: float = 1.0,
+    bias: float = 0.0,
 ) -> SetPidResult:
     """
     Configure the PID controller.
@@ -229,9 +230,10 @@ def api_set_pid(
     sat:        output saturation bits (0-31).
     en:         1 to enable, 0 to disable.
     gain:       output scalar in Q10 range [-32, 32).
+    bias:       DC offset added to PID output, in volts [-1.0, 1.0].
     """
     r = execute_cmd(
-        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp},{gain}\nU:{dec},{alpha},{sat},{en}\n"
+        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp},{gain},{bias}\nU:{dec},{alpha},{sat},{en}\n"
     )
     return SetPidResult(
         status=r.get("status", -1),
@@ -244,6 +246,7 @@ def api_set_pid(
         sat_cb=r.get("SAT_CB", 0),
         en_cb=r.get("EN_CB", 0),
         gain_cb=r.get("GAIN_CB", float("nan")),
+        bias_cb=r.get("BIAS_CB", float("nan")),
     )
 
 
@@ -455,4 +458,4 @@ def api_psd(decimation: int = 1) -> PSDResult:
         freqs = np.fft.rfftfreq(2 * N - 1, d=1.0 / fs)
         psd   = np.column_stack(psds)
 
-    return PSDResult(status=r.status, freqs=freqs, psd=psd, fs=fs, columns=cols)
+    return PSDResult(status=r.status, freqs=freqs, psd=psd, fs=fs, columns=cols, raw_data=r.data)

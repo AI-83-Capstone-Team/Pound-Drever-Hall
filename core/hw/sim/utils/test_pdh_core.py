@@ -40,6 +40,7 @@ PID_SELECT_ALPHA = 0b0101
 PID_SELECT_SAT   = 0b0110
 PID_SELECT_EN    = 0b0111
 PID_SELECT_GAIN  = 0b1000
+PID_SELECT_BIAS  = 0b1001
 
 # ── NCO coeff selects ──────────────────────────────────────────────────────────
 
@@ -479,6 +480,16 @@ async def test_pdh_core(dut):
     _check_approx("pid: gain echo",
                   _as_signed16(f["payload"]) / 1024.0, PID_GAIN, 0.002)
 
+    PID_BIAS = 0.5  # volts
+    bias_i = max(-8191, min(8191, round(PID_BIAS * 8191.0)))
+    cb = await _pid(PID_SELECT_BIAS, bias_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: bias echo",
+                  _as_signed16(f["payload"]) / 8191.0, PID_BIAS, 0.001)
+
+    # Reset bias to 0 for subsequent sections
+    await _pid(PID_SELECT_BIAS, 0)
+
     # ── 9. Config IO — NCO drives DACs ────────────────────────────────────────
     _section("9. Config IO — NCO drives DACs")
     io_data = DAC_SEL_NCO1 | (DAC_SEL_NCO2 << 3) | (PID_SEL_ADCA << 6)
@@ -607,6 +618,58 @@ async def test_pdh_core(dut):
            f"got={out_gain_half}  exp=7679")
     _check_approx("gain=2.0 doubles deviation",   float(dev2),    dev1 * 2.0,   1.0)
     _check_approx("gain=0.5 halves deviation",    float(dev_half), dev1 * 0.5,  1.0)
+
+    # ── 13. PID bias functional test ───────────────────────────────────────────
+    # With gain=1.0 and a fixed error, adding bias shifts the DAC output by the
+    # expected number of codes (bias_volts * 8191 DAC codes).
+    # Setup: kp=0.5, ki=kd=0, sp=0, ADC_A=0x2800 → signed error = -2048
+    #   bias=0    → pid_out = 7167  (verified by section 12)
+    # The physical DAC output is inverted (higher code → more negative voltage),
+    # so pid_core stores -bias_i in bias_r to compensate.  A positive bias setting
+    # therefore SUBTRACTS codes from pid_out, shifting the physical output positive.
+    #   bias=+0.5V → offset = -4095 codes → pid_out = 7167 - 4095 = 3072
+    #   bias=-0.5V → offset = +4095 codes → pid_out = 7167 + 4095 = 11262
+    _section("13. PID bias functional test")
+
+    io_data = DAC_SEL_PID | (DAC_SEL_PID << 3) | (PID_SEL_ADCA << 6)
+    await _send(dut, CMD_CONFIG_IO, io_data)
+
+    dut.adc_dat_a_i.value = ADC_GAIN_TEST  # 0x2800, same as section 12
+    await ClockCycles(dut.clk, 4)
+
+    kp_i = _float_to_q15(0.5)
+    await _pid(PID_SELECT_KP,    kp_i & 0xFFFF)
+    await _pid(PID_SELECT_KI,    0)
+    await _pid(PID_SELECT_KD,    0)
+    await _pid(PID_SELECT_SP,    0)
+    await _pid(PID_SELECT_DEC,   1)
+    await _pid(PID_SELECT_ALPHA, 4)
+    await _pid(PID_SELECT_SAT,   31)
+    await _pid(PID_SELECT_GAIN,  _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_BIAS,  0)
+    await _pid(PID_SELECT_EN,    1)
+    await ClockCycles(dut.clk, 20)
+    out_bias0 = int(dut.dac_dat_o.value)
+
+    bias_pos = max(-8191, min(8191, round(0.5 * 8191.0)))
+    await _pid(PID_SELECT_BIAS, bias_pos & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_bias_pos = int(dut.dac_dat_o.value)
+
+    bias_neg = max(-8191, min(8191, round(-0.5 * 8191.0)))
+    await _pid(PID_SELECT_BIAS, bias_neg & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_bias_neg = int(dut.dac_dat_o.value)
+
+    await _pid(PID_SELECT_BIAS, 0)
+    await _pid(PID_SELECT_EN,   0)
+
+    _check("bias=0: output matches section 12", out_bias0 == 7167,
+           f"got={out_bias0}  exp=7167")
+    _check_approx("bias=+0.5V: output shifted down by ~4095 codes",
+                  float(out_bias_pos - out_bias0), -4095.0, 2.0)
+    _check_approx("bias=-0.5V: output shifted up by ~4095 codes",
+                  float(out_bias_neg - out_bias0), 4095.0, 2.0)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()
