@@ -422,33 +422,34 @@ def compute_lockpoint(
     return LockPointResult(G=G, optimal_angle_deg=optimal_angle_deg, lock_point=lock_point)
 
 
-def api_psd(decimation: int = 1) -> PSDResult:
+def api_psd(decimation: int = 1, frame_code: FrameCode = FrameCode.ADC_DATA_IN) -> PSDResult:
     """
-    Capture an ADC_DATA_IN DMA frame and compute PSD for all four channels
-    (adc_a, adc_b, i_feed, q_feed) via the Wiener-Khinchin theorem
-    (FFT of the autocorrelation function).
+    Capture a DMA frame and compute PSD for all channels via the Wiener-Khinchin
+    theorem (FFT of the autocorrelation function).
 
-    decimation: BRAM decimation factor (>= 1).
-                Effective sample rate = 125e6 / decimation Hz.
-                Nyquist = 62.5e6 / decimation Hz.
+    decimation:  BRAM decimation factor (>= 1).
+                 Effective sample rate = 125e6 / decimation Hz.
+                 Nyquist = 62.5e6 / decimation Hz.
+    frame_code:  which DMA frame to capture (default: ADC_DATA_IN).
 
     Returns a PSDResult with:
         freqs   -- frequency bins in Hz, shape (N_freq,)
-        psd     -- one-sided PSD in counts²/Hz, shape (N_freq, 4)
+        psd     -- one-sided PSD in counts²/Hz, shape (N_freq, N_cols)
         fs      -- effective sample rate used
-        columns -- ["adc_a", "adc_b", "i_feed", "q_feed"]
+        columns -- channel names per FRAME_COLUMNS[frame_code]
     """
-    r = api_get_frame(decimation, FrameCode.ADC_DATA_IN)
+    r    = api_get_frame(decimation, frame_code)
     fs   = FPGA_FS / decimation
-    cols = ["adc_a", "adc_b", "i_feed", "q_feed"]
+    cols = FRAME_COLUMNS[FrameCode(int(frame_code))]
+    n_cols = len(cols)
 
     freqs = np.empty(0)
-    psd   = np.empty((0, 4))
+    psd   = np.empty((0, n_cols))
 
-    if r.status == 0 and r.data.ndim == 2 and r.data.shape[1] == 4:
+    if r.status == 0 and r.data.ndim == 2 and r.data.shape[1] == n_cols:
         N    = r.data.shape[0]
         psds = []
-        for i in range(4):
+        for i in range(n_cols):
             x   = r.data[:, i].astype(float)
             x  -= x.mean()                           # remove DC offset
             acf = np.correlate(x, x, mode='full')    # autocorrelation, length 2N-1

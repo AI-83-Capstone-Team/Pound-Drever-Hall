@@ -553,7 +553,8 @@ fir # (
         OSC_INSPECT = 4'b0011,
         OSC_ADDR_CHECK = 4'b0100,
         LOOPBACK = 4'b0101,
-        FIR_IO = 4'b0110
+        FIR_IO = 4'b0110,
+        PID_IO = 4'b0111
     }   frame_code_t;
     logic [3:0] frame_code_r, next_frame_code_w;
 
@@ -567,6 +568,7 @@ fir # (
             OSC_ADDR_CHECK : dma_data_w = {4'b0, addr2_w, 4'b0, addr1_w, 2'b0, phi2_w, 2'b0, phi1_w};
             LOOPBACK: dma_data_w = {2'b0, dac1_feed_w, 2'b0, dac2_feed_w, 2'b0, adc_dat_a_i, 2'b0, adc_dat_b_i};
             FIR_IO: dma_data_w = {32'b0, fir_out_w, fir_in_w};
+            PID_IO: dma_data_w = {16'b0, 2'b0, pid_out_w, err_tap_w, pid_in_w};
             default: dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r};
         endcase
     end

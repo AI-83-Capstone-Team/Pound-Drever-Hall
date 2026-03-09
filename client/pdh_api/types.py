@@ -18,6 +18,7 @@ class FrameCode(IntEnum):
     OSC_ADDR_CHECK   = 0b0100
     LOOPBACK         = 0b0101
     FIR_IO           = 0b0110
+    PID_IO           = 0b0111
 
 
 class FirInputSel(IntEnum):
@@ -70,6 +71,7 @@ FRAME_COLUMNS: dict[FrameCode, list[str]] = {
     FrameCode.OSC_ADDR_CHECK:  ["phi1",      "phi2",      "addr1",     "addr2"],
     FrameCode.LOOPBACK:        ["dac1_feed", "dac2_feed", "adc_a",     "adc_b"],
     FrameCode.FIR_IO:          ["fir_in",    "fir_out"],
+    FrameCode.PID_IO:          ["pid_in",    "err",       "pid_out"],
 }
 
 
@@ -198,7 +200,7 @@ class SetFirResult:
 class PSDResult:
     status:   int
     freqs:    np.ndarray   # shape (N_freq,), Hz
-    psd:      np.ndarray   # shape (N_freq, 4): adc_a, adc_b, i_feed, q_feed
+    psd:      np.ndarray   # shape (N_freq, N_cols): one column per channel in `columns`
     fs:       float        # effective sample rate: 125e6 / decimation
-    columns:  list[str]    # always ["adc_a", "adc_b", "i_feed", "q_feed"]
-    raw_data: np.ndarray   # shape (N_samples, 4): raw DMA frame used for PSD
+    columns:  list[str]    # channel names matching FRAME_COLUMNS[frame_code]
+    raw_data: np.ndarray   # shape (N_samples, N_cols): raw DMA frame used for PSD

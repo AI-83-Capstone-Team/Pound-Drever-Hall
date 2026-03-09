@@ -304,6 +304,7 @@ typedef enum
     OSC_ADDR_CHECK = 0b0100,
     LOOPBACK = 0b0101,
     FIR_IO = 0b0110,
+    PID_IO = 0b0111,
 }   frame_code_e;
 
 
@@ -596,6 +597,14 @@ typedef union __attribute__((packed))
         uint64_t fir_out_w : 16;
         uint64_t _padding  : 32;
     }   fir_io_frame;
+
+    struct __attribute__((packed))
+    {
+        int16_t  pid_in;   // [15:0]  pid_in_w
+        int16_t  err;      // [31:16] err_tap_w
+        uint16_t pid_out;  // [47:32] pid_out_w (14b + 2b pad)
+        uint16_t pad;      // [63:48] zero
+    }   pid_io_frame;
 
     uint64_t raw;
 }   dma_frame_t;

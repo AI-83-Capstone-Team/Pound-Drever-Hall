@@ -964,17 +964,47 @@ class _PSDPanel(_Panel):
     def _build(self) -> None:
         plot_frm = ttk.LabelFrame(self, text="Channels", padding=6)
         plot_frm.pack(fill=tk.X, pady=(0, 6))
+
+        # Mode radio buttons
+        self._psd_mode = tk.StringVar(value="adc")
+        ttk.Radiobutton(plot_frm, text="ADC", variable=self._psd_mode,
+                        value="adc", command=self._on_mode_change).pack(side=tk.LEFT, padx=(0, 2))
+
+        # ADC channel checkboxes
         self._plot_adc_a = tk.BooleanVar(value=True)
         self._plot_adc_b = tk.BooleanVar(value=True)
         self._plot_i     = tk.BooleanVar(value=True)
         self._plot_q     = tk.BooleanVar(value=True)
-        ttk.Checkbutton(plot_frm, text="ADC A", variable=self._plot_adc_a).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
+        self._cb_adc_a = ttk.Checkbutton(plot_frm, text="ADC A", variable=self._plot_adc_a)
+        self._cb_adc_a.pack(side=tk.LEFT, padx=2)
+        self._cb_adc_b = ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b)
+        self._cb_adc_b.pack(side=tk.LEFT, padx=2)
+        self._cb_i = ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i)
+        self._cb_i.pack(side=tk.LEFT, padx=2)
+        self._cb_q = ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q)
+        self._cb_q.pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(plot_frm, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+
+        ttk.Radiobutton(plot_frm, text="PID", variable=self._psd_mode,
+                        value="pid", command=self._on_mode_change).pack(side=tk.LEFT, padx=(0, 2))
+
+        # PID channel checkboxes
+        self._plot_pid_in  = tk.BooleanVar(value=True)
+        self._plot_err     = tk.BooleanVar(value=True)
+        self._plot_pid_out = tk.BooleanVar(value=True)
+        self._cb_pid_in  = ttk.Checkbutton(plot_frm, text="PID In",  variable=self._plot_pid_in)
+        self._cb_pid_in.pack(side=tk.LEFT, padx=2)
+        self._cb_err     = ttk.Checkbutton(plot_frm, text="Error",   variable=self._plot_err)
+        self._cb_err.pack(side=tk.LEFT, padx=2)
+        self._cb_pid_out = ttk.Checkbutton(plot_frm, text="PID Out", variable=self._plot_pid_out)
+        self._cb_pid_out.pack(side=tk.LEFT, padx=2)
+
         ttk.Separator(plot_frm, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
         self._show_mass = tk.BooleanVar(value=False)
         ttk.Checkbutton(plot_frm, text="Show mass", variable=self._show_mass).pack(side=tk.LEFT, padx=4)
+
+        self._on_mode_change()
 
         params_frm = ttk.Frame(self)
         params_frm.pack(fill=tk.X, pady=(0, 4))
@@ -994,6 +1024,18 @@ class _PSDPanel(_Panel):
         self._run_btn = ttk.Button(self, text="Compute PSD", command=self._on_run)
         self._run_btn.pack(anchor=tk.W, pady=(2, 0))
 
+    def _on_mode_change(self) -> None:
+        if self._psd_mode.get() == "adc":
+            adc_state = tk.NORMAL
+            pid_state = tk.DISABLED
+        else:
+            adc_state = tk.DISABLED
+            pid_state = tk.NORMAL
+        for cb in (self._cb_adc_a, self._cb_adc_b, self._cb_i, self._cb_q):
+            cb.configure(state=adc_state)
+        for cb in (self._cb_pid_in, self._cb_err, self._cb_pid_out):
+            cb.configure(state=pid_state)
+
     def _on_run(self) -> None:
         try:
             dec    = int(self._dec_var.get())
@@ -1006,12 +1048,23 @@ class _PSDPanel(_Panel):
         if not (0 <= fstart < fstop):
             self.err(ValueError("Require 0 <= f start < f stop")); return
 
-        active_cols = [
-            col for col, var in zip(
-                ["adc_a", "adc_b", "i_feed", "q_feed"],
-                [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
-            ) if var.get()
-        ]
+        mode = self._psd_mode.get()
+        if mode == "adc":
+            frame_code = api.FrameCode.ADC_DATA_IN
+            active_cols = [
+                col for col, var in zip(
+                    ["adc_a", "adc_b", "i_feed", "q_feed"],
+                    [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
+                ) if var.get()
+            ]
+        else:
+            frame_code = api.FrameCode.PID_IO
+            active_cols = [
+                col for col, var in zip(
+                    ["pid_in", "err", "pid_out"],
+                    [self._plot_pid_in, self._plot_err, self._plot_pid_out],
+                ) if var.get()
+            ]
         if not active_cols:
             self.err(ValueError("Select at least one channel")); return
 
@@ -1035,7 +1088,7 @@ class _PSDPanel(_Panel):
             self._unbusy(self._run_btn, "Compute PSD")
             self.err(e)
 
-        self.app.run_in_bg(lambda: api.api_psd(dec), on_ok, on_err)
+        self.app.run_in_bg(lambda: api.api_psd(dec, frame_code), on_ok, on_err)
 
     def _plot_psd(self, r: api.PSDResult, active_cols: list[str],
                   fstart: float, fstop: float, dec: int,

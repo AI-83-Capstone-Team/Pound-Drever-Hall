@@ -802,6 +802,13 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
                     fprintf(f, "%d, %d\n", (int16_t)frame.fir_io_frame.fir_in_w, (int16_t)frame.fir_io_frame.fir_out_w);
                     break;
 
+                case PID_IO:
+                    fprintf(f, "%d, %d, %u\n",
+                            frame.pid_io_frame.pid_in,
+                            frame.pid_io_frame.err,
+                            frame.pid_io_frame.pid_out & 0x3FFF);
+                    break;
+
                 default:
                     fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.adc_data_in_frame.adc_dat_a_16s, (int16_t)frame.adc_data_in_frame.adc_dat_b_16s, (int16_t)frame.adc_data_in_frame.i_feed_w, (int16_t)frame.adc_data_in_frame.q_feed_w); 
                     break;
