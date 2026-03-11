@@ -204,3 +204,28 @@ class PSDResult:
     fs:       float        # effective sample rate: 125e6 / decimation
     columns:  list[str]    # channel names matching FRAME_COLUMNS[frame_code]
     raw_data: np.ndarray   # shape (N_samples, N_cols): raw DMA frame used for PSD
+
+
+@dataclass
+class ControlMetricsResult:
+    # Raw DMA capture (N × 3: pid_in, err, pid_out)
+    raw_data:      np.ndarray
+    columns:       list[str]    # ["pid_in", "err", "pid_out"]
+    fs:            float        # 125e6 / decimation
+    decimation:    int
+
+    # PSD computed from the capture (all 3 channels)
+    freqs:         np.ndarray   # shape (N_freq,), Hz
+    psd:           np.ndarray   # shape (N_freq, 3)
+
+    # Metrics (all in raw ADC counts unless noted)
+    rms_error:     float        # RMS of err column
+    settling_time: float        # seconds; nan if not settled within capture window
+    overshoot:     float        # % — (peak − steady) / peak-to-peak range × 100
+    ctrl_rms:      float        # RMS of pid_out
+    ctrl_max:      float        # max |pid_out|
+    ctrl_p95:      float        # 95th-percentile |pid_out|
+    ctrl_slew_rms: float        # RMS of np.diff(pid_out)
+
+    # Controller parameters read from GUI fields at time of capture
+    pid_params:    dict

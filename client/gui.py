@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import datetime
+import json
 import threading
 import tkinter as tk
 import tkinter.filedialog as _fd
@@ -70,7 +71,8 @@ def _apply_figure_style(fig, linewidth: float, fontsize: float) -> None:
 def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list,
                      extra_csv_data: np.ndarray | None = None,
                      extra_csv_columns: list | None = None,
-                     extra_csv_label: str = "Save DMA CSV…") -> None:
+                     extra_csv_label: str = "Save DMA CSV…",
+                     json_data: dict | None = None) -> None:
     """Attach Style and Export menu bar to the figure's Tk window."""
     win = fig.canvas.manager.window
 
@@ -145,6 +147,20 @@ def _add_figure_menu(fig, csv_data: np.ndarray, csv_columns: list,
                 np.savetxt(path, extra_csv_data, delimiter=",", header=header, comments="")
 
         export_menu.add_command(label=extra_csv_label, command=save_extra_csv)
+
+    if json_data is not None:
+        def save_json():
+            path = _fd.asksaveasfilename(
+                parent=win,
+                title="Export JSON",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            )
+            if path:
+                with open(path, "w") as f:
+                    json.dump(json_data, f, indent=2)
+
+        export_menu.add_command(label="Export JSON…", command=save_json)
 
     menubar.add_cascade(label="Export", menu=export_menu)
 
@@ -662,6 +678,24 @@ class _PIDPanel(_Panel):
                   wraplength=300).grid(row=len(fields)+2, column=0, columnspan=2,
                                        sticky=tk.W, pady=(4, 0))
 
+        ttk.Separator(self, orient=tk.HORIZONTAL).grid(
+            row=len(fields)+3, column=0, columnspan=2, sticky=tk.EW, pady=(8, 4))
+
+        ttk.Label(self, text="Metrics Decimation:").grid(
+            row=len(fields)+4, column=0, sticky=tk.W)
+        self._metrics_dec_var = tk.StringVar(value="1")
+        ttk.Entry(self, textvariable=self._metrics_dec_var, width=10).grid(
+            row=len(fields)+4, column=1, padx=6, pady=1)
+
+        self._metrics_mass_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self, text="Show PSD mass", variable=self._metrics_mass_var).grid(
+            row=len(fields)+5, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
+
+        self._metrics_btn = ttk.Button(self, text="Compute Control Metrics",
+                                       command=self._on_metrics)
+        self._metrics_btn.grid(row=len(fields)+6, column=0, columnspan=2,
+                               sticky=tk.W, pady=(6, 0))
+
     def _on_apply(self) -> None:
         try:
             kp    = float(self._vars["kp"].get())
@@ -707,6 +741,157 @@ class _PIDPanel(_Panel):
         self.app.run_in_bg(
             lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en, gain, bias=bias), on_ok, on_err
         )
+
+    def _on_metrics(self) -> None:
+        try:
+            dec = int(self._metrics_dec_var.get())
+        except ValueError:
+            self.err(ValueError(f"Invalid metrics decimation: {self._metrics_dec_var.get()!r}")); return
+        if dec < 1:
+            self.err(ValueError("Metrics decimation must be >= 1")); return
+
+        # Collect PID params from GUI fields (read-only; does not re-issue set_pid)
+        pid_params: dict = {}
+        for key in ("kp", "ki", "kd", "sp", "dec", "alpha", "sat", "gain", "bias"):
+            try:
+                raw = self._vars[key].get()
+                pid_params[key] = float(raw) if "." in raw else int(raw)
+            except ValueError:
+                pid_params[key] = self._vars[key].get()
+        pid_params["en"] = int(self._en_var.get())
+
+        show_mass = self._metrics_mass_var.get()
+        ip, port = self._conn()
+        self._prep_call(ip, port)
+        self._busy(self._metrics_btn, "Capturing…")
+
+        def on_ok(r: api.ControlMetricsResult):
+            self._unbusy(self._metrics_btn, "Compute Control Metrics")
+            self.ok(f"Metrics done  fs={r.fs/1e6:.3f} MHz  N={r.raw_data.shape[0]}")
+            self._show_metrics_figure(r, show_mass)
+
+        def on_err(e):
+            self._unbusy(self._metrics_btn, "Compute Control Metrics")
+            self.err(e)
+
+        self.app.run_in_bg(lambda: api.api_control_metrics(dec, pid_params), on_ok, on_err)
+
+    def _show_metrics_figure(self, r: api.ControlMetricsResult, show_mass: bool) -> None:
+        ts   = datetime.datetime.now().strftime("%H:%M:%S")
+        cols = r.columns   # ["pid_in", "err", "pid_out"]
+
+        fig = plt.figure(figsize=(10, 14))
+        gs  = fig.add_gridspec(4, 1, height_ratios=[3, 3, 3, 2.2], hspace=0.45)
+        psd_axes = [fig.add_subplot(gs[i]) for i in range(3)]
+        ax_info  = fig.add_subplot(gs[3])
+
+        fig.suptitle(
+            f"Control Metrics  dec={r.decimation}  fs={r.fs/1e6:.3f} MHz  {ts}",
+            fontsize=PLOT_FONTSIZE,
+        )
+
+        # ── PSD subplots ──────────────────────────────────────────────────────
+        nyquist_khz = r.fs / 2e3
+        for i, (ax, col) in enumerate(zip(psd_axes, cols)):
+            psd_col  = r.psd[:, i]
+            freq_khz = r.freqs / 1e3
+            ax.semilogy(freq_khz, psd_col, linewidth=PLOT_LINEWIDTH)
+            ax.set_ylabel(f"{col}\n(cts²/Hz)", fontsize=PLOT_FONTSIZE)
+            ax.tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+            ax.grid(True, alpha=0.3, which="both")
+            ax.set_xlim(0, nyquist_khz)
+
+            # Centre-of-mass marker
+            com_khz = float(np.sum(freq_khz * psd_col) / np.sum(psd_col))
+            ymin = ax.get_ylim()[0]
+            ax.plot(com_khz, ymin, "o", color="orange", markersize=8,
+                    clip_on=False, zorder=5)
+
+            if show_mass:
+                mass = float(np.trapezoid(psd_col, r.freqs))
+                ax.text(
+                    0.98, 0.97, f"mass = {mass:.3g} cts²",
+                    transform=ax.transAxes, ha="right", va="top",
+                    fontsize=PLOT_FONTSIZE * 0.7,
+                    bbox=dict(boxstyle="round", fc="white", alpha=0.7),
+                )
+
+        psd_axes[-1].set_xlabel("Frequency (kHz)", fontsize=PLOT_FONTSIZE)
+        psd_axes[-1].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+
+        # Shared x-axis between PSD plots
+        for ax in psd_axes[:-1]:
+            ax.sharex(psd_axes[-1])
+            ax.tick_params(labelbottom=False)
+
+        # ── Info text box ─────────────────────────────────────────────────────
+        ax_info.axis("off")
+        p  = r.pid_params
+        st = f"{r.settling_time*1e3:.3f} ms" if not (r.settling_time != r.settling_time) else "N/A"
+        info = (
+            f"{'Controller Parameters':<40}{'Metrics':}\n"
+            f"{'':-<70}\n"
+            f"{'Kp = ' + str(p.get('kp','?')):<20}"
+            f"{'Ki = ' + str(p.get('ki','?')):<20}"
+            f"{'RMS Error     = ' + f'{r.rms_error:.2f}':} cts\n"
+            f"{'Kd = ' + str(p.get('kd','?')):<20}"
+            f"{'SP = ' + str(p.get('sp','?')):<20}"
+            f"{'Settling Time = ' + st:}\n"
+            f"{'Dec = ' + str(p.get('dec','?')):<20}"
+            f"{'α = ' + str(p.get('alpha','?')):<20}"
+            f"{'Overshoot     = ' + f'{r.overshoot:.2f}':} %\n"
+            f"{'Sat = ' + str(p.get('sat','?')):<20}"
+            f"{'Gain = ' + str(p.get('gain','?')):<20}"
+            f"{'Ctrl RMS      = ' + f'{r.ctrl_rms:.1f}':} cts\n"
+            f"{'Bias = ' + str(p.get('bias','?')):<20}"
+            f"{'En = ' + str(bool(p.get('en',0))):<20}"
+            f"{'Ctrl Max      = ' + f'{r.ctrl_max:.1f}':} cts\n"
+            f"{'':<40}"
+            f"{'Ctrl P95      = ' + f'{r.ctrl_p95:.1f}':} cts\n"
+            f"{'':<40}"
+            f"{'Ctrl Slew RMS = ' + f'{r.ctrl_slew_rms:.2f}':} cts/smp"
+        )
+        ax_info.text(
+            0.02, 0.95, info,
+            transform=ax_info.transAxes,
+            ha="left", va="top",
+            fontsize=PLOT_FONTSIZE * 0.6,
+            fontfamily="monospace",
+        )
+
+        # ── Export data ───────────────────────────────────────────────────────
+        psd_csv     = np.column_stack([r.freqs] + [r.psd[:, i] for i in range(3)])
+        psd_cols    = ["freq_hz"] + [f"{c}_psd" for c in cols]
+        def _safe(v):
+            """Convert float to None if NaN (JSON has no NaN literal)."""
+            if isinstance(v, float) and v != v:
+                return None
+            return v
+
+        json_payload = {
+            "controller_params": {k: (float(v) if isinstance(v, (int, float)) else v)
+                                   for k, v in r.pid_params.items()},
+            "metrics": {
+                "rms_error_cts":                _safe(r.rms_error),
+                "settling_time_s":              _safe(r.settling_time),
+                "overshoot_pct":                _safe(r.overshoot),
+                "ctrl_rms_cts":                 _safe(r.ctrl_rms),
+                "ctrl_max_cts":                 _safe(r.ctrl_max),
+                "ctrl_p95_cts":                 _safe(r.ctrl_p95),
+                "ctrl_slew_rms_cts_per_sample": _safe(r.ctrl_slew_rms),
+            },
+            "decimation":     r.decimation,
+            "sample_rate_hz": r.fs,
+        }
+
+        _add_figure_menu(
+            fig,
+            csv_data=r.raw_data, csv_columns=cols,
+            extra_csv_data=psd_csv, extra_csv_columns=psd_cols,
+            extra_csv_label="Save PSD CSV…",
+            json_data=json_payload,
+        )
+        plt.show(block=False)
 
 
 # ── Frame Capture panel ───────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ import numpy as np
 import paramiko
 
 from .types import (
-    CsSel, ConfigIoResult, DacDatSel, DacSel, FRAME_COLUMNS,
+    CsSel, ConfigIoResult, ControlMetricsResult, DacDatSel, DacSel, FRAME_COLUMNS,
     FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, PSDResult,
     SWEEP_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
@@ -57,12 +57,13 @@ __all__ = [
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
     "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "SweepRampResult",
-    "LockPointResult", "PSDResult",
+    "LockPointResult", "PSDResult", "ControlMetricsResult",
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
     "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
     "api_get_frame", "api_sweep_ramp", "compute_lockpoint", "api_psd",
+    "api_control_metrics",
 ]
 
 
@@ -460,3 +461,84 @@ def api_psd(decimation: int = 1, frame_code: FrameCode = FrameCode.ADC_DATA_IN) 
         psd   = np.column_stack(psds)
 
     return PSDResult(status=r.status, freqs=freqs, psd=psd, fs=fs, columns=cols, raw_data=r.data)
+
+
+def api_control_metrics(decimation: int, pid_params: dict) -> ControlMetricsResult:
+    """
+    Capture a PID_IO DMA frame and compute controller performance metrics.
+
+    decimation:  BRAM decimation factor (>= 1).
+    pid_params:  dict of controller parameters to embed in the result
+                 (read from GUI fields; not sent to hardware).
+
+    Returns a ControlMetricsResult with PSD, time-domain metrics, and pid_params.
+    """
+    r   = api_get_frame(decimation, FrameCode.PID_IO)
+    fs  = FPGA_FS / decimation
+    cols = FRAME_COLUMNS[FrameCode.PID_IO]   # ["pid_in", "err", "pid_out"]
+    data = r.data
+    N, n_cols = data.shape
+
+    # ── PSD (Wiener-Khinchin, identical to api_psd) ───────────────────────────
+    psds = []
+    for i in range(n_cols):
+        x   = data[:, i].astype(float)
+        x  -= x.mean()
+        acf = np.correlate(x, x, mode='full')
+        S   = np.abs(np.fft.rfft(acf))
+        S  /= (fs * N)
+        psds.append(S)
+    freqs = np.fft.rfftfreq(2 * N - 1, d=1.0 / fs)
+    psd   = np.column_stack(psds)
+
+    # ── Signal extraction ─────────────────────────────────────────────────────
+    err     = data[:, 1].astype(float)
+    pid_out = data[:, 2].astype(float)
+
+    # ── RMS tracking error ────────────────────────────────────────────────────
+    rms_error = float(np.sqrt(np.mean(err ** 2)))
+
+    # ── Settling time ─────────────────────────────────────────────────────────
+    # Steady state = mean of last 20 % of samples.
+    # Settled = |err − steady| ≤ 5 % of max|err| for all remaining samples.
+    steady    = float(np.mean(err[-(N // 5):]))
+    peak_abs  = float(np.max(np.abs(err)))
+    band      = 0.05 * peak_abs if peak_abs > 0 else 1.0
+    in_band   = np.abs(err - steady) <= band
+    settling_time = float("nan")
+    for i in range(N):
+        if np.all(in_band[i:]):
+            settling_time = float(i) / fs
+            break
+
+    # ── Overshoot ─────────────────────────────────────────────────────────────
+    # Measured over the first 20 % of the capture (transient window).
+    transient = err[:N // 5]
+    peak_range = float(np.max(transient) - np.min(transient))
+    if peak_range > 0:
+        overshoot = float((float(np.max(transient)) - steady) / peak_range * 100.0)
+    else:
+        overshoot = 0.0
+
+    # ── Control output metrics ────────────────────────────────────────────────
+    ctrl_rms      = float(np.sqrt(np.mean(pid_out ** 2)))
+    ctrl_max      = float(np.max(np.abs(pid_out)))
+    ctrl_p95      = float(np.percentile(np.abs(pid_out), 95))
+    ctrl_slew_rms = float(np.sqrt(np.mean(np.diff(pid_out) ** 2)))
+
+    return ControlMetricsResult(
+        raw_data=data,
+        columns=cols,
+        fs=fs,
+        decimation=decimation,
+        freqs=freqs,
+        psd=psd,
+        rms_error=rms_error,
+        settling_time=settling_time,
+        overshoot=overshoot,
+        ctrl_rms=ctrl_rms,
+        ctrl_max=ctrl_max,
+        ctrl_p95=ctrl_p95,
+        ctrl_slew_rms=ctrl_slew_rms,
+        pid_params=pid_params,
+    )
