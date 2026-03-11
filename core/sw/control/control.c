@@ -936,6 +936,25 @@ int cmd_sweep_ramp(cmd_ctx_t* ctx)
         CHECK_Q_FEED,
     };
 
+    // Read current IO routing and force DAC1 to register-driven mode
+    pdh_cmd_t io_cmd;
+    io_cmd.raw = 0;
+    io_cmd.cs_cmd.cmd     = CMD_CHECK_SIGNED;
+    io_cmd.cs_cmd.reg_sel = CHECK_IO;
+    pdh_callback_t io_cb  = pdh_execute_cmd(io_cmd);
+
+    uint32_t orig_dac1 = io_cb.check_io_cb.dac1_dat_sel_r;
+    uint32_t orig_dac2 = io_cb.check_io_cb.dac2_dat_sel_r;
+    uint32_t orig_pid  = io_cb.check_io_cb.pid_dat_sel_r;
+
+    pdh_cmd_t cfg_cmd;
+    cfg_cmd.raw = 0;
+    cfg_cmd.config_io_cmd.cmd          = CMD_CONFIG_IO;
+    cfg_cmd.config_io_cmd.dac1_dat_sel = SELECT_REGISTER;
+    cfg_cmd.config_io_cmd.dac2_dat_sel = orig_dac2;
+    cfg_cmd.config_io_cmd.pid_dat_sel  = orig_pid;
+    pdh_execute_cmd(cfg_cmd);
+
     FILE *f = fopen("sweep_log.csv", "w");
     if (!f) return SWEEP_RAMP_FOPEN_ERR;
 
@@ -963,6 +982,14 @@ int cmd_sweep_ramp(cmd_ctx_t* ctx)
     }
 
     fclose(f);
+
+    // Restore original IO routing
+    cfg_cmd.raw = 0;
+    cfg_cmd.config_io_cmd.cmd          = CMD_CONFIG_IO;
+    cfg_cmd.config_io_cmd.dac1_dat_sel = orig_dac1;
+    cfg_cmd.config_io_cmd.dac2_dat_sel = orig_dac2;
+    cfg_cmd.config_io_cmd.pid_dat_sel  = orig_pid;
+    pdh_execute_cmd(cfg_cmd);
 
     size_t index = 0;
     push_ctx_cb(ctx, &index, &num_points, UINT_TAG, "NUM_POINTS_CB");
