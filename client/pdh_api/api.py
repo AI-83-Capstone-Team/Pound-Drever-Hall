@@ -391,6 +391,7 @@ def compute_lockpoint(
     data:         np.ndarray,   # SweepRampResult.data, shape (N, 5)
     sign_sel:     str = "I",    # "I" or "Q"
     invert_delta: bool = False,
+    window:       int = 10,     # sliding-window size for slope smoothing
 ) -> LockPointResult:
     """
     Compute the optimal IQ rotation angle and PDH lock point from sweep data.
@@ -398,6 +399,7 @@ def compute_lockpoint(
     data:         SweepRampResult.data — columns: dac_v, adc_a, adc_b, i_feed, q_feed
     sign_sel:     which feed sets the sign of the golden signal G ("I" or "Q")
     invert_delta: flip the orientation condition (for setups with the opposite standard shape)
+    window:       number of points in the sliding window used to find the steepest-slope region
     """
     dac_v  = data[:, 0]
     i_feed = data[:, 3]
@@ -418,7 +420,11 @@ def compute_lockpoint(
     optimal_angle_deg = float(np.degrees(np.arctan2(
         np.dot(q_feed, G), np.dot(i_feed, G)
     )))
-    lock_point = float((dac_v[ix_max] + dac_v[ix_min]) / 2.0)
+    slope_mag = np.abs(np.diff(G) / np.diff(dac_v))
+    w = max(1, min(window, len(slope_mag)))
+    smoothed = np.convolve(slope_mag, np.ones(w) / w, mode='valid')
+    ix_peak = int(np.argmax(smoothed)) + w // 2
+    lock_point = float(dac_v[ix_peak])
 
     return LockPointResult(G=G, optimal_angle_deg=optimal_angle_deg, lock_point=lock_point)
 
