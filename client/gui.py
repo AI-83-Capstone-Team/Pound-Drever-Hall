@@ -222,16 +222,19 @@ class _App(tk.Tk):
 
         # Col 0: System, IO Routing, Sweep Ramp
         _SystemPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
-        _IORoutingPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
+        self._io_panel = _IORoutingPanel(col0, self)
+        self._io_panel.pack(fill=tk.X, pady=(0, 4))
         _SweepRampPanel(col0, self).pack(fill=tk.X)
 
-        # Col 1: NCO, Rotation, FIR
+        # Col 1: NCO, Rotation, FIR, Autolock
         _NCOPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
         _RotationPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
-        _FIRPanel(col1, self).pack(fill=tk.X)
+        _FIRPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
+        _AutolockPanel(col1, self).pack(fill=tk.X)
 
         # Col 2: PID, Frame Capture, PSD
-        _PIDPanel(col2, self).pack(fill=tk.X, pady=(0, 4))
+        self._pid_panel = _PIDPanel(col2, self)
+        self._pid_panel.pack(fill=tk.X, pady=(0, 4))
         _FrameCapturePanel(col2, self).pack(fill=tk.X, pady=(0, 4))
         _PSDPanel(col2, self).pack(fill=tk.X)
 
@@ -1002,7 +1005,7 @@ class _SweepRampPanel(_Panel):
         ttk.Entry(rng_frm, textvariable=self._v1_var, width=8).grid(row=0, column=3, padx=4)
 
         ttk.Label(rng_frm, text="Points:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
-        self._pts_var = tk.StringVar(value="100")
+        self._pts_var = tk.StringVar(value="1000")
         ttk.Entry(rng_frm, textvariable=self._pts_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
         ttk.Label(rng_frm, text="Delay µs:").grid(row=1, column=2, sticky=tk.W, padx=(8, 0), pady=(4, 0))
         self._delay_var = tk.StringVar(value="0")
@@ -1019,47 +1022,8 @@ class _SweepRampPanel(_Panel):
         ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
         ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
 
-        lp_frm = ttk.LabelFrame(self, text="Lock Point", padding=6)
-        lp_frm.pack(fill=tk.X, pady=(0, 6))
-
-        self._compute_lp_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(lp_frm, text="Compute lock point",
-                        variable=self._compute_lp_var,
-                        command=self._on_lp_toggle).pack(anchor=tk.W)
-
-        opts_frm = ttk.Frame(lp_frm)
-        opts_frm.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(opts_frm, text="Sign:").pack(side=tk.LEFT)
-        self._sign_sel_var = tk.StringVar(value="I")
-        self._sign_i_rb = ttk.Radiobutton(opts_frm, text="I", variable=self._sign_sel_var, value="I")
-        self._sign_q_rb = ttk.Radiobutton(opts_frm, text="Q", variable=self._sign_sel_var, value="Q")
-        self._sign_i_rb.pack(side=tk.LEFT, padx=(4, 2))
-        self._sign_q_rb.pack(side=tk.LEFT, padx=2)
-        self._invert_delta_var = tk.BooleanVar(value=False)
-        self._invert_cb = ttk.Checkbutton(opts_frm, text="Invert delta",
-                                          variable=self._invert_delta_var)
-        self._invert_cb.pack(side=tk.LEFT, padx=(8, 0))
-
-        res_frm = ttk.Frame(lp_frm)
-        res_frm.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(res_frm, text="Angle:").pack(side=tk.LEFT)
-        self._lp_angle_var = tk.StringVar(value="—")
-        ttk.Label(res_frm, textvariable=self._lp_angle_var, width=12).pack(side=tk.LEFT, padx=(2, 8))
-        ttk.Label(res_frm, text="Lock:").pack(side=tk.LEFT)
-        self._lp_lock_var = tk.StringVar(value="—")
-        ttk.Label(res_frm, textvariable=self._lp_lock_var, width=12).pack(side=tk.LEFT, padx=2)
-
-        # Initialise widget states
-        self._on_lp_toggle()
-
         self._run_btn = ttk.Button(self, text="Run Sweep", command=self._on_run)
         self._run_btn.pack(anchor=tk.W, pady=(2, 0))
-
-    def _on_lp_toggle(self) -> None:
-        state = tk.NORMAL if self._compute_lp_var.get() else tk.DISABLED
-        self._sign_i_rb.configure(state=state)
-        self._sign_q_rb.configure(state=state)
-        self._invert_cb.configure(state=state)
 
     def _on_run(self) -> None:
         try:
@@ -1091,20 +1055,8 @@ class _SweepRampPanel(_Panel):
         def on_ok(r: api.SweepRampResult):
             self._unbusy(self._run_btn, "Run Sweep")
             self.ok(f"Sweep done  {r.num_points_cb} pts")
-            lp = None
-            if self._compute_lp_var.get() and r.data.size > 0:
-                try:
-                    lp = api.compute_lockpoint(
-                        r.data,
-                        sign_sel=self._sign_sel_var.get(),
-                        invert_delta=self._invert_delta_var.get(),
-                    )
-                    self._lp_angle_var.set(f"{lp.optimal_angle_deg:.2f}°")
-                    self._lp_lock_var.set(f"{lp.lock_point:.4f} V")
-                except Exception as exc:
-                    self.err(exc)
             if active_cols and r.data.size > 0:
-                self._plot_sweep(r, active_cols, lp)
+                self._plot_sweep(r, active_cols)
 
         def on_err(e):
             self._unbusy(self._run_btn, "Run Sweep")
@@ -1115,10 +1067,9 @@ class _SweepRampPanel(_Panel):
             on_ok, on_err,
         )
 
-    def _plot_sweep(self, r: api.SweepRampResult, active_cols: list[str],
-                    lp: api.LockPointResult | None = None) -> None:
+    def _plot_sweep(self, r: api.SweepRampResult, active_cols: list[str]) -> None:
         x = r.data[:, 0]  # dac_v
-        n = len(active_cols) + (1 if lp is not None else 0)
+        n = len(active_cols)
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
         for i, col in enumerate(active_cols):
             idx = api.SWEEP_COLUMNS.index(col)
@@ -1126,16 +1077,193 @@ class _SweepRampPanel(_Panel):
             axes[i, 0].set_ylabel(col, fontsize=PLOT_FONTSIZE)
             axes[i, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
             axes[i, 0].grid(True, alpha=0.3)
-        if lp is not None:
-            ax_g = axes[len(active_cols), 0]
-            ax_g.plot(x, lp.G, linewidth=PLOT_LINEWIDTH)
-            ax_g.set_ylabel("G (V)", fontsize=PLOT_FONTSIZE)
-            ax_g.tick_params(labelsize=PLOT_FONTSIZE * 0.85)
-            ax_g.grid(True, alpha=0.3)
-            ax_g.axvline(lp.lock_point, color="red", linestyle="--",
-                         linewidth=PLOT_LINEWIDTH * 1.25,
-                         label=f"lock={lp.lock_point:.4f} V")
-            ax_g.legend(fontsize=PLOT_FONTSIZE * 0.85)
+        axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=PLOT_FONTSIZE)
+        axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+        fig.tight_layout()
+        _add_figure_menu(fig, r.data, list(api.SWEEP_COLUMNS))
+        plt.show(block=False)
+
+
+# ── Autolock panel ────────────────────────────────────────────────────────────
+
+_CHAN_TO_PID_SEL = {
+    "adc_a":  api.PidDatSel.ADC_A,
+    "adc_b":  api.PidDatSel.ADC_B,
+    "i_feed": api.PidDatSel.I_FEED,
+    "q_feed": api.PidDatSel.Q_FEED,
+}
+
+
+class _AutolockPanel(_Panel):
+    def __init__(self, parent, app):
+        super().__init__(parent, app, "Autolock")
+        self._build()
+
+    def _build(self) -> None:
+        # Sweep parameters
+        rng_frm = ttk.LabelFrame(self, text="Sweep", padding=6)
+        rng_frm.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(rng_frm, text="V0:").grid(row=0, column=0, sticky=tk.W)
+        self._v0_var = tk.StringVar(value="-1.0")
+        ttk.Entry(rng_frm, textvariable=self._v0_var, width=8).grid(row=0, column=1, padx=4)
+        ttk.Label(rng_frm, text="V1:").grid(row=0, column=2, sticky=tk.W, padx=(8, 0))
+        self._v1_var = tk.StringVar(value="1.0")
+        ttk.Entry(rng_frm, textvariable=self._v1_var, width=8).grid(row=0, column=3, padx=4)
+        ttk.Label(rng_frm, text="Points:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        self._pts_var = tk.StringVar(value="1000")
+        ttk.Entry(rng_frm, textvariable=self._pts_var, width=8).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Label(rng_frm, text="Delay µs:").grid(row=1, column=2, sticky=tk.W, padx=(8, 0), pady=(4, 0))
+        self._delay_var = tk.StringVar(value="0")
+        ttk.Entry(rng_frm, textvariable=self._delay_var, width=8).grid(row=1, column=3, padx=4, pady=(4, 0))
+
+        # Channel selection
+        chan_frm = ttk.LabelFrame(self, text="Channel", padding=6)
+        chan_frm.pack(fill=tk.X, pady=(0, 6))
+        self._chan_var = tk.StringVar(value="i_feed")
+        for label, val in [("ADC A", "adc_a"), ("ADC B", "adc_b"),
+                           ("I Feed", "i_feed"), ("Q Feed", "q_feed")]:
+            ttk.Radiobutton(chan_frm, text=label, variable=self._chan_var,
+                            value=val).pack(side=tk.LEFT, padx=2)
+
+        # Peak window
+        pk_frm = ttk.LabelFrame(self, text="Peak Window", padding=6)
+        pk_frm.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(pk_frm, text="Peak sweep pts:").pack(side=tk.LEFT)
+        self._peak_pts_var = tk.StringVar(value="200")
+        ttk.Entry(pk_frm, textvariable=self._peak_pts_var, width=8).pack(side=tk.LEFT, padx=4)
+
+        # Results
+        res_frm = ttk.LabelFrame(self, text="Result", padding=6)
+        res_frm.pack(fill=tk.X, pady=(0, 6))
+        self._al_lp_var = tk.StringVar(value="Lock point: —")
+        ttk.Label(res_frm, textvariable=self._al_lp_var).pack(anchor=tk.W)
+        self._al_slope_var = tk.StringVar(value="Slope: —")
+        ttk.Label(res_frm, textvariable=self._al_slope_var).pack(anchor=tk.W)
+
+        self._al_btn = ttk.Button(self, text="Run Autolock", command=self._on_autolock)
+        self._al_btn.pack(anchor=tk.W, pady=(2, 0))
+
+    def _on_autolock(self) -> None:
+        try:
+            v0       = float(self._v0_var.get())
+            v1       = float(self._v1_var.get())
+            pts      = int(self._pts_var.get())
+            delay    = int(self._delay_var.get())
+            peak_pts = int(self._peak_pts_var.get())
+        except ValueError as e:
+            self.err(e); return
+        if not (-1.0 <= v0 <= 1.0 and -1.0 <= v1 <= 1.0):
+            self.err(ValueError("V0 and V1 must be in [-1.0, 1.0]")); return
+        if not (2 <= pts <= 16384):
+            self.err(ValueError("Points must be in [2, 16384]")); return
+        if delay < 0:
+            self.err(ValueError("Delay must be >= 0")); return
+        if peak_pts < 1:
+            self.err(ValueError("Peak sweep pts must be >= 1")); return
+
+        chan = self._chan_var.get()
+        ip, port = self._conn()
+        self._prep_call(ip, port)
+        self._busy(self._al_btn, "Locking…")
+
+        def bg():
+            # 1. Sweep
+            r = api.api_sweep_ramp(v0, v1, pts, api.DacSel.DAC_1,
+                                   write_delay_us=delay)
+            # 2. Extract columns
+            col_idx = api.SWEEP_COLUMNS.index(chan)
+            sig     = r.data[:, col_idx]
+            dac_v   = r.data[:, 0]  # dac_v is always column 0
+
+            # 3. Find global max; window ±peak_pts to find min
+            max_idx = int(np.argmax(sig))
+            lo      = max(0, max_idx - peak_pts)
+            hi      = min(len(sig), max_idx + peak_pts + 1)
+            min_idx = lo + int(np.argmin(sig[lo:hi]))
+
+            if abs(dac_v[max_idx] - dac_v[min_idx]) < 1e-9:
+                raise ValueError("Max and min are at the same DAC voltage")
+
+            # 4. Find lock point as the point of steepest slope between max and min
+            seg_lo   = min(max_idx, min_idx)
+            seg_hi   = max(max_idx, min_idx) + 1
+            seg_sig  = sig[seg_lo:seg_hi]
+            seg_dac  = dac_v[seg_lo:seg_hi]
+            if len(seg_sig) < 2:
+                raise ValueError("Feature segment too short to compute slope")
+            deriv      = np.gradient(seg_sig, seg_dac)
+            lp_seg_idx = int(np.argmax(np.abs(deriv)))
+            lock_point = float(seg_dac[lp_seg_idx])
+            slope      = float(deriv[lp_seg_idx])
+            if abs(slope) < 1e-9:
+                raise ValueError("Slope is zero — no dispersive feature found")
+            egain = 100.0 / slope
+
+            # 5. Validate egain range
+            if abs(egain) >= 32.0:
+                raise ValueError(
+                    f"1/slope = {egain:.4f} is outside egain range [-32, 32). "
+                    "Increase sweep range or signal amplitude."
+                )
+
+            # 6. Configure IO routing: DAC1→PID, PID_in→selected channel
+            pid_sel = _CHAN_TO_PID_SEL[chan]
+            dac2    = api.DacDatSel(self.app._io_panel._dac2_sel.get())
+            api.api_config_io(api.DacDatSel.PID, dac2, pid_sel)
+
+            # 7. Configure PID: read current params, override sp/bias/egain/en
+            pv = self.app._pid_panel._vars
+            kp    = float(pv["kp"].get())
+            ki    = float(pv["ki"].get())
+            kd    = float(pv["kd"].get())
+            dec   = int(pv["dec"].get())
+            alpha = int(pv["alpha"].get())
+            sat   = int(pv["sat"].get())
+            gain  = float(pv["gain"].get())
+            api.api_set_pid(kp, kd, ki, 0.0, dec, alpha, sat, 1,
+                            gain=gain, bias=lock_point, egain=egain)
+
+            return (r, chan, lock_point, slope, egain, pid_sel)
+
+        def on_ok(result):
+            r, chan, lock_point, slope, egain, pid_sel = result
+            self._al_lp_var.set(f"Lock point: {lock_point:.6f} V")
+            self._al_slope_var.set(f"Slope: {slope:.6f} V⁻¹")
+            # Sync IO routing panel UI
+            self.app._io_panel._dac1_sel.set(int(api.DacDatSel.PID))
+            self.app._io_panel._pid_sel.set(int(pid_sel))
+            # Sync PID panel UI
+            self.app._pid_panel._vars["sp"].set("0.0")
+            self.app._pid_panel._vars["bias"].set(f"{lock_point:.6f}")
+            self.app._pid_panel._vars["egain"].set(f"{egain:.6f}")
+            self.app._pid_panel._en_var.set(True)
+            self._unbusy(self._al_btn, "Run Autolock")
+            self.ok(f"Locked  lp={lock_point:.4f} V  slope={slope:.4f}")
+            self._plot_autolock(r, chan, lock_point)
+
+        def on_err(e):
+            self._unbusy(self._al_btn, "Run Autolock")
+            self.err(e)
+
+        self.app.run_in_bg(bg, on_ok, on_err)
+
+    def _plot_autolock(self, r: api.SweepRampResult, locked_chan: str,
+                       lock_point: float) -> None:
+        all_cols = ["adc_a", "adc_b", "i_feed", "q_feed"]
+        x = r.data[:, 0]  # dac_v
+        n = len(all_cols)
+        fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
+        for i, col in enumerate(all_cols):
+            idx = api.SWEEP_COLUMNS.index(col)
+            axes[i, 0].plot(x, r.data[:, idx], linewidth=PLOT_LINEWIDTH)
+            axes[i, 0].set_ylabel(col, fontsize=PLOT_FONTSIZE)
+            axes[i, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+            axes[i, 0].grid(True, alpha=0.3)
+            if col == locked_chan:
+                axes[i, 0].axvline(lock_point, color="red", linestyle="--",
+                                   linewidth=PLOT_LINEWIDTH * 1.25,
+                                   label=f"lock={lock_point:.4f} V")
+                axes[i, 0].legend(fontsize=PLOT_FONTSIZE * 0.85)
         axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=PLOT_FONTSIZE)
         axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
         fig.tight_layout()
