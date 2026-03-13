@@ -306,8 +306,9 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     float kd_f = ctx->float_args[1];
     float ki_f = ctx->float_args[2];
     float sp_f = ctx->float_args[3];
-    float gain_f = ctx->float_args[4];
-    float bias_f = ctx->float_args[5];  // optional, default 0.0 (zero-init ctx)
+    float gain_f  = ctx->float_args[4];
+    float bias_f  = ctx->float_args[5];  // optional, default 0.0 (zero-init ctx)
+    float egain_f = ctx->float_args[6];  // Q10 input gain; Python always sends this (default 1.0)
     uint32_t dec = ctx->uint_args[0];
     uint32_t alpha = ctx->uint_args[1];
     uint32_t sat = ctx->uint_args[2];
@@ -327,6 +328,11 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     if (gain_inter > 32767)  gain_inter = 32767;
     if (gain_inter < -32768) gain_inter = -32768;
     int16_t gain_i = (int16_t)gain_inter;
+
+    int32_t egain_inter = (int32_t)lrintf(egain_f * 1024.0f);
+    if (egain_inter > 32767)  egain_inter = 32767;
+    if (egain_inter < -32768) egain_inter = -32768;
+    int16_t egain_i = (int16_t)egain_inter;
 
     int32_t bias_inter = (int32_t)lrintf(bias_f * 8191.0f);
     if (bias_inter > 8191)  bias_inter = 8191;
@@ -418,6 +424,15 @@ int cmd_set_pid(cmd_ctx_t* ctx)
     return_code = validate_cb(&echo_bias, &bias_i, INT16_TAG, __func__, "BIAS_CB",
                               return_code, SET_PID_INVALID_BIAS);
     push_ctx_cb(ctx, &index, &bias_converted, FLOAT_TAG, "BIAS_CB");
+
+    cmd.set_pid_cmd.payload   = egain_i;
+    cmd.set_pid_cmd.coeff_sel = PID_SELECT_EGAIN;
+    cb = pdh_execute_cmd(cmd);
+    int16_t echo_egain = (int16_t)cb.set_pid_cb.payload_r;
+    float egain_converted = echo_egain / 1024.0f;
+    return_code = validate_cb(&echo_egain, &egain_i, INT16_TAG, __func__, "EGAIN_CB",
+                              return_code, SET_PID_INVALID_EGAIN);
+    push_ctx_cb(ctx, &index, &egain_converted, FLOAT_TAG, "EGAIN_CB");
 
     return return_code;
 }

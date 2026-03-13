@@ -134,6 +134,7 @@ module pdh_core #
 
     logic signed [15:0] kp_r, kd_r, ki_r, kp_w, kd_w, ki_w;
     logic signed [15:0] gain_r, gain_w;
+    logic signed [15:0] egain_r, egain_w;
     logic signed [13:0] bias_r, bias_w;
     logic signed [13:0] sp_w, sp_r;
     logic [13:0] dec_w, dec_r;
@@ -224,7 +225,8 @@ module pdh_core #
         PID_SELECT_SAT   = 4'b0110,
         PID_SELECT_EN    = 4'b0111,
         PID_SELECT_GAIN  = 4'b1000,
-        PID_SELECT_BIAS  = 4'b1001
+        PID_SELECT_BIAS  = 4'b1001,
+        PID_SELECT_EGAIN = 4'b1010
     }   pid_coeff_sel_t;
 
 
@@ -272,6 +274,10 @@ module pdh_core #
 
             PID_SELECT_BIAS: begin
                 pid_payload_w = 16'($signed(-bias_r));
+            end
+
+            PID_SELECT_EGAIN: begin
+                pid_payload_w = egain_r;
             end
 
             default: begin
@@ -536,6 +542,7 @@ fir # (
         .dat_i(pid_in_w), //TODO: Move from I-feed to (I^2+Q^2)sign(I)
         .enable_i(pid_enable_r),
         .gain_i(gain_r),
+        .egain_i(egain_r),
         .bias_i(bias_r),
         .pid_out(pid_out_w),
         .err_tap(err_tap_w),
@@ -648,6 +655,7 @@ fir # (
     assign satwidth_w  = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_SAT))   ? data_w[4:0]  : satwidth_r;
     assign pid_enable_w= (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_EN))    ? data_w[0]    : pid_enable_r;
     assign gain_w      = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_GAIN))  ? data_w[15:0] : gain_r;
+    assign egain_w     = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_EGAIN)) ? $signed(data_w[15:0]) : egain_r;
     assign bias_w      = (cmd_w == CMD_SET_PID_COEFFS && (pid_coeff_select_w == PID_SELECT_BIAS))  ? -$signed(data_w[13:0]) : bias_r;
 
 
@@ -833,6 +841,7 @@ fir # (
             satwidth_r <= 5'(PID_SATWIDTH_INIT);
             pid_enable_r <= 1'b0;
             gain_r <= 16'(PID_GAIN_INIT);
+            egain_r <= 16'(PID_GAIN_INIT);
             bias_r <= '0;
 
             nco_shift_r <= '0;
@@ -891,6 +900,7 @@ fir # (
             satwidth_r <= satwidth_w;
             pid_enable_r <= pid_enable_w;
             gain_r <= gain_w;
+            egain_r <= egain_w;
             bias_r <= bias_w;
 
             nco_shift_r <= nco_shift_w;

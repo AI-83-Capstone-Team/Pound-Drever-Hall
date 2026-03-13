@@ -41,6 +41,7 @@ PID_SELECT_SAT   = 0b0110
 PID_SELECT_EN    = 0b0111
 PID_SELECT_GAIN  = 0b1000
 PID_SELECT_BIAS  = 0b1001
+PID_SELECT_EGAIN = 0b1010
 
 # ── NCO coeff selects ──────────────────────────────────────────────────────────
 
@@ -487,8 +488,16 @@ async def test_pdh_core(dut):
     _check_approx("pid: bias echo",
                   _as_signed16(f["payload"]) / 8191.0, PID_BIAS, 0.001)
 
-    # Reset bias to 0 for subsequent sections
-    await _pid(PID_SELECT_BIAS, 0)
+    PID_EGAIN = 1.5
+    egain_i = _float_to_q10(PID_EGAIN)
+    cb = await _pid(PID_SELECT_EGAIN, egain_i & 0xFFFF)
+    f  = _cb_pid(cb)
+    _check_approx("pid: egain echo",
+                  _as_signed16(f["payload"]) / 1024.0, PID_EGAIN, 0.002)
+
+    # Reset bias and egain for subsequent sections
+    await _pid(PID_SELECT_BIAS,  0)
+    await _pid(PID_SELECT_EGAIN, _float_to_q10(1.0) & 0xFFFF)
 
     # ── 9. Config IO — NCO drives DACs ────────────────────────────────────────
     _section("9. Config IO — NCO drives DACs")
@@ -563,6 +572,8 @@ async def test_pdh_core(dut):
     #   gain=1.0 → pid_out = 7167  (deviation from midpoint 8191 = -1024)
     #   gain=2.0 → pid_out = 6143  (deviation = -2048 = 2 × -1024)
     #   gain=0.5 → pid_out = 7679  (deviation = -512  = 0.5 × -1024)
+    #   gain=4.0 → pid_out = 4095  (linear, gain > 2)
+    #   gain=9.0 → pid_out = 0     (saturated at DAC min: 8191 - 9216 = -1025 → 0)
     _section("12. PID gain functional test")
 
     io_data = DAC_SEL_PID | (DAC_SEL_PID << 3) | (PID_SEL_ADCA << 6)
@@ -598,6 +609,14 @@ async def test_pdh_core(dut):
     await ClockCycles(dut.clk, 20)
     out_gain_half = int(dut.dac_dat_o.value)
 
+    await _pid(PID_SELECT_GAIN, _float_to_q10(4.0) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_gain4 = int(dut.dac_dat_o.value)
+
+    await _pid(PID_SELECT_GAIN, _float_to_q10(9.0) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_gain9 = int(dut.dac_dat_o.value)
+
     # Restore and disable.
     await _pid(PID_SELECT_GAIN, _float_to_q10(1.0) & 0xFFFF)
     await _pid(PID_SELECT_EN, 0)
@@ -618,6 +637,10 @@ async def test_pdh_core(dut):
            f"got={out_gain_half}  exp=7679")
     _check_approx("gain=2.0 doubles deviation",   float(dev2),    dev1 * 2.0,   1.0)
     _check_approx("gain=0.5 halves deviation",    float(dev_half), dev1 * 0.5,  1.0)
+    _check("gain=4.0: pid output exact",          out_gain4 == 4095,
+           f"got={out_gain4}  exp=4095")
+    _check("gain=9.0: output saturates to 0",     out_gain9 == 0,
+           f"got={out_gain9}  exp=0")
 
     # ── 13. PID bias functional test ───────────────────────────────────────────
     # With gain=1.0 and a fixed error, adding bias shifts the DAC output by the
@@ -670,6 +693,65 @@ async def test_pdh_core(dut):
                   float(out_bias_pos - out_bias0), -4095.0, 2.0)
     _check_approx("bias=-0.5V: output shifted up by ~4095 codes",
                   float(out_bias_neg - out_bias0), 4095.0, 2.0)
+
+    # ── 14. PID egain functional + err_tap verification ───────────────────────
+    # Same setup as section 12 (kp=0.5, ki=kd=0, sp=0, ADC_A=0x2800 → error=-2048,
+    # gain=1.0). egain scales the error BEFORE Kp:
+    #   egain=1.0 → error_gained=-2048 → pid_out=7167  (same as gain=1.0 in §12)
+    #   egain=2.0 → error_gained=-4096 → pid_out=6143  (same as gain=2.0 in §12)
+    #   egain=0.5 → error_gained=-1024 → pid_out=7679  (same as gain=0.5 in §12)
+    # err_tap (error_pipe1_r) reflects the gained error directly.
+    _section("14. PID egain functional + err_tap")
+
+    io_data = DAC_SEL_PID | (DAC_SEL_PID << 3) | (PID_SEL_ADCA << 6)
+    await _send(dut, CMD_CONFIG_IO, io_data)
+
+    ADC_EGAIN_TEST = 0x2800
+    dut.adc_dat_a_i.value = ADC_EGAIN_TEST
+    await ClockCycles(dut.clk, 4)
+
+    kp_i = _float_to_q15(0.5)
+    await _pid(PID_SELECT_KP,    kp_i & 0xFFFF)
+    await _pid(PID_SELECT_KI,    0)
+    await _pid(PID_SELECT_KD,    0)
+    await _pid(PID_SELECT_SP,    0)
+    await _pid(PID_SELECT_DEC,   1)
+    await _pid(PID_SELECT_ALPHA, 4)
+    await _pid(PID_SELECT_SAT,   31)
+    await _pid(PID_SELECT_GAIN,  _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_EGAIN, _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_EN,    1)
+    await ClockCycles(dut.clk, 20)
+    out_egain1    = int(dut.dac_dat_o.value)
+    err_egain1    = _as_signed16(int(dut.u_pid.err_tap.value))
+
+    await _pid(PID_SELECT_EGAIN, _float_to_q10(2.0) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_egain2    = int(dut.dac_dat_o.value)
+    err_egain2    = _as_signed16(int(dut.u_pid.err_tap.value))
+
+    await _pid(PID_SELECT_EGAIN, _float_to_q10(0.5) & 0xFFFF)
+    await ClockCycles(dut.clk, 20)
+    out_egain_half = int(dut.dac_dat_o.value)
+    err_egain_half = _as_signed16(int(dut.u_pid.err_tap.value))
+
+    await _pid(PID_SELECT_EGAIN, _float_to_q10(1.0) & 0xFFFF)
+    await _pid(PID_SELECT_EN,    0)
+
+    _check("egain=1.0: pid output exact",   out_egain1     == 7167,
+           f"got={out_egain1}  exp=7167")
+    _check("egain=2.0: pid output exact",   out_egain2     == 6143,
+           f"got={out_egain2}  exp=6143")
+    _check("egain=0.5: pid output exact",   out_egain_half == 7679,
+           f"got={out_egain_half}  exp=7679")
+    _check("egain=1.0: err_tap exact",      err_egain1     == -2048,
+           f"got={err_egain1}  exp=-2048")
+    _check("egain=2.0: err_tap exact",      err_egain2     == -4096,
+           f"got={err_egain2}  exp=-4096")
+    _check("egain=0.5: err_tap exact",      err_egain_half == -1024,
+           f"got={err_egain_half}  exp=-1024")
+    _check_approx("egain=2.0 doubles err_tap", float(err_egain2),    err_egain1 * 2.0, 1.0)
+    _check_approx("egain=0.5 halves err_tap",  float(err_egain_half), err_egain1 * 0.5, 1.0)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()

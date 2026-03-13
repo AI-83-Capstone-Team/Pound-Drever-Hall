@@ -24,7 +24,7 @@ COMPILE_ARGS += -g2012 -DNOSYNTH \
 endif
 
 ifeq ($(SIM),verilator)
-COMPILE_ARGS += --sv -DNOSYNTH --timing \
+COMPILE_ARGS += --sv -DNOSYNTH --timing --public-flat-rw \
                 -GNTAPS=$(NTAPS) -GAW=$(AW)
 endif
 

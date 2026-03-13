@@ -220,6 +220,7 @@ def api_set_pid(
     dec: int, alpha: int, sat: int, en: int,
     gain: float = 1.0,
     bias: float = 0.0,
+    egain: float = 1.0,
 ) -> SetPidResult:
     """
     Configure the PID controller.
@@ -232,9 +233,10 @@ def api_set_pid(
     en:         1 to enable, 0 to disable.
     gain:       output scalar in Q10 range [-32, 32).
     bias:       DC offset added to PID output, in volts [-1.0, 1.0].
+    egain:      input gain applied to error before Kp/Ki/Kd, Q10 range [-32, 32).
     """
     r = execute_cmd(
-        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp},{gain},{bias}\nU:{dec},{alpha},{sat},{en}\n"
+        f"CMD:set_pid\nF:{kp},{kd},{ki},{sp},{gain},{bias},{egain}\nU:{dec},{alpha},{sat},{en}\n"
     )
     return SetPidResult(
         status=r.get("status", -1),
@@ -248,6 +250,7 @@ def api_set_pid(
         en_cb=r.get("EN_CB", 0),
         gain_cb=r.get("GAIN_CB", float("nan")),
         bias_cb=r.get("BIAS_CB", float("nan")),
+        egain_cb=r.get("EGAIN_CB", float("nan")),
     )
 
 

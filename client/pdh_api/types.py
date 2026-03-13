@@ -135,6 +135,7 @@ class SetPidResult:
     en_cb: int
     gain_cb: float      # echoed gain in Q10 float (gain_i / 1024.0)
     bias_cb: float      # echoed bias in volts (bias_i / 8191.0)
+    egain_cb: float     # echoed input gain in Q10 float (egain_i / 1024.0)
 
 
 @dataclass

@@ -658,6 +658,7 @@ class _PIDPanel(_Panel):
             ("Satwidth (15–31):","sat",   "31"),
             ("Gain [-32, 32):",  "gain",  "1.0"),
             ("Bias [-1V, 1V]:",  "bias",  "0.0"),
+            ("Input Gain [-32, 32):", "egain", "1.0"),
         ]
         self._vars: dict[str, tk.StringVar] = {}
         for row, (label, key, default) in enumerate(fields):
@@ -707,6 +708,7 @@ class _PIDPanel(_Panel):
             sat   = int(self._vars["sat"].get())
             gain  = float(self._vars["gain"].get())
             bias  = float(self._vars["bias"].get())
+            egain = float(self._vars["egain"].get())
         except ValueError as e:
             self.err(e); return
         for name, v, lo, hi in [("kp", kp, -1.0, 1.0), ("ki", ki, -1.0, 1.0),
@@ -723,6 +725,8 @@ class _PIDPanel(_Panel):
             self.err(ValueError(f"gain={gain} not in [-32, 32)")); return
         if not (-1.0 <= bias <= 1.0):
             self.err(ValueError(f"bias={bias} not in [-1.0, 1.0]")); return
+        if not (-32.0 <= egain < 32.0):
+            self.err(ValueError(f"egain={egain} not in [-32, 32)")); return
         en = int(self._en_var.get())
         ip, port = self._conn()
         self._prep_call(ip, port)
@@ -731,7 +735,7 @@ class _PIDPanel(_Panel):
             self._fb_var.set(
                 f"kp={r.kp_cb:.4f}  ki={r.ki_cb:.4f}  kd={r.kd_cb:.4f}  "
                 f"sp={r.sp_cb:.4f}  dec={r.dec_cb}  alpha={r.alpha_cb}  "
-                f"sat={r.sat_cb}  en={r.en_cb}  gain={r.gain_cb:.4f}  bias={r.bias_cb:.4f}"
+                f"sat={r.sat_cb}  en={r.en_cb}  gain={r.gain_cb:.4f}  bias={r.bias_cb:.4f}  egain={r.egain_cb:.4f}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok(f"PID set  kp={r.kp_cb:.4f}  en={r.en_cb}")
@@ -739,7 +743,7 @@ class _PIDPanel(_Panel):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
         self.app.run_in_bg(
-            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en, gain, bias=bias), on_ok, on_err
+            lambda: api.api_set_pid(kp, kd, ki, sp, dec, alpha, sat, en, gain, bias=bias, egain=egain), on_ok, on_err
         )
 
     def _on_metrics(self) -> None:
@@ -752,7 +756,7 @@ class _PIDPanel(_Panel):
 
         # Collect PID params from GUI fields (read-only; does not re-issue set_pid)
         pid_params: dict = {}
-        for key in ("kp", "ki", "kd", "sp", "dec", "alpha", "sat", "gain", "bias"):
+        for key in ("kp", "ki", "kd", "sp", "dec", "alpha", "sat", "gain", "bias", "egain"):
             try:
                 raw = self._vars[key].get()
                 pid_params[key] = float(raw) if "." in raw else int(raw)

@@ -29,6 +29,7 @@ module pid_core
 
     input logic enable_i,
     input logic signed [S16_W-1:0] gain_i,   // Q10 output gain: gain_float = gain_i / 1024
+    input logic signed [S16_W-1:0] egain_i,  // Q10 input gain applied to error before Kp/Ki/Kd
     input logic signed [13:0] bias_i,
 
     output logic [13:0] pid_out,
@@ -43,6 +44,7 @@ module pid_core
 
     logic signed [S16_W-1:0] kp_r, kd_r, ki_r;
     logic signed [S16_W-1:0] gain_r;
+    logic signed [S16_W-1:0] egain_r;
     logic signed [13:0] bias_r;
     logic signed [13:0] sp_r;
     logic [3:0] alpha_r;
@@ -85,9 +87,22 @@ module pid_core
         else                                 sat20_from_26 = x[19:0];
     endfunction
 
+    // Saturate a 22-bit signed value to 16-bit signed range.
+    function automatic logic signed [15:0] sat16_from_22(input logic signed [21:0] x);
+        if      ($signed(x) >  22'sd32767)  sat16_from_22 =  16'sd32767;
+        else if ($signed(x) < -22'sd32768)  sat16_from_22 = -16'sd32768;
+        else                                sat16_from_22 = x[15:0];
+    endfunction
+
 
 
     logic signed [S16_W-1:0] error_w, error_pipe1_r;
+    logic signed [31:0] egain_prod_w;
+    logic signed [21:0] egain_shifted_w;
+    logic signed [S16_W-1:0] error_gained_w;
+    assign egain_prod_w    = $signed(error_w) * $signed(egain_r);
+    assign egain_shifted_w = $signed(egain_prod_w[31:10]);  // >>> 10 for Q10 scaling
+    assign error_gained_w  = sat16_from_22(egain_shifted_w);
 
     logic signed [S32_W-1:0] sum_error1_w, sum_error2_w, sum_error_r;
     logic [S32_W-1:0] sat_threshold_w;
@@ -112,12 +127,12 @@ module pid_core
         error_w = dat_i - {{2{sp_r[13]}}, sp_r};
         sat_threshold_w = 1 << satwidth_r;
 
-        sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_w[S16_W-1]}}, error_w});
+        sum_error_wide_w = $signed({sum_error_r[S32_W-1], sum_error_r}) + $signed({{(S32_W-S16_W + 1){error_gained_w[S16_W-1]}}, error_gained_w});
         sum_error1_w = apply_satwidth_truncation(.in(sum_error_wide_w), .threshold(sat_threshold_w));
         sum_error2_w = (tick1_r && !(pid_out == {14{1'b1}} && sum_error1_w > sum_error_r) && !(pid_out == 14'd0 && sum_error1_w < sum_error_r))? sum_error1_w : sum_error_r; //Want to include last piped error in sum
 
         // EMA: y[k] = α·x[k] + (1−α)·y[k−1]  where α = 2^(−alpha)
-        err_minus_ema_w = error_w - yk_r;
+        err_minus_ema_w = error_gained_w - yk_r;
         yk_w = tick1_r? (((err_minus_ema_w)>>>alpha_r) + yk_r) : yk_r;
 
         p_error_w = tick2_r? kp_r * error_pipe1_r : p_error_r;
@@ -148,6 +163,7 @@ module pid_core
             decimate_r <= {{(DEC_W-1){1'b0}}, 1'b1};
             satwidth_r <= 5'd31;
             gain_r <= 16'sd1024;   // power-on default: gain = 1.0
+            egain_r <= 16'sd1024;  // power-on default: egain = 1.0
             bias_r <= '0;
 
             sum_error_r <= '0;
@@ -162,10 +178,11 @@ module pid_core
             decimate_r <= (decimate_i < 1)? 1 : decimate_i;
             satwidth_r <= next_satwidth_w;
             gain_r <= gain_i;
+            egain_r <= egain_i;
             bias_r <= bias_i;
 
             sum_error_r <= sum_error2_w;
-            error_pipe1_r <= error_w;
+            error_pipe1_r <= error_gained_w;
             yk_r <= yk_w;
             {p_error_r, d_error_r, i_error_r} <= {p_error_w, d_error_w, i_error_w};
             cnt_r <= next_cnt_w;
@@ -176,6 +193,7 @@ module pid_core
             decimate_r <= decimate_r;
             satwidth_r <= satwidth_r;
             gain_r <= gain_r;
+            egain_r <= egain_r;
             bias_r <= bias_r;
 
             sum_error_r <= '0;
