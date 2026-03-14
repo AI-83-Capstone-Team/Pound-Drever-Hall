@@ -1097,6 +1097,9 @@ _CHAN_TO_PID_SEL = {
 class _AutolockPanel(_Panel):
     def __init__(self, parent, app):
         super().__init__(parent, app, "Autolock")
+        self._persist_running  = False
+        self._persist_busy     = False
+        self._persist_after_id = None
         self._build()
 
     def _build(self) -> None:
@@ -1140,8 +1143,23 @@ class _AutolockPanel(_Panel):
         self._al_slope_var = tk.StringVar(value="Slope: —")
         ttk.Label(res_frm, textvariable=self._al_slope_var).pack(anchor=tk.W)
 
-        self._al_btn = ttk.Button(self, text="Run Autolock", command=self._on_autolock)
-        self._al_btn.pack(anchor=tk.W, pady=(2, 0))
+        # Persistent autolock
+        persist_frm = ttk.LabelFrame(self, text="Persistent Autolock", padding=6)
+        persist_frm.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(persist_frm, text="Period (ms):").pack(side=tk.LEFT)
+        self._persist_ms_var = tk.StringVar(value="1000")
+        ttk.Entry(persist_frm, textvariable=self._persist_ms_var, width=8).pack(side=tk.LEFT, padx=4)
+        self._persist_status_var = tk.StringVar(value="Stopped")
+        ttk.Label(persist_frm, textvariable=self._persist_status_var,
+                  foreground="gray").pack(side=tk.LEFT, padx=(8, 0))
+
+        btn_frm = ttk.Frame(self)
+        btn_frm.pack(anchor=tk.W, pady=(2, 0))
+        self._al_btn = ttk.Button(btn_frm, text="Run Autolock", command=self._on_autolock)
+        self._al_btn.pack(side=tk.LEFT, padx=(0, 6))
+        self._persist_btn = ttk.Button(btn_frm, text="Start Persistent",
+                                       command=self._on_persist_toggle)
+        self._persist_btn.pack(side=tk.LEFT)
 
     def _on_autolock(self) -> None:
         try:
@@ -1166,65 +1184,6 @@ class _AutolockPanel(_Panel):
         self._prep_call(ip, port)
         self._busy(self._al_btn, "Locking…")
 
-        def bg():
-            # 1. Sweep
-            r = api.api_sweep_ramp(v0, v1, pts, api.DacSel.DAC_1,
-                                   write_delay_us=delay)
-            # 2. Extract columns
-            col_idx = api.SWEEP_COLUMNS.index(chan)
-            sig     = r.data[:, col_idx]
-            dac_v   = r.data[:, 0]  # dac_v is always column 0
-
-            # 3. Find global max; window ±peak_pts to find min
-            max_idx = int(np.argmax(sig))
-            lo      = max(0, max_idx - peak_pts)
-            hi      = min(len(sig), max_idx + peak_pts + 1)
-            min_idx = lo + int(np.argmin(sig[lo:hi]))
-
-            if abs(dac_v[max_idx] - dac_v[min_idx]) < 1e-9:
-                raise ValueError("Max and min are at the same DAC voltage")
-
-            # 4. Find lock point as the point of steepest slope between max and min
-            seg_lo   = min(max_idx, min_idx)
-            seg_hi   = max(max_idx, min_idx) + 1
-            seg_sig  = sig[seg_lo:seg_hi]
-            seg_dac  = dac_v[seg_lo:seg_hi]
-            if len(seg_sig) < 2:
-                raise ValueError("Feature segment too short to compute slope")
-            deriv      = np.gradient(seg_sig, seg_dac)
-            lp_seg_idx = int(np.argmax(np.abs(deriv)))
-            lock_point = float(seg_dac[lp_seg_idx])
-            slope      = float(deriv[lp_seg_idx])
-            if abs(slope) < 1e-9:
-                raise ValueError("Slope is zero — no dispersive feature found")
-            egain = 100.0 / slope
-
-            # 5. Validate egain range
-            if abs(egain) >= 32.0:
-                raise ValueError(
-                    f"1/slope = {egain:.4f} is outside egain range [-32, 32). "
-                    "Increase sweep range or signal amplitude."
-                )
-
-            # 6. Configure IO routing: DAC1→PID, PID_in→selected channel
-            pid_sel = _CHAN_TO_PID_SEL[chan]
-            dac2    = api.DacDatSel(self.app._io_panel._dac2_sel.get())
-            api.api_config_io(api.DacDatSel.PID, dac2, pid_sel)
-
-            # 7. Configure PID: read current params, override sp/bias/egain/en
-            pv = self.app._pid_panel._vars
-            kp    = float(pv["kp"].get())
-            ki    = float(pv["ki"].get())
-            kd    = float(pv["kd"].get())
-            dec   = int(pv["dec"].get())
-            alpha = int(pv["alpha"].get())
-            sat   = int(pv["sat"].get())
-            gain  = float(pv["gain"].get())
-            api.api_set_pid(kp, kd, ki, 0.0, dec, alpha, sat, 1,
-                            gain=gain, bias=lock_point, egain=egain)
-
-            return (r, chan, lock_point, slope, egain, pid_sel)
-
         def on_ok(result):
             r, chan, lock_point, slope, egain, pid_sel = result
             self._al_lp_var.set(f"Lock point: {lock_point:.6f} V")
@@ -1245,7 +1204,144 @@ class _AutolockPanel(_Panel):
             self._unbusy(self._al_btn, "Run Autolock")
             self.err(e)
 
-        self.app.run_in_bg(bg, on_ok, on_err)
+        self.app.run_in_bg(
+            lambda: self._autolock_bg(v0, v1, pts, delay, peak_pts, chan),
+            on_ok, on_err,
+        )
+
+    def _autolock_bg(self, v0, v1, pts, delay, peak_pts, chan):
+        """Core autolock sequence — runs in a background thread.
+        Returns (r, chan, lock_point, slope, egain, pid_sel)."""
+        # 1. Sweep
+        r = api.api_sweep_ramp(v0, v1, pts, api.DacSel.DAC_1,
+                               write_delay_us=delay)
+        # 2. Extract columns
+        col_idx = api.SWEEP_COLUMNS.index(chan)
+        sig     = r.data[:, col_idx]
+        dac_v   = r.data[:, 0]
+
+        # 3. Find global max; window ±peak_pts to find min
+        max_idx = int(np.argmax(sig))
+        lo      = max(0, max_idx - peak_pts)
+        hi      = min(len(sig), max_idx + peak_pts + 1)
+        min_idx = lo + int(np.argmin(sig[lo:hi]))
+
+        if abs(dac_v[max_idx] - dac_v[min_idx]) < 1e-9:
+            raise ValueError("Max and min are at the same DAC voltage")
+
+        # 4. Find lock point as the point of steepest slope between max and min
+        seg_lo   = min(max_idx, min_idx)
+        seg_hi   = max(max_idx, min_idx) + 1
+        seg_sig  = sig[seg_lo:seg_hi]
+        seg_dac  = dac_v[seg_lo:seg_hi]
+        if len(seg_sig) < 2:
+            raise ValueError("Feature segment too short to compute slope")
+        deriv      = np.gradient(seg_sig, seg_dac)
+        lp_seg_idx = int(np.argmax(np.abs(deriv)))
+        lock_point = float(seg_dac[lp_seg_idx])
+        slope      = float(deriv[lp_seg_idx])
+        if abs(slope) < 1e-9:
+            raise ValueError("Slope is zero — no dispersive feature found")
+        egain = 100.0 / slope
+
+        # 5. Validate egain range
+        if abs(egain) >= 32.0:
+            raise ValueError(
+                f"100/slope = {egain:.4f} is outside egain range [-32, 32). "
+                "Increase sweep range or signal amplitude."
+            )
+
+        # 6. Configure IO routing: DAC1→PID, PID_in→selected channel
+        pid_sel = _CHAN_TO_PID_SEL[chan]
+        dac2    = api.DacDatSel(self.app._io_panel._dac2_sel.get())
+        api.api_config_io(api.DacDatSel.PID, dac2, pid_sel)
+
+        # 7. Configure PID: read current params, override sp/bias/egain/en
+        pv = self.app._pid_panel._vars
+        kp    = float(pv["kp"].get())
+        ki    = float(pv["ki"].get())
+        kd    = float(pv["kd"].get())
+        dec   = int(pv["dec"].get())
+        alpha = int(pv["alpha"].get())
+        sat   = int(pv["sat"].get())
+        gain  = float(pv["gain"].get())
+        api.api_set_pid(kp, kd, ki, 0.0, dec, alpha, sat, 1,
+                        gain=gain, bias=lock_point, egain=egain)
+
+        return (r, chan, lock_point, slope, egain, pid_sel)
+
+    def _on_persist_toggle(self) -> None:
+        if not self._persist_running:
+            try:
+                ms = int(self._persist_ms_var.get())
+            except ValueError:
+                self.err(ValueError("Period must be an integer (ms)")); return
+            if ms < 100:
+                self.err(ValueError("Period must be >= 100 ms")); return
+            self._persist_running = True
+            self._persist_btn.configure(text="Stop Persistent")
+            self._persist_status_var.set("Running")
+            self._persist_tick()
+        else:
+            self._persist_running = False
+            if self._persist_after_id is not None:
+                self.after_cancel(self._persist_after_id)
+                self._persist_after_id = None
+            self._persist_btn.configure(text="Start Persistent")
+            self._persist_status_var.set("Stopped")
+
+    def _persist_tick(self) -> None:
+        if not self._persist_running:
+            return
+        try:
+            ms = int(self._persist_ms_var.get())
+        except ValueError:
+            ms = 1000
+        if self._persist_busy:
+            self._persist_after_id = self.after(ms, self._persist_tick)
+            return
+        try:
+            v0       = float(self._v0_var.get())
+            v1       = float(self._v1_var.get())
+            pts      = int(self._pts_var.get())
+            delay    = int(self._delay_var.get())
+            peak_pts = int(self._peak_pts_var.get())
+        except ValueError as e:
+            self.err(e)
+            self._persist_running = False
+            self._persist_btn.configure(text="Start Persistent")
+            self._persist_status_var.set("Stopped (invalid params)")
+            return
+
+        chan = self._chan_var.get()
+        self._prep_call(*self._conn())
+        self._persist_busy = True
+
+        def on_ok(result):
+            _r, _chan, lock_point, slope, egain, pid_sel = result
+            self._al_lp_var.set(f"Lock point: {lock_point:.6f} V")
+            self._al_slope_var.set(f"Slope: {slope:.6f} V⁻¹")
+            self.app._io_panel._dac1_sel.set(int(api.DacDatSel.PID))
+            self.app._io_panel._pid_sel.set(int(pid_sel))
+            self.app._pid_panel._vars["sp"].set("0.0")
+            self.app._pid_panel._vars["bias"].set(f"{lock_point:.6f}")
+            self.app._pid_panel._vars["egain"].set(f"{egain:.6f}")
+            self.app._pid_panel._en_var.set(True)
+            self.ok(f"[Persist] lp={lock_point:.4f} V  slope={slope:.4f}")
+            self._persist_busy = False
+            if self._persist_running:
+                self._persist_after_id = self.after(ms, self._persist_tick)
+
+        def on_err(e):
+            self.err(e)
+            self._persist_busy = False
+            if self._persist_running:
+                self._persist_after_id = self.after(ms, self._persist_tick)
+
+        self.app.run_in_bg(
+            lambda: self._autolock_bg(v0, v1, pts, delay, peak_pts, chan),
+            on_ok, on_err,
+        )
 
     def _plot_autolock(self, r: api.SweepRampResult, locked_chan: str,
                        lock_point: float) -> None:
