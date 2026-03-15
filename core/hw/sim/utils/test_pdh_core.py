@@ -753,6 +753,64 @@ async def test_pdh_core(dut):
     _check_approx("egain=2.0 doubles err_tap", float(err_egain2),    err_egain1 * 2.0, 1.0)
     _check_approx("egain=0.5 halves err_tap",  float(err_egain_half), err_egain1 * 0.5, 1.0)
 
+    # ── 15. IRQ output verification ────────────────────────────────────────────
+    # Verify irq_o fires correctly:
+    #   - One 1-cycle pulse after strobe_edge_w for non-IDLE, non-GET_FRAME cmds
+    #   - Silent for CMD_IDLE
+    #   - Fires on dma_ready_i rising edge (not on strobe) for CMD_GET_FRAME
+    _section("15. IRQ output")
+
+    async def _strobe_watch_irq(cmd: int, data: int, window: int = SYNC_CYCLES) -> bool:
+        """Present strobe 0→1, return True if irq_o pulses at any point within window."""
+        dut.axi_from_ps_i.value = _word(0, 0, cmd, data)
+        await ClockCycles(dut.clk, SYNC_CYCLES)
+        dut.axi_from_ps_i.value = _word(0, 1, cmd, data)
+        saw_high = False
+        for _ in range(window):
+            await RisingEdge(dut.clk)
+            if int(dut.irq_o.value) == 1:
+                saw_high = True
+        dut.axi_from_ps_i.value = _word(0, 0, cmd, data)
+        await ClockCycles(dut.clk, SYNC_CYCLES)
+        return saw_high
+
+    # 15a. Normal commands must fire irq_o
+    _check("irq: fires for CMD_SET_LED",    await _strobe_watch_irq(CMD_SET_LED,    0xAA))
+    _check("irq: fires for CMD_CONFIG_IO",  await _strobe_watch_irq(CMD_CONFIG_IO,  0))
+    _check("irq: fires for CMD_GET_ADC",    await _strobe_watch_irq(CMD_GET_ADC,    0))
+    _check("irq: fires for CMD_SET_DAC",    await _strobe_watch_irq(CMD_SET_DAC,    0))
+
+    # 15b. CMD_IDLE must NOT fire irq_o
+    _check("irq: silent for CMD_IDLE",      not await _strobe_watch_irq(CMD_IDLE, 0))
+
+    # 15c. CMD_GET_FRAME: irq fires on dma_ready_i rising edge, not on strobe
+    dut.dma_ready_i.value = 0
+    await ClockCycles(dut.clk, 8)   # flush dma_ready through 3FF → goes to 0
+
+    # Strobe CMD_GET_FRAME; irq_o must stay low during and after the strobe
+    dut.axi_from_ps_i.value = _word(0, 0, CMD_GET_FRAME, 0)
+    await ClockCycles(dut.clk, SYNC_CYCLES)
+    dut.axi_from_ps_i.value = _word(0, 1, CMD_GET_FRAME, 0)
+    irq_during_strobe = False
+    for _ in range(SYNC_CYCLES):
+        await RisingEdge(dut.clk)
+        if int(dut.irq_o.value) == 1:
+            irq_during_strobe = True
+    dut.axi_from_ps_i.value = _word(0, 0, CMD_GET_FRAME, 0)
+    await ClockCycles(dut.clk, SYNC_CYCLES)
+    _check("irq: silent during GET_FRAME strobe", not irq_during_strobe)
+
+    # Now raise dma_ready_i; irq_o must fire within 3FF latency + 1 edge cycle = ~6
+    dut.dma_ready_i.value = 1
+    irq_after_dma = False
+    for _ in range(8):
+        await RisingEdge(dut.clk)
+        if int(dut.irq_o.value) == 1:
+            irq_after_dma = True
+            break
+    _check("irq: fires on dma_ready_i rising edge (GET_FRAME)", irq_after_dma)
+    dut.dma_ready_i.value = 1   # leave ready=1 for any subsequent tests
+
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()
     failed = [lbl for lbl, ok in _results if not ok]

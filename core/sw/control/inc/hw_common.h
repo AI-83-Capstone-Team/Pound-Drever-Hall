@@ -78,6 +78,14 @@ int dma_Release();
 int pdh_Init();
 int pdh_Release();
 
+/* UIO interrupt interface — bound to IRQ_F2P[0] via named symlink */
+#define UIO_DEV "/dev/uio/pdh_uio"
+int uio_Init(void);
+int uio_Release(void);
+int uio_wait_irq(void);   /* blocking read: returns when interrupt fires */
+int uio_ack_irq(void);    /* write-4: unmask interrupt for next cycle     */
+int uio_fd_get(void);     /* returns raw fd for use in select()           */
+
 
 typedef enum
 {

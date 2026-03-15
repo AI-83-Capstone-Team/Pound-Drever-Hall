@@ -25,6 +25,15 @@ static inline pdh_callback_t pdh_execute_cmd(pdh_cmd_t cmd)
     return cb;
 }
 
+/* Send strobe without reading callback — used by interrupt-driven _send handlers */
+void pdh_strobe_cmd(pdh_cmd_t cmd)
+{
+    cmd.strobe.val = 0;
+    pdh_send_cmd(cmd);
+    cmd.strobe.val = 1;
+    pdh_send_cmd(cmd);
+}
+
 static inline int push_ctx_cb(cmd_ctx_t* ctx, size_t* index, void* value, int tag, const char* name) //Value should always be an echo
 {
     switch(tag)
@@ -1010,4 +1019,354 @@ int cmd_sweep_ramp(cmd_ctx_t* ctx)
     push_ctx_cb(ctx, &index, &num_points, UINT_TAG, "NUM_POINTS_CB");
 
     return SWEEP_RAMP_OK;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Interrupt-driven split handlers
+ *
+ * _send: builds the command word, calls pdh_strobe_cmd, returns initial status.
+ *        Thread 1 calls this and pushes (ctx, fd) to the pending queue.
+ *
+ * _cb  : called by Thread 2 after the UIO interrupt fires.
+ *        Receives the callback register value, validates, fills ctx output,
+ *        and returns the final func_status for send_response().
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── cmd_set_led ─────────────────────────────────────────────────────────── */
+
+int cmd_set_led_send(cmd_ctx_t* ctx)
+{
+    /* Always strobe so Thread 2's interrupt fires.
+     * The FPGA LED field is 8-bit; led_cmd.led_code naturally truncates.
+     * Range validation is done in _cb via callback echo comparison. */
+    uint32_t led_code = ctx->uint_args[0];
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.led_cmd.cmd      = CMD_SET_LED;
+    cmd.led_cmd.led_code = led_code & 0xFF;
+    pdh_strobe_cmd(cmd);
+    return SET_LED_OK;
+}
+
+int cmd_set_led_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    uint32_t led_code  = ctx->uint_args[0];
+    uint32_t echo_code = cb.led_cb.func_callback;
+    uint32_t echo_cmd  = cb.led_cb.cmd;
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_code, UINT_TAG, "LED_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd,  UINT_TAG, CMD);
+
+    /* If led_code > 255 the FPGA will have truncated it; echo mismatch catches this. */
+    int rc = validate_cb(&echo_code, &led_code, UINT_TAG, __func__, "LED_CODE", SET_LED_OK, SET_LED_INVALID_LED_CB);
+    uint32_t cmdval = CMD_SET_LED;
+    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, rc, PDH_INVALID_CMD);
+}
+
+
+/* ── cmd_set_dac ─────────────────────────────────────────────────────────── */
+
+int cmd_set_dac_send(cmd_ctx_t* ctx)
+{
+    float val     = ctx->float_args[0];
+    bool  dac_sel = (bool)ctx->uint_args[0];
+
+    val *= -1.0f;
+    if (val >  1.0f) val =  1.0f;
+    if (val < -1.0f) val = -1.0f;
+
+    float y    = (val + 1.0f) * 0.5f;
+    int   code = (int)lrintf(y * 16383.0f);
+    if (code < 0)     code = 0;
+    if (code > 16383) code = 16383;
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.dac_cmd.dac_code = code;
+    cmd.dac_cmd.dac_sel  = dac_sel;
+    cmd.dac_cmd.cmd      = CMD_SET_DAC;
+    pdh_strobe_cmd(cmd);
+    return SET_DAC_OK;
+}
+
+int cmd_set_dac_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    float val     = ctx->float_args[0];
+    bool  dac_sel = (bool)ctx->uint_args[0];
+
+    val *= -1.0f;
+    if (val >  1.0f) val =  1.0f;
+    if (val < -1.0f) val = -1.0f;
+    float y    = (val + 1.0f) * 0.5f;
+    int   code = (int)lrintf(y * 16383.0f);
+    if (code < 0)     code = 0;
+    if (code > 16383) code = 16383;
+
+    uint32_t echo_dac1 = cb.dac_cb.dac1_code;
+    uint32_t echo_dac2 = cb.dac_cb.dac2_code;
+    uint32_t echo_cmd  = cb.dac_cb.cmd;
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_dac1, UINT_TAG, "DAC1_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_dac2, UINT_TAG, "DAC2_CODE_CB");
+
+    int rc = SET_DAC_OK;
+    if (dac_sel == 0)
+        rc = validate_cb(&echo_dac1, &code, UINT_TAG, __func__, "DAC1_CODE_CB", rc, SET_DAC_INVALID_CODE);
+    else
+        rc = validate_cb(&echo_dac2, &code, UINT_TAG, __func__, "DAC2_CODE_CB", rc, SET_DAC_INVALID_CODE);
+
+    uint32_t cmdval = CMD_SET_DAC;
+    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", rc, PDH_INVALID_CMD);
+}
+
+
+/* ── cmd_get_adc ─────────────────────────────────────────────────────────── */
+
+int cmd_get_adc_send(cmd_ctx_t* ctx)
+{
+    (void)ctx;
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.adc_cmd.cmd = CMD_GET_ADC;
+    pdh_strobe_cmd(cmd);
+    return GET_ADC_OK;
+}
+
+int cmd_get_adc_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    uint32_t echo_adc0  = cb.adc_cb.adc_0_code;
+    uint32_t echo_adc1  = cb.adc_cb.adc_1_code;
+    float    adc0_v     = -1.0f * (echo_adc0 * (2.0f / 16383.0f) - 1.0f);
+    float    adc1_v     = -1.0f * (echo_adc1 * (2.0f / 16383.0f) - 1.0f);
+    uint32_t echo_cmd   = cb.adc_cb.cmd;
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_adc0, UINT_TAG,  "IN1");
+    push_ctx_cb(ctx, &index, &echo_adc1, UINT_TAG,  "IN2");
+    push_ctx_cb(ctx, &index, &adc0_v,   FLOAT_TAG,  "IN1_V");
+    push_ctx_cb(ctx, &index, &adc1_v,   FLOAT_TAG,  "IN2_V");
+    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG,   CMD);
+
+    uint32_t cmdval = CMD_GET_ADC;
+    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, GET_ADC_OK, PDH_INVALID_CMD);
+}
+
+
+/* ── cmd_check_signed ────────────────────────────────────────────────────── */
+
+int cmd_check_signed_send(cmd_ctx_t* ctx)
+{
+    uint32_t reg_sel = ctx->uint_args[0];
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.cs_cmd.cmd     = CMD_CHECK_SIGNED;
+    cmd.cs_cmd.reg_sel = reg_sel;
+    pdh_strobe_cmd(cmd);
+    return CHECK_SIGNED_OK;
+}
+
+int cmd_check_signed_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    uint32_t reg_sel      = ctx->uint_args[0];
+    uint32_t echo_reg_sel = cb.cs_cb.reg_sel;
+    int16_t  echo_p16     = (int16_t)cb.cs_cb.payload;
+    int32_t  echo_p32     = (int32_t)echo_p16;
+    uint32_t echo_cmd     = cb.cs_cb.cmd;
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_reg_sel, UINT_TAG, "REG_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_p32,     INT_TAG,  "REG_VALUE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd,     UINT_TAG, CMD);
+
+    int rc = validate_cb(&echo_reg_sel, &reg_sel, UINT_TAG, __func__, "REG_SEL", CHECK_SIGNED_OK, CHECK_SIGNED_INVALID_REG_SEL_CB);
+    uint32_t cmdval = CMD_CHECK_SIGNED;
+    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", rc, PDH_INVALID_CMD);
+}
+
+
+/* ── cmd_config_io ───────────────────────────────────────────────────────── */
+
+int cmd_config_io_send(cmd_ctx_t* ctx)
+{
+    /* Always strobe. Values are 3-bit fields; FPGA masks upper bits.
+     * Range validation (> 3 / > 4) is caught in _cb via echo mismatch. */
+    uint32_t dac1 = ctx->uint_args[0];
+    uint32_t dac2 = ctx->uint_args[1];
+    uint32_t pid  = ctx->uint_args[2];
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.config_io_cmd.cmd          = CMD_CONFIG_IO;
+    cmd.config_io_cmd.dac1_dat_sel = dac1 & 0x7;
+    cmd.config_io_cmd.dac2_dat_sel = dac2 & 0x7;
+    cmd.config_io_cmd.pid_dat_sel  = pid  & 0x7;
+    pdh_strobe_cmd(cmd);
+    return CONFIG_IO_OK;
+}
+
+int cmd_config_io_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    uint32_t dac1 = ctx->uint_args[0];
+    uint32_t dac2 = ctx->uint_args[1];
+    uint32_t pid  = ctx->uint_args[2];
+
+    /* Pre-strobe range checks (surfaced here so the error code is preserved) */
+    if (dac1 > 3) return CONFIG_IO_INVALID_DAC1;
+    if (dac2 > 3) return CONFIG_IO_INVALID_DAC2;
+    if (pid  > 4) return CONFIG_IO_INVALID_PID;
+
+    uint32_t echo_dac1 = cb.config_io_cb.dac1_dat_sel_r;
+    uint32_t echo_dac2 = cb.config_io_cb.dac2_dat_sel_r;
+    uint32_t echo_pid  = cb.config_io_cb.pid_dat_sel_r;
+    uint32_t echo_cmd  = cb.config_io_cb.cmd;
+    uint32_t cmdval    = CMD_CONFIG_IO;
+
+    int rc = validate_cb(&echo_dac1, &dac1, UINT_TAG, __func__, "DAC1_DAT_SEL_CB", CONFIG_IO_OK, CONFIG_IO_DAC1_CB_FAIL);
+    rc = validate_cb(&echo_dac2, &dac2, UINT_TAG, __func__, "DAC2_DAT_SEL_CB", rc, CONFIG_IO_DAC2_CB_FAIL);
+    rc = validate_cb(&echo_pid,  &pid,  UINT_TAG, __func__, "PID_DAT_SEL_CB",  rc, CONFIG_IO_PID_CB_FAIL);
+    rc = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, rc, PDH_INVALID_CMD);
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_dac1, UINT_TAG, "DAC1_DAT_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_dac2, UINT_TAG, "DAC2_DAT_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_pid,  UINT_TAG, "PID_DAT_SEL_CB");
+    return rc;
+}
+
+
+/* ── cmd_get_frame ───────────────────────────────────────────────────────── */
+
+int cmd_get_frame_send(cmd_ctx_t* ctx)
+{
+    uint32_t decimation_code = ctx->uint_args[0];
+    if (decimation_code < 1) decimation_code = 1;
+    uint32_t frame_code_val = ctx->uint_args[1];
+
+    /* Reset DMA state machine (CMD_IDLE generates no interrupt) */
+    pdh_cmd_t idle_cmd;
+    idle_cmd.raw      = 0;
+    idle_cmd.cmd.val  = CMD_IDLE;
+    pdh_strobe_cmd(idle_cmd);
+
+    /* Send CMD_GET_FRAME — interrupt fires later on dma_ready_edge_w */
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.get_frame_cmd.cmd        = CMD_GET_FRAME;
+    cmd.get_frame_cmd.decimation = decimation_code;
+    cmd.get_frame_cmd.frame_code = frame_code_val;
+    pdh_strobe_cmd(cmd);
+
+    /* Read the immediate callback echo (dec, frame_code, cmd) */
+    pdh_callback_t cb = {0};
+    pdh_get_callback(&cb);
+
+    uint32_t echo_engaged = cb.get_frame_cb.dma_engaged;
+    uint32_t echo_dec     = cb.get_frame_cb.decimation;
+    uint32_t echo_frame   = cb.get_frame_cb.frame_code;
+    uint32_t echo_cmd_val = cb.get_frame_cb.cmd;
+    uint32_t cmdval       = CMD_GET_FRAME;
+
+    int rc = validate_cb(&echo_dec,     &decimation_code, UINT_TAG, __func__, "DECIMATION_CODE_CB", GET_FRAME_OK, GET_FRAME_INVALID_DEC);
+    rc     = validate_cb(&echo_frame,   &frame_code_val,  UINT_TAG, __func__, "FRAME_CODE_CB",     rc,            GET_FRAME_INVALID_CODE);
+    rc     = validate_cb(&echo_cmd_val, &cmdval,          UINT_TAG, __func__, CMD,                 rc,            PDH_INVALID_CMD);
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB");
+    push_ctx_cb(ctx, &index, &echo_dec,     UINT_TAG, "DECIMATION_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_frame,   UINT_TAG, "FRAME_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd_val, UINT_TAG, CMD);
+
+    return rc;
+}
+
+int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    (void)cb;   /* DMA data is in DDR, not the callback register */
+    uint32_t frame_code_val = ctx->uint_args[1];
+
+    FILE* f = fopen("dma_log.csv", "w");
+    int return_code = f ? DMA_OK : DMA_FOPEN_ERR;
+
+    if (return_code == DMA_OK)
+    {
+        for (size_t offset = 0; offset < HP0_RANGE; offset += 8)
+        {
+            dma_frame_t frame;
+            frame.raw = dma_get_frame(offset);
+
+            switch (frame_code_val)
+            {
+                case ADC_DATA_IN:
+                    fprintf(f, "%d, %d, %d, %d\n",
+                            (int16_t)frame.adc_data_in_frame.adc_dat_a_16s,
+                            (int16_t)frame.adc_data_in_frame.adc_dat_b_16s,
+                            (int16_t)frame.adc_data_in_frame.i_feed_w,
+                            (int16_t)frame.adc_data_in_frame.q_feed_w);
+                    break;
+                case PID_ERR_TAPS:
+                    fprintf(f, "%d, %d, %d, %d\n",
+                            (int16_t)frame.pid_err_taps_frame.err_tap_w,
+                            (int16_t)frame.pid_err_taps_frame.perr_tap_w,
+                            (int16_t)frame.pid_err_taps_frame.derr_tap_w,
+                            (int16_t)frame.pid_err_taps_frame.ierr_tap_w);
+                    break;
+                case IO_SUM_ERR:
+                    fprintf(f, "%d, %u, %d\n",
+                            (int16_t)frame.io_sum_err_frame.err_tap_w,
+                            (uint16_t)frame.io_sum_err_frame.pid_out_w,
+                            (int32_t)frame.io_sum_err_frame.sum_err_tap_w);
+                    break;
+                case OSC_INSPECT:
+                    fprintf(f, "%d, %d, %u, %u\n",
+                            (int16_t)frame.osc_inspect_frame.nco_out1_r,
+                            (int16_t)frame.osc_inspect_frame.nco_out2_r,
+                            (uint16_t)frame.osc_inspect_frame.nco_feed1_r,
+                            (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
+                    break;
+                case OSC_ADDR_CHECK:
+                    fprintf(f, "%u, %u, %u, %u\n",
+                            frame.addr_check_frame.phi1_w,
+                            frame.addr_check_frame.phi2_w,
+                            frame.addr_check_frame.addr1_r,
+                            frame.addr_check_frame.addr2_r);
+                    break;
+                case LOOPBACK:
+                    fprintf(f, "%u, %u, %u, %u\n",
+                            frame.loopback_frame.dac1_feed_w,
+                            frame.loopback_frame.dac2_feed_w,
+                            frame.loopback_frame.adc_dat_a_i,
+                            frame.loopback_frame.adc_dat_b_i);
+                    break;
+                case FIR_IO:
+                    fprintf(f, "%d, %d\n",
+                            (int16_t)frame.fir_io_frame.fir_in_w,
+                            (int16_t)frame.fir_io_frame.fir_out_w);
+                    break;
+                case PID_IO:
+                    fprintf(f, "%d, %d, %u\n",
+                            frame.pid_io_frame.pid_in,
+                            frame.pid_io_frame.err,
+                            frame.pid_io_frame.pid_out & 0x3FFF);
+                    break;
+                default:
+                    fprintf(f, "%d, %d, %d, %d\n",
+                            (int16_t)frame.adc_data_in_frame.adc_dat_a_16s,
+                            (int16_t)frame.adc_data_in_frame.adc_dat_b_16s,
+                            (int16_t)frame.adc_data_in_frame.i_feed_w,
+                            (int16_t)frame.adc_data_in_frame.q_feed_w);
+                    break;
+            }
+        }
+        fclose(f);
+    }
+
+    ctx->output.output_items[4].data.u = return_code;
+    ctx->output.output_items[4].tag    = UINT_TAG;
+    strcpy(ctx->output.output_items[4].name, "return_code");
+    ctx->output.num_outputs = 5;
+
+    return return_code;
 }

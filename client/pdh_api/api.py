@@ -88,9 +88,12 @@ def _parse_response(text: str) -> dict:
     return result
 
 
+CMD_TIMEOUT_S = 5.0   # seconds to wait for a server response before failing
+
 def execute_cmd(cmd: str) -> dict:
     """Send a single command string to the server; return the parsed response."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(CMD_TIMEOUT_S)
         s.connect((SERVER_IP, SERVER_PORT))
         s.sendall(cmd.encode("ascii"))
         raw = s.recv(4096)

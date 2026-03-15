@@ -157,6 +157,41 @@ create_bd_port -dir O -from 31 -to 0 axi_from_ps
 connect_bd_net [get_bd_ports axi_from_ps] [get_bd_pins axi_gpio_0/gpio2_io_o]
 
 
+# ------------------------------------------------------------
+# PL-to-PS fabric interrupt: IRQ_F2P[1] → GIC SPI 62 (DTS <0 30 1>)
+#
+# IRQ_F2P[0] (SPI 61) is permanently claimed as LEVEL_HIGH by the Red
+# Pitaya Full/XADC overlay at boot and cannot be reconfigured to
+# EDGE_RISING via DT overlay (irqdomain type-mismatch).
+# IRQ_F2P[1] (SPI 62) is free; EDGE_RISING registers cleanly.
+#
+# PCW_NUM_F2P_INTR_INPUTS is read-only; Vivado auto-widens IRQ_F2P when
+# a wider net is connected.  Use xlconcat to build a 2-bit bus:
+#   In0 = constant 0  → IRQ_F2P[0] → SPI 61 (never fires)
+#   In1 = irq_f2p     → IRQ_F2P[1] → SPI 62 (our interrupt)
+# ------------------------------------------------------------
+set_property -dict [list \
+    CONFIG.PCW_USE_FABRIC_INTERRUPT {1} \
+    CONFIG.PCW_IRQ_F2P_INTR         {1} \
+] [get_bd_cells processing_system7_0]
+
+# 1-bit external port (our synchronized interrupt from pdh_top)
+create_bd_port -dir I -from 0 -to 0 irq_f2p
+
+# xlconcat: 2 inputs → 2-bit dout
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat xlconcat_irq
+set_property -dict [list CONFIG.NUM_PORTS {2}] [get_bd_cells xlconcat_irq]
+
+# constant 0 on bit[0] (keeps IRQ_F2P[0] / SPI 61 silent)
+create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant xlc_irq_lo
+set_property -dict [list CONFIG.CONST_VAL {0} CONFIG.CONST_WIDTH {1}] \
+    [get_bd_cells xlc_irq_lo]
+
+connect_bd_net [get_bd_pins xlc_irq_lo/dout]  [get_bd_pins xlconcat_irq/In0]
+connect_bd_net [get_bd_ports irq_f2p]          [get_bd_pins xlconcat_irq/In1]
+connect_bd_net [get_bd_pins xlconcat_irq/dout] [get_bd_pins processing_system7_0/IRQ_F2P]
+
+
 
 
 ############################## COMPILE NETLIST ########################################################################

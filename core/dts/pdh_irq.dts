@@ -1,0 +1,37 @@
+/*
+ * Device Tree Overlay — PDH UIO interrupt device
+ *
+ * Binds /dev/uio/pdh_uio to IRQ_F2P[0] (GIC SPI 61 = SPI index 29).
+ *
+ * Interrupt type 1 = IRQ_TYPE_EDGE_RISING.  The GIC latches the rising edge
+ * and keeps the interrupt pending until the CPU acknowledges it, so our
+ * ~256 ns pulse (32-cycle pulse-stretcher in pdh_top.sv) is reliably caught
+ * even with Linux interrupt latency of 1–50 µs.
+ *
+ * LEVEL_HIGH (type 4) was tried but does not work: the GIC continuously
+ * samples the level, so a short pulse that deasserts before the CPU runs the
+ * handler is silently dropped (pending bit cleared before service).
+ *
+ * The Full overlay (which claimed this SPI as LEVEL_HIGH for XADC) is removed
+ * by deploy.sh before this overlay is loaded, so there is no type conflict.
+ *
+ * Load with:
+ *   mkdir -p /sys/kernel/config/device-tree/overlays/pdh_irq
+ *   cp pdh_irq.dtbo /sys/kernel/config/device-tree/overlays/pdh_irq/dtbo
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            pdh_uio: pdh_uio@0 {
+                compatible = "generic-uio";
+                status = "okay";
+                interrupts = <0 30 1>;        /* SPI 30 = GIC_ID_62 = IRQ_F2P[1], EDGE_RISING */
+                interrupt-parent = <&intc>;
+            };
+        };
+    };
+};

@@ -40,8 +40,10 @@ module pdh_core #
     output logic bram_enable_o,
     input  logic dma_ready_i,
     input  logic bram_ready_i,
-    output logic [21:0] dma_decimation_code_o,    
-    output logic [63:0] dma_data_o
+    output logic [21:0] dma_decimation_code_o,
+    output logic [63:0] dma_data_o,
+
+    output logic irq_o          // 1-cycle interrupt pulse to PS
 );
 /////////////////////  LOCAL PARAMS   //////////////////////////////////
     localparam int unsigned NUM_MODULES = 2;
@@ -792,6 +794,36 @@ fir # (
     assign bram_enable_o = bram_enable_r;
 
 
+/////////////////////////////////////////////////////////////////////
+//                    INTERRUPT OUTPUT LOGIC
+// Fires a 1-cycle pulse on irq_o when a callback is ready for the PS.
+//   - Most commands: pulse fires on strobe rising edge (callback is synchronously ready).
+//   - CMD_GET_FRAME: pulse fires on dma_ready_3ff rising edge (DMA transfer complete).
+//   - CMD_IDLE: no interrupt (no meaningful callback, used only to reset DMA state).
+//
+// cmd_incoming_w reads the command code from the 3FF-synchronised bus so
+// we see the *new* command at the same cycle strobe_edge_w fires, before
+// axi_from_ps_r has latched it.
+/////////////////////////////////////////////////////////////////////
+
+    logic [CMD_BITS-1:0] cmd_incoming_w;
+    assign cmd_incoming_w = axi_3ff_r[CMD_END:CMD_START];
+
+    logic irq_r;
+    always_ff @(posedge clk) begin
+        if (rst_sync_r) begin
+            irq_r <= 1'b0;
+        end else if (strobe_edge_w &&
+                     (cmd_incoming_w != CMD_IDLE) &&
+                     (cmd_incoming_w != CMD_GET_FRAME)) begin
+            irq_r <= 1'b1;
+        end else if (dma_ready_edge_w) begin
+            irq_r <= 1'b1;
+        end else begin
+            irq_r <= 1'b0;
+        end
+    end
+    assign irq_o = irq_r;
 
 /////////////////////////////////////////////////////////////////////
 

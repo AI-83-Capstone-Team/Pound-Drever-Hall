@@ -197,7 +197,11 @@ module pdh_top
         .S_AXI_HP0_EXT_wready (m_axi_wready),
 
         .S_AXI_HP0_EXT_bvalid (m_axi_bvalid),
-        .S_AXI_HP0_EXT_bready (m_axi_bready)
+        .S_AXI_HP0_EXT_bready (m_axi_bready),
+
+        // PL-to-PS interrupt (synchronized to fclk0 via pulse-stretcher + 3FF)
+        // Drives irq_f2p[0] (1-bit BD port) → xlconcat In1 → IRQ_F2P[1] → GIC SPI 62
+        .irq_f2p(irq_sync_r[2])
 
         // NOTE: all other HP0 outputs (ARREADY/RDATA/etc, BRESP/BID, etc)
         // are intentionally left unconnected.
@@ -206,6 +210,19 @@ module pdh_top
     logic core_rst, dma_enable_w, dma_finished_w, dma_engaged_w, dma_ready_w, bram_ready_w, bram_enable_w;
     logic [63:0] dma_data_w;
     logic [21:0] decimation_code_w;
+    logic irq_w;
+
+    // Pulse stretcher (pdh_clk domain): widen 1-cycle irq_w to 32 cycles (~256 ns)
+    // so the async fclk0 synchronizer reliably captures it regardless of phase.
+    logic [4:0] irq_stretch_r;
+    always_ff @(posedge pdh_clk)
+        if (irq_w)               irq_stretch_r <= 5'h1f;
+        else if (|irq_stretch_r) irq_stretch_r <= irq_stretch_r - 1;
+
+    // 3FF synchronizer into fclk0 (PS/AXI) domain before IRQ_F2P
+    logic [2:0] irq_sync_r;
+    always_ff @(posedge fclk0)
+        irq_sync_r <= {irq_sync_r[1:0], |irq_stretch_r};
 
 
     pdh_core #(
@@ -234,7 +251,8 @@ module pdh_top
         .dma_ready_i(dma_ready_w),
         .bram_ready_i(bram_ready_w),
         .dma_decimation_code_o(decimation_code_w),
-        .dma_data_o(dma_data_w)
+        .dma_data_o(dma_data_w),
+        .irq_o(irq_w)
     );
 
     

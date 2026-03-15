@@ -6,6 +6,48 @@
 #include <stdlib.h>
 #include "hw_common.h"
 
+static int gUioFd = -1;
+
+int uio_Init(void)
+{
+    gUioFd = open(UIO_DEV, O_RDWR);
+    if (gUioFd < 0)
+    {
+        perror("uio open");
+        return 1;
+    }
+    return PDH_OK;
+}
+
+int uio_Release(void)
+{
+    if (gUioFd >= 0)
+    {
+        close(gUioFd);
+        gUioFd = -1;
+    }
+    return PDH_OK;
+}
+
+int uio_wait_irq(void)
+{
+    uint32_t count;
+    ssize_t n = read(gUioFd, &count, sizeof(count));
+    return (n == (ssize_t)sizeof(count)) ? PDH_OK : 1;
+}
+
+int uio_ack_irq(void)
+{
+    uint32_t ack = 1;
+    ssize_t n = write(gUioFd, &ack, sizeof(ack));
+    return (n == (ssize_t)sizeof(ack)) ? PDH_OK : 1;
+}
+
+int uio_fd_get(void)
+{
+    return gUioFd;
+}
+
 
 
 struct __attribute__((packed))

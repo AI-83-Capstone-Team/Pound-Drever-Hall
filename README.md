@@ -42,15 +42,16 @@ core/
         test_pdh_core.py   cocotb test module (command-echo checks)
         Makefile           Thin make wrapper around run.py
   sw/
-    server.c             TCP server: argument parsing, dispatch table, response formatting
+    server.c             TCP server: two-thread interrupt-driven architecture (command thread + callback thread)
     control/
-      control.c          Command handler implementations (cmd_* functions)
-      hw_common.c        Hardware abstraction: mmap of AXI GP0 and HP0 DMA region
+      control.c          Command handler implementations (cmd_*_send / cmd_*_cb split functions)
+      hw_common.c        Hardware abstraction: mmap of AXI GP0 and HP0 DMA region; UIO interrupt primitives
       inc/
         server.h         cmd_ctx_t, cmd_entry_t, output_item_t definitions
         hw_common.h      pdh_cmd_t, pdh_callback_t, dma_frame_t packed unions; all enums
         control.h        Command handler declarations
-  deploy.sh              Build, copy, and run script for the Red Pitaya
+  dts/
+    pdh_irq.dts          Device Tree overlay — binds /dev/uio/pdh_uio to IRQ_F2P[1] (GIC SPI 62)
 client/
   gui.py                 Interactive tkinter GUI — full hardware control without scripting
   pdh_api/
@@ -86,14 +87,61 @@ make server         # Cross-compiles for ARM; statically linked (-static -lm -ls
 make clean
 ```
 
-### Deploy (all-in-one)
+### Deploy (manual — raw SSH/SCP)
+
+`deploy.sh` is not used. All deployment is done with plain `ssh`/`scp`.  Target: `root@10.42.0.62` (password: `root`).
+
+#### 1. Flash the bitstream
 
 ```bash
-cd core
-./deploy.sh         # Copies boot.bin and sw/ to RP via scp, programs FPGA, builds and starts server
+# Copy bitstream to RP
+scp core/hw/build/boot.bin root@10.42.0.62:/root/boot.bin
+
+# Program the FPGA (full path required — fpgautil may not be in PATH over SSH)
+ssh root@10.42.0.62 '/boot/bin/fpgautil -b /root/boot.bin -o /lib/firmware/base.dtbo'
 ```
 
-Target: `root@10.42.0.62` (password: `root`). Requires `sshpass` and `scp`.
+#### 2. Build and copy the server
+
+```bash
+cd core/sw && make server
+# Remove old build, copy fresh one
+ssh root@10.42.0.62 'rm -rf /root/sw'
+scp -r core/sw root@10.42.0.62:/root/sw
+```
+
+#### 3. Load the DTS overlay (PL-to-PS interrupt)
+
+The interrupt path requires a Device Tree overlay that binds `/dev/uio/pdh_uio` to GIC SPI 62 (`IRQ_F2P[1]`).
+
+```bash
+# Compile the overlay on the host
+dtc -I dts -O dtb -o core/dts/pdh_irq.dtbo core/dts/pdh_irq.dts
+
+# Copy to RP
+scp core/dts/pdh_irq.dtbo root@10.42.0.62:/root/pdh_irq.dtbo
+
+# On the RP: remove any stale overlay, then load the new one
+ssh root@10.42.0.62 '
+    rmdir /sys/kernel/config/device-tree/overlays/pdh_irq 2>/dev/null || true
+    mkdir -p /sys/kernel/config/device-tree/overlays/pdh_irq
+    cp /root/pdh_irq.dtbo /sys/kernel/config/device-tree/overlays/pdh_irq/dtbo
+'
+```
+
+After loading, verify the UIO device appears:
+
+```bash
+ssh root@10.42.0.62 'ls /dev/uio/pdh_uio'
+```
+
+#### 4. Start the server
+
+**The server must be started from `sw/build/`** — `cmd_get_frame` writes `dma_log.csv` relative to the working directory.
+
+```bash
+ssh root@10.42.0.62 'cd /root/sw/build && ./server &'
+```
 
 ### RTL Simulation (cocotb)
 
@@ -279,14 +327,15 @@ Host PC (Python)
     |
     | TCP port 5555 (text protocol)
     v
-ARM Cortex-A9 (Linux)
-    server.c  ──── parses text, dispatches cmd_* handlers
-    control.c ──── builds pdh_cmd_t, mmap-writes to AXI GP0
-    hw_common.c     reads pdh_callback_t from AXI GP0
-    |                       reads dma_frame_t from HP0 DDR region
+ARM Cortex-A9 (Linux)  [two pthreads]
+    Thread 1 (command)   ── accept(), parse, cmd_*_send(), push pending queue
+    Thread 2 (callback)  ── blocks on /dev/uio/pdh_uio read(); on interrupt:
+                              reads GP0 callback, runs cmd_*_cb(), sends TCP response
+    hw_common.c          ── mmap of AXI GP0 (commands+callbacks) and HP0 DDR region
     |
     | AXI GP0 (0x42000000)  32-bit command/callback
     | AXI HP0 (0x10000000)  64-bit DMA write port
+    | IRQ_F2P[1] / GIC SPI 62  EDGE_RISING interrupt → /dev/uio/pdh_uio
     |
     v
 FPGA (Zynq PL, 125 MHz)
@@ -821,16 +870,21 @@ The `bram_ready_i` signal (from `pdh_clk` domain `bram_controller`) is registere
 
 ### Stage 4: Software Readback
 
-After issuing `CMD_GET_FRAME`, the C server waits for the full DMA to complete using a timed sleep:
+After issuing `CMD_GET_FRAME`, the C server waits for the DMA to complete via a hardware interrupt rather than a timed sleep.
 
-```c
-#define DMA_BURST_CONST  330   // µs — accounts for AXI transfer overhead
-#define BRAM_DEC_CONST   140   // µs per decimation unit (16384 / 125 MHz × 1.07)
+The FPGA asserts `irq_o` (a 1-cycle pulse) on the rising edge of `dma_ready_3ff` — the moment the DMA controller returns to idle after the final burst response.  In `pdh_top.sv`, this pulse is widened to 32 cycles (~256 ns) by a counter-based pulse stretcher, then synchronized into `fclk0` by a 3-stage flip-flop chain before being routed to `IRQ_F2P[1]` (GIC SPI 62, EDGE_RISING).
 
-usleep(DMA_BURST_CONST + BRAM_DEC_CONST * decimation_code);
+The interrupt path through the block design:
+
+```
+pdh_core irq_o  →  pulse stretcher (32×, pdh_clk)
+                 →  3FF synchronizer (fclk0)
+                 →  BD port irq_f2p[0]
+                 →  xlconcat_irq In1
+                 →  IRQ_F2P[1]  →  GIC SPI 62
 ```
 
-Then it reads the DDR region sequentially through `gDmaMap` (a `mmap` of the 128 KB HP0 region at `0x10000000`) with a full memory barrier (`__sync_synchronize()`) to ensure coherency:
+On the software side, a dedicated callback thread blocks on a `read()` of `/dev/uio/pdh_uio` (provided by `uio_pdrv_genirq`).  When the interrupt fires, `read()` returns and the thread reads the DDR region with a full memory barrier (`__sync_synchronize()`) to ensure coherency:
 
 ```c
 uint64_t dma_get_frame(uint32_t byte_offset) {
