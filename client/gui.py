@@ -757,6 +757,24 @@ class _PIDPanel(_Panel):
         if dec < 1:
             self.err(ValueError("Metrics decimation must be >= 1")); return
 
+        # Warn if metrics_dec < PID dec — pid_out PSD will be staircase-dominated or blank
+        try:
+            pid_dec = int(self._vars["dec"].get())
+            if dec < pid_dec:
+                import tkinter.messagebox as _mb
+                proceed = _mb.askyesno(
+                    "PID out PSD warning",
+                    f"Metrics decimation ({dec}) < PID decimation ({pid_dec}).\n\n"
+                    "pid_out updates only every PID_dec cycles, so the pid_out PSD "
+                    "will be staircase-dominated or blank.\n\n"
+                    f"Recommended: set metrics decimation ≥ {pid_dec}.\n\n"
+                    "Proceed anyway?",
+                )
+                if not proceed:
+                    return
+        except ValueError:
+            pass  # PID dec field invalid — skip the check
+
         # Collect PID params from GUI fields (read-only; does not re-issue set_pid)
         pid_params: dict = {}
         for key in ("kp", "ki", "kd", "sp", "dec", "alpha", "sat", "gain", "bias", "egain"):
@@ -787,10 +805,11 @@ class _PIDPanel(_Panel):
         ts   = datetime.datetime.now().strftime("%H:%M:%S")
         cols = r.columns   # ["pid_in", "err", "pid_out"]
 
-        fig = plt.figure(figsize=(10, 14))
-        gs  = fig.add_gridspec(4, 1, height_ratios=[3, 3, 3, 2.2], hspace=0.45)
+        fig = plt.figure(figsize=(10, 18))
+        gs  = fig.add_gridspec(5, 1, height_ratios=[3, 3, 3, 3, 2.2], hspace=0.45)
         psd_axes = [fig.add_subplot(gs[i]) for i in range(3)]
-        ax_info  = fig.add_subplot(gs[3])
+        ax_ccf   = fig.add_subplot(gs[3])
+        ax_info  = fig.add_subplot(gs[4])
 
         fig.suptitle(
             f"Control Metrics  dec={r.decimation}  fs={r.fs/1e6:.3f} MHz  {ts}",
@@ -831,6 +850,19 @@ class _PIDPanel(_Panel):
             ax.sharex(psd_axes[-1])
             ax.tick_params(labelbottom=False)
 
+        # ── Cross-correlation subplot ──────────────────────────────────────────
+        lags_ms = r.ccf_lags * 1e3  # seconds → ms
+        ax_ccf.plot(lags_ms, r.ccf, linewidth=PLOT_LINEWIDTH)
+        ax_ccf.axhline(0, color="gray", linewidth=0.6, linestyle="--")
+        ax_ccf.axvline(r.ccf_peak_lag * 1e3, color="red", linewidth=PLOT_LINEWIDTH,
+                       linestyle="--",
+                       label=f"peak={r.ccf_peak:.3f}  lag={r.ccf_peak_lag*1e3:.3f} ms")
+        ax_ccf.set_ylabel("CCF\npid_out vs err", fontsize=PLOT_FONTSIZE)
+        ax_ccf.set_xlabel("Lag (ms)", fontsize=PLOT_FONTSIZE)
+        ax_ccf.tick_params(labelsize=PLOT_FONTSIZE * 0.85)
+        ax_ccf.legend(fontsize=PLOT_FONTSIZE * 0.75)
+        ax_ccf.grid(True, alpha=0.3)
+
         # ── Info text box ─────────────────────────────────────────────────────
         ax_info.axis("off")
         p  = r.pid_params
@@ -856,7 +888,11 @@ class _PIDPanel(_Panel):
             f"{'':<40}"
             f"{'Ctrl P95      = ' + f'{r.ctrl_p95:.1f}':} cts\n"
             f"{'':<40}"
-            f"{'Ctrl Slew RMS = ' + f'{r.ctrl_slew_rms:.2f}':} cts/smp"
+            f"{'Ctrl Slew RMS = ' + f'{r.ctrl_slew_rms:.2f}':} cts/smp\n"
+            f"{'':<40}"
+            f"{'CCF Peak      = ' + f'{r.ccf_peak:.3f}':} (correction quality)\n"
+            f"{'':<40}"
+            f"{'CCF Peak Lag  = ' + f'{r.ccf_peak_lag*1e3:.3f}':} ms"
         )
         ax_info.text(
             0.02, 0.95, info,

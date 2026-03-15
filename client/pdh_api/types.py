@@ -228,5 +228,11 @@ class ControlMetricsResult:
     ctrl_p95:      float        # 95th-percentile |pid_out|
     ctrl_slew_rms: float        # RMS of np.diff(pid_out)
 
+    # Cross-correlation: pid_out[t] vs err[t + lag]
+    ccf_lags:      np.ndarray   # shape (2N-1,), seconds
+    ccf:           np.ndarray   # shape (2N-1,), normalized to [-1, 1]
+    ccf_peak:      float        # max |CCF| — correction quality score in [0, 1]
+    ccf_peak_lag:  float        # lag (seconds) at which |CCF| is maximised
+
     # Controller parameters read from GUI fields at time of capture
     pid_params:    dict

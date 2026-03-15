@@ -535,6 +535,23 @@ def api_control_metrics(decimation: int, pid_params: dict) -> ControlMetricsResu
     ctrl_p95      = float(np.percentile(np.abs(pid_out), 95))
     ctrl_slew_rms = float(np.sqrt(np.mean(np.diff(pid_out) ** 2)))
 
+    # ── Cross-correlation: pid_out[t] vs err[t + lag] ─────────────────────────
+    # Measures how strongly (and with what delay) the controller output causally
+    # drives future error reduction.  Normalised to [-1, 1]; peak magnitude is
+    # the "correction quality" score.
+    po_z  = pid_out - pid_out.mean()
+    er_z  = err     - err.mean()
+    denom = float(np.std(po_z) * np.std(er_z))
+    if denom > 0:
+        ccf_raw = np.correlate(po_z, er_z, mode='full') / (denom * N)
+    else:
+        ccf_raw = np.zeros(2 * N - 1)
+    lag_samples  = np.arange(-(N - 1), N)
+    ccf_lags     = lag_samples / fs                         # seconds
+    ccf_peak_idx = int(np.argmax(np.abs(ccf_raw)))
+    ccf_peak     = float(ccf_raw[ccf_peak_idx])
+    ccf_peak_lag = float(ccf_lags[ccf_peak_idx])
+
     return ControlMetricsResult(
         raw_data=data,
         columns=cols,
@@ -549,5 +566,9 @@ def api_control_metrics(decimation: int, pid_params: dict) -> ControlMetricsResu
         ctrl_max=ctrl_max,
         ctrl_p95=ctrl_p95,
         ctrl_slew_rms=ctrl_slew_rms,
+        ccf_lags=ccf_lags,
+        ccf=ccf_raw,
+        ccf_peak=ccf_peak,
+        ccf_peak_lag=ccf_peak_lag,
         pid_params=pid_params,
     )
