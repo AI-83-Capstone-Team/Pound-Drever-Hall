@@ -18,6 +18,7 @@ A hardware/software co-design implementation of a **Pound-Drever-Hall (PDH) lase
 10. [Signal Representation and Fixed-Point Conventions](#signal-representation-and-fixed-point-conventions)
 11. [IO Routing](#io-routing)
 12. [Notable Design Choices](#notable-design-choices)
+13. [Python Analysis Functions](#python-analysis-functions)
 
 ---
 
@@ -37,10 +38,18 @@ core/
         sine_qtr_rom.sv  4096-entry, 16-bit quarter-sine ROM
         posedge_detector.sv  Rising-edge detector utility
       tb/                Testbenches (SystemVerilog, Icarus)
-      sim/               cocotb regression sim
-        run.py             Runner script — builds and executes the sim
-        test_pdh_core.py   cocotb test module (command-echo checks)
-        Makefile           Thin make wrapper around run.py
+  sim/                   All RTL simulations (cocotb)
+    run_regression.py      Runner for the command-echo regression test
+    run_bode.py            Open-loop Bode analysis simulation
+    run_fir_freq.py        FIR frequency-response verification simulation
+    utils/
+      test_pdh_core.py     cocotb test module — command-echo checks for every RTL register
+      test_bode.py         cocotb test module — open-loop Bode measurement
+      test_fir_freq_response.py  cocotb test module — FIR frequency response vs ideal
+    Makefile.cocotb        cocotb regression make rules
+    Makefile.bode          Bode sim make rules
+    Makefile.fir_freq      FIR freq-response make rules
+    artifacts/             Auto-indexed simulation output (JSON, CSV, PNG)
   sw/
     server.c             TCP server: two-thread interrupt-driven architecture (command thread + callback thread)
     control/
@@ -145,24 +154,76 @@ ssh root@10.42.0.62 'cd /root/sw/build && ./server &'
 
 ### RTL Simulation (cocotb)
 
-A lightweight cocotb testbench exercises `pdh_core` directly — no hardware, no server, no DMA.  It issues the same command-echo sequence as `client/test.py` and asserts that every FPGA callback register round-trip is correct.
+All simulations live in `core/hw/sim/`. Each is driven by a Python runner script that invokes cocotb/Verilator (or Icarus) via make, writes artifacts to a numbered subdirectory of `sim/artifacts/`, and exits non-zero on any test failure.
+
+Requires `cocotb`, and either Verilator or Icarus Verilog (`iverilog`).
+
+#### Command-Echo Regression (`run_regression.py`)
+
+Exercises every command that has an observable callback echo and checks that the FPGA register round-trips match what was sent. DMA/frame capture is out of scope — inputs are tied to benign static values.
+
+Checks covered (40 in total):
+- **Reset**: `led_o` and `rst_o` cleared
+- **Set LED**: `led_o` pin value and callback echo
+- **Config IO**: DAC1/DAC2 source select and PID input select echoes
+- **Set DAC**: both DAC1 and DAC2 code echoes (with server-side negation)
+- **Get ADC**: ADC_A and ADC_B raw code echoes
+- **Set NCO**: stride, shift, inv, sub, enable echoes; frequency quantization check
+- **Set Rotation**: cos θ and sin θ coefficient echoes (within ±0.01 of float, limited by 14-bit CB truncation)
+- **Set PID**: kp, kd, ki, dec, sp, alpha, sat, en, gain, bias, egain — all 11 coefficients
+- **Set FIR**: address, coefficient, input select, write-enable, chain-write-enable echoes
+- **Check Signed**: ADC_A, ADC_B, I feed, Q feed, IO routing register reads
+- **Interrupt**: `irq_o` fires within expected cycles after strobe for a non-`CMD_GET_FRAME` command
 
 ```bash
-# from anywhere
-cd core/hw/prj/pdh_core/sim
-python run.py                   # Verilator (default)
-python run.py --sim icarus
-SIM=icarus python run.py
+cd core/hw/sim
+python run_regression.py                   # Verilator (default)
+python run_regression.py --sim icarus
 ```
 
-Or via make (thin wrapper around `run.py`):
+#### Open-Loop Bode Analysis (`run_bode.py`)
+
+Programs a complete PID + FIR configuration into the RTL and measures the open-loop frequency response by injecting a swept sine at the error input and recording the controller output. Produces a Bode plot (magnitude + phase) comparing the RTL against an ideal analytical model.
 
 ```bash
-cd core/hw && make sim              # SIM=verilator default
-cd core/hw && make sim SIM=icarus
+cd core/hw/sim
+python run_bode.py                              # defaults: Kp=0.5, Ki=0.0, Kd=0.0
+python run_bode.py --kp 0.8 --ki 0.1 --kd 0.0
+python run_bode.py --alpha 3 --satwidth 28
+python run_bode.py --delay 6.2                  # 6.2 ns DAC→ADC line delay
+python run_bode.py --dec 1,10,100,1000          # sweep multiple decimation codes
+python run_bode.py --no-sim                     # replot most recent result
+python run_bode.py --csv path/to/fir_coeffs.csv --sim icarus
 ```
 
-Requires: `cocotb` (`pip install cocotb`) and either Verilator or Icarus Verilog (`iverilog`).  The Makefile automatically symlinks `sine_qtr_4096_16b.mem` into the sim directory so `$readmemh` resolves correctly.
+Key arguments:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kp/ki/kd` | 0.5/0.0/0.0 | PID gains |
+| `--alpha` | 2 | EMA derivative exponent |
+| `--satwidth` | 31 | Integrator saturation width |
+| `--delay NS` | 2500.0 | Physical DAC→ADC round-trip delay (ns) |
+| `--dec` | 1,2,5,…,1000 | Comma-separated decimation codes to test |
+| `--plot-dec` | median | Which decimation to display in Bode panels |
+| `--csv PATH` | `test_resources/fir_coeffs_example.csv` | FIR coefficient CSV |
+| `--no-sim` | — | Skip simulation; replot existing JSON |
+
+Artifacts written to `sim/artifacts/bode/bode_N/`: `bode_results.json`, `bode_plot.png`.
+
+#### FIR Frequency-Response Verification (`run_fir_freq.py`)
+
+Designs a windowed-sinc lowpass filter, writes coefficients to a CSV, loads them into the RTL via cocotb, sweeps a sine through it, and overlays the measured RTL response against the ideal `sinc × window` response.
+
+```bash
+cd core/hw/sim
+python run_fir_freq.py                              # 32 taps, 5 MHz corner, Hann
+python run_fir_freq.py --ntaps 64 --corner 2e6
+python run_fir_freq.py --corner 10e6 --window hamming
+python run_fir_freq.py --no-sim                     # replot most recent result
+```
+
+Artifacts written to `sim/artifacts/fir_freq/fir_freq_N/`: `fir_coeffs.csv`, `fir_freq_results.json`, `fir_rtl_response.csv`, `fir_freq_response.png`.
 
 ### Python Client
 
@@ -386,26 +447,29 @@ All values are plain ASCII. The Python client's `_parse_response()` coerces each
 
 ### Server Dispatch Table
 
-`server.c` maintains a static table of 13 entries:
+`server.c` maintains a static table of 13 entries. Each entry carries a `send_func` / `cb_func` pair for interrupt-driven commands, or a `mono_func` for commands that complete synchronously in Thread 1.
 
-```c
-static cmd_entry_t gCmds[NUM_CMDS] = {
-    {"set_led",      cmd_set_led,      0, 0, 1},
-    {"reset_fpga",   cmd_reset_fpga,   0, 0, 0},
-    {"set_dac",      cmd_set_dac,      1, 0, 1},
-    {"get_adc",      cmd_get_adc,      0, 0, 0},
-    {"check_signed", cmd_check_signed, 0, 0, 1},
-    {"set_rotation", cmd_set_rot,      1, 0, 0},
-    {"get_frame",    cmd_get_frame,    0, 0, 2},
-    {"test_frame",   cmd_test_frame,   0, 0, 1},
-    {"set_pid",      cmd_set_pid,      4, 0, 4},
-    {"set_nco",      cmd_set_nco,      2, 0, 1},
-    {"config_io",    cmd_config_io,    0, 0, 3},
-    {"sweep_ramp",   cmd_sweep_ramp,   2, 0, 3},
-};
-```
+| Command | Mode | floats | ints | uints |
+|---------|------|--------|------|-------|
+| `set_led` | split (send+cb) | 0 | 0 | 1 |
+| `reset_fpga` | mono | 0 | 0 | 0 |
+| `set_dac` | split (send+cb) | 1 | 0 | 1 |
+| `get_adc` | split (send+cb) | 0 | 0 | 0 |
+| `check_signed` | split (send+cb) | 0 | 0 | 1 |
+| `set_rotation` | mono | 1 | 0 | 0 |
+| `get_frame` | split (send+cb) | 0 | 0 | 2 |
+| `test_frame` | mono | 0 | 0 | 1 |
+| `set_pid` | mono | 4 | 0 | 4 |
+| `set_fir` | mono | 0 | 0 | 1 |
+| `set_nco` | mono | 2 | 0 | 1 |
+| `config_io` | split (send+cb) | 0 | 0 | 3 |
+| `sweep_ramp` | mono | 2 | 0 | 3 |
 
-Each entry holds: `{name, handler_fn, required_floats, required_ints, required_uints}`. Dispatch performs a linear name search; argument-count mismatches return an error before calling the handler. The handler receives a `cmd_ctx_t` containing the parsed arguments and writes its response into `ctx->output`.
+**Split commands** (`send_func` + `cb_func`): Thread 1 calls `_send`, writes the strobe, then pushes the pending context to `g_pending`. Thread 2 blocks on `uio_wait_irq()` and calls `_cb` after the FPGA interrupt fires.
+
+**Monolithic commands** (`mono_func`): Thread 1 executes the entire handler synchronously (no interrupt involved) and sends the TCP response immediately. These are either multi-sub-command sequences (`set_pid` issues 11 sequential strobes; `set_nco` issues 5; `set_rotation` commits cos/sin atomically; `set_fir` loads all 32 taps then commits) or commands that have no FPGA callback (`reset_fpga`, `test_frame`).
+
+Dispatch performs a linear name search; argument-count mismatches return an error before the handler is called. The handler receives a `cmd_ctx_t` with parsed arguments and writes its result into `ctx->output`.
 
 ### AXI GP0 Command Register
 
@@ -491,7 +555,7 @@ Because the callback reflects the FPGA's registered state immediately after the 
 
 ### PID Coefficient Multiplexing
 
-Because the PID has eight independent coefficients (kp, kd, ki, dec, sp, alpha, sat, en) but the command word has only 26 payload bits, each coefficient is written in a separate transaction. The 4-bit `coeff_sel` field in bits `[19:16]` of the data word selects which coefficient register is updated. The corresponding callback echoes the selected coefficient's current value. `cmd_set_pid` in `control.c` issues eight sequential `pdh_execute_cmd` calls, one per coefficient.
+The PID has 11 independent coefficients (kp, kd, ki, dec, sp, alpha, sat, en, gain, bias, egain). Because the command word has only 26 payload bits, each coefficient is written in a separate transaction. The 4-bit `coeff_sel` field in bits `[19:16]` of the data word selects which coefficient register is updated. The corresponding callback echoes the selected coefficient's current value. `cmd_set_pid` in `control.c` issues 11 sequential `pdh_execute_cmd` calls, one per coefficient.
 
 The NCO uses the same multiplexing scheme with a 3-bit `coeff_sel` for five parameters: stride, shift, invert, sub, enable.
 
@@ -680,6 +744,9 @@ Adding 8191 before the conversion centers the zero-error output at mid-scale (0 
 | dec       | uint14 | [1, 16383]   | clock cycles per PID update     |
 | alpha     | uint4  | [0, 15]      | EMA time constant exponent      |
 | sat       | uint5  | [15, 31]     | integrator bound and I-shift    |
+| gain      | Q10    | [−32, +32)   | output gain multiplier; int16 / 1024.0  |
+| bias      | Q13    | [−1, +1)     | DC offset added to output; int14 / 8192.0 |
+| egain     | Q10    | [−32, +32)   | input (error) gain multiplier; int16 / 1024.0 |
 
 ---
 
@@ -901,12 +968,14 @@ The `frame_code` field selects which internal signals are packed into each 64-bi
 
 | Frame Code          | CSV Columns (in order)                              | Description                         |
 |---------------------|-----------------------------------------------------|-------------------------------------|
-| `ADC_DATA_IN`       | adc_a, adc_b, i_feed, q_feed                       | Raw ADC (signed) and IQ demod       |
+| `ADC_DATA_IN`       | adc_a, adc_b, i_feed, q_feed                        | Raw ADC (signed) and IQ demod       |
 | `PID_ERR_TAPS`      | err, perr, derr, ierr                               | PID error, P, D, I contributions    |
 | `IO_SUM_ERR`        | err, pid_out, sum_err                               | Error, DAC code, integrator state   |
-| `OSC_INSPECT`       | nco_out1, nco_out2, nco_feed1, nco_feed2           | NCO signed outputs and DAC codes    |
+| `OSC_INSPECT`       | nco_out1, nco_out2, nco_feed1, nco_feed2            | NCO signed outputs and DAC codes    |
 | `OSC_ADDR_CHECK`    | phi1, phi2, addr1, addr2                            | Phase accumulators and ROM addresses|
 | `LOOPBACK`          | dac1_feed, dac2_feed, adc_a, adc_b                  | DAC outputs vs. raw ADC (offset-binary) |
+| `FIR_IO`            | fir_in, fir_out                                     | FIR filter input and output         |
+| `PID_IO`            | pid_in, err, pid_out                                | PID process variable, error, output |
 
 `api_psd(decimation)` wraps `ADC_DATA_IN` capture and computes a one-sided PSD for all four channels via the Wiener-Khinchin theorem (FFT of the autocorrelation). Effective sample rate is `125e6 / decimation` Hz; frequency resolution is `fs / (2N − 1)` where N = 16384 samples.
 
@@ -965,8 +1034,9 @@ The PID error input `dat_i` can be sourced from:
 | 1    | Q_FEED   | Q channel of IQ demodulation (rotated ADC B)  |
 | 2    | ADC_A    | Raw ADC channel A (adc_dat_a_16s)             |
 | 3    | ADC_B    | Raw ADC channel B (adc_dat_b_16s)             |
+| 4    | FIR_OUT  | FIR filter output                             |
 
-For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage.
+For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage. `FIR_OUT` inserts the programmable FIR lowpass between the demodulation stage and the PID, which is the normal operating mode for bandwidth-limited locking.
 
 ---
 
@@ -1019,4 +1089,85 @@ When DAC1 is physically connected to ADC1 and DAC2 to ADC2, this frame makes it 
 ### PID Integrator and Saturation Width Coupling
 
 The parameter `satwidth` serves two purposes: it sets the integrator saturation bound (`±2^satwidth`) and the I-term right-shift (`>>> satwidth`). This coupling is intentional: as the saturation narrows (smaller `satwidth`), the integrator accumulates less history, and the I-term contribution is also scaled down proportionally, preventing a large clamped integrator from dominating the output when saturation is tight. The valid range 15–31 is enforced in the RTL (`next_satwidth_w = (satwidth_i between 15 and 31) ? satwidth_i : 31`).
+
+---
+
+## Python Analysis Functions
+
+The `client/pdh_api/api.py` module provides three higher-level analysis functions that sit above the raw command API.
+
+### `api_psd(decimation, frame_code)` → `PSDResult`
+
+Captures a DMA frame and computes a one-sided power spectral density for every channel in the frame using the Wiener–Khinchin theorem (FFT of the autocorrelation function).
+
+```python
+from pdh_api import api, FrameCode
+
+r = api.api_psd(decimation=10, frame_code=FrameCode.ADC_DATA_IN)
+# r.freqs     — frequency bins in Hz, shape (N_freq,)
+# r.psd       — PSD in counts²/Hz, shape (N_freq, N_cols)
+# r.fs        — effective sample rate: 125e6 / decimation
+# r.columns   — channel names per FRAME_COLUMNS[frame_code]
+# r.raw_data  — raw DMA data used for the PSD, shape (16384, N_cols)
+```
+
+Effective sample rate: `125e6 / decimation` Hz. Nyquist: `62.5e6 / decimation` Hz. Frequency resolution: `fs / (2N − 1)` where N = 16384.
+
+The GUI exposes this via the **PSD** tab in the Frame Capture panel.
+
+---
+
+### `api_control_metrics(decimation, pid_params)` → `ControlMetricsResult`
+
+Captures a `PID_IO` frame (columns: `pid_in`, `err`, `pid_out`) and computes a comprehensive set of controller performance metrics:
+
+| Metric | Description |
+|--------|-------------|
+| PSD | One-sided PSD for pid_in, err, pid_out |
+| RMS error | `err` RMS across the capture window |
+| Peak error | Maximum `|err|` in the capture window |
+| Settling time | Time (in samples) for `|err|` to fall and stay below 5% of its initial value |
+| Overshoot | Maximum `|pid_out|` above the steady-state level |
+| CCF peak | Cross-correlation peak between `pid_in` and `err` — indicates loop delay |
+| CCF lag | Lag at CCF peak in samples and seconds |
+
+```python
+pid_params = {"kp": 0.5, "ki": 0.1, "kd": 0.0, "dec": 10, "sp": 0.0}
+r = api.api_control_metrics(decimation=10, pid_params=pid_params)
+# r.raw_data       — shape (16384, 3): pid_in, err, pid_out
+# r.fs             — 125e6 / decimation
+# r.freqs / r.psd  — PSD result
+# r.rms_err        — float
+# r.peak_err       — float
+# r.settling_time  — float (seconds), or None if never settled
+# r.overshoot      — float
+# r.ccf_peak       — float
+# r.ccf_peak_lag   — float (samples)
+# r.pid_params     — dict passed in (for labelling plots)
+```
+
+`pid_params` is not sent to hardware — it is embedded in the result for plot labelling only. The FPGA must already be running with the desired PID configuration before calling this function.
+
+The GUI exposes this via the **Compute Control Metrics** button in the PID tab.
+
+---
+
+### `compute_lockpoint(data, sign_sel, invert_delta, window)` → `LockPointResult`
+
+Post-processes a sweep-ramp capture to determine the optimal IQ rotation angle and PDH lock point.
+
+```python
+sweep = api.api_sweep_ramp(v0=-1.0, v1=1.0, num_points=500,
+                            dac_sel=DacSel.DAC_1)
+result = api.compute_lockpoint(sweep.data, sign_sel="I", window=10)
+# result.G                  — "golden" demodulated signal in volts, shape (N,)
+# result.optimal_angle_deg  — IQ rotation angle that maximises the PDH slope
+# result.lock_point         — DAC voltage at the steepest zero crossing
+```
+
+**Algorithm**: For each candidate rotation angle θ in [−180°, +180°], the I and Q channels are rotated and the resulting signal's maximum slope magnitude is measured via a sliding window of `window` points. The angle that maximises this slope is `optimal_angle_deg`. The `lock_point` is the DAC voltage at the steepest zero crossing of `G = cos(θ)·I + sin(θ)·Q`.
+
+`sign_sel` (default `"I"`) selects which rotated channel to use for the golden signal. `invert_delta` flips the sign of the slope criterion, useful when the PDH dispersion signal has the opposite polarity.
+
+The GUI exposes this via the **Compute Lock Point** button in the Sweep Ramp tab.
 
