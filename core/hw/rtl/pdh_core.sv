@@ -189,6 +189,7 @@ module pdh_core #
             5'b00111: cs_cb_w = {base_bus, q_feed_r};
 
             5'b01000: cs_cb_w = {base_bus, 15'b0, dma_ready_3ff};
+        5'b01001: cs_cb_w = {base_bus, demod_lpf_r};
 
             5'b01010: cs_cb_w = {base_bus, kp_r};
 
@@ -383,7 +384,8 @@ typedef enum logic [2:0]
     ADC2 = 3'b001,
     I_FEED = 3'b010,
     Q_FEED = 3'b011,
-    FIR_IQ_DEMOD_OUT = 3'b100
+    FIR_IQ_DEMOD_OUT = 3'b100,
+    FIR_IQ_DEMOD_LPF = 3'b101
 }   fir_input_sel_t;
 logic [2:0] fir_input_sel_r, fir_input_sel_w;
 
@@ -396,6 +398,7 @@ always_comb begin
         I_FEED:         fir_in_w = i_feed_r;
         Q_FEED:         fir_in_w = q_feed_r;
         FIR_IQ_DEMOD_OUT: fir_in_w = demod_out_w;
+        FIR_IQ_DEMOD_LPF: fir_in_w = demod_lpf_r;
         default:        fir_in_w = adc_dat_a_16s_r;
     endcase
 end
@@ -481,10 +484,20 @@ fir # (
         .out_o(demod_out_w)
     );
 
-    assign next_demod_ref_sel_w = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[0]   : demod_ref_sel_r;
-    assign next_demod_in_sel_w  = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[3:1] : demod_in_sel_r;
+    assign next_demod_ref_sel_w   = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[0]   : demod_ref_sel_r;
+    assign next_demod_in_sel_w    = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[3:1] : demod_in_sel_r;
+    assign next_demod_lpf_alpha_w = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[7:4] : demod_lpf_alpha_r;
 
-    assign config_demod_cb_w = {CMD_CONFIG_DEMOD, 24'b0, demod_in_sel_r, demod_ref_sel_r};
+    // Running EMA low-pass filter on demod output
+    // lpf[n] = lpf[n-1] + (demod_out[n] - lpf[n-1]) >> alpha
+    logic [3:0]         demod_lpf_alpha_r, next_demod_lpf_alpha_w;
+    logic signed [15:0] demod_lpf_r, demod_lpf_w, demod_lpf_diff_w;
+    always_comb begin
+        demod_lpf_diff_w = demod_out_w - demod_lpf_r;
+        demod_lpf_w      = ($signed(demod_lpf_diff_w) >>> demod_lpf_alpha_r) + demod_lpf_r;
+    end
+
+    assign config_demod_cb_w = {CMD_CONFIG_DEMOD, 20'b0, demod_lpf_alpha_r, demod_in_sel_r, demod_ref_sel_r};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -510,7 +523,8 @@ fir # (
         SAT_A_16S = 3'b010,
         SAT_B_16S = 3'b011,
         FIR_OUT_W = 3'b100,
-        IQ_DEMOD_OUT_W = 3'b101
+        IQ_DEMOD_OUT_W  = 3'b101,
+        IQ_DEMOD_LPF_W  = 3'b110
     }   pid_sel_t;
     logic [2:0] pid_sel_r, next_pid_sel_w;
 
@@ -573,6 +587,10 @@ fir # (
 
             IQ_DEMOD_OUT_W: begin
                 pid_in_w = demod_out_w;
+            end
+
+            IQ_DEMOD_LPF_W: begin
+                pid_in_w = demod_lpf_r;
             end
 
             default begin
@@ -640,7 +658,7 @@ fir # (
             LOOPBACK: dma_data_w = {2'b0, dac1_feed_w, 2'b0, dac2_feed_w, 2'b0, adc_dat_a_i, 2'b0, adc_dat_b_i};
             FIR_IO:        dma_data_w = {32'b0, fir_out_w, fir_in_w};
             PID_IO:        dma_data_w = {16'b0, 2'b0, pid_out_w, err_tap_w, pid_in_w};
-            CAPTURE_DEMOD: dma_data_w = {nco_out2_r, nco_out1_r, demod_in_w, demod_out_w};
+            CAPTURE_DEMOD: dma_data_w = {demod_lpf_r, demod_out_w, demod_ref_w, demod_in_w};
             default:       dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r};
         endcase
     end
@@ -958,6 +976,8 @@ fir # (
             pid_sel_r           <= '0;
             demod_ref_sel_r     <= '0;
             demod_in_sel_r      <= '0;
+            demod_lpf_alpha_r   <= 4'd8;
+            demod_lpf_r         <= '0;
 
             tap_addr_r          <= '0;
             tap_coeff_r         <= '0;
@@ -1019,6 +1039,8 @@ fir # (
             pid_sel_r           <= next_pid_sel_w;
             demod_ref_sel_r     <= next_demod_ref_sel_w;
             demod_in_sel_r      <= next_demod_in_sel_w;
+            demod_lpf_alpha_r   <= next_demod_lpf_alpha_w;
+            demod_lpf_r         <= demod_lpf_w;
 
             tap_addr_r          <= tap_addr_w;
             tap_coeff_r         <= tap_coeff_w;

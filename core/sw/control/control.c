@@ -833,8 +833,16 @@ int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing e
                             frame.pid_io_frame.pid_out & 0x3FFF);
                     break;
 
+                case CAPTURE_DEMOD:
+                    fprintf(f, "%d, %d, %d, %d\n",
+                            (int16_t)frame.capture_demod_frame.demod_in,
+                            (int16_t)frame.capture_demod_frame.demod_ref,
+                            (int16_t)frame.capture_demod_frame.demod_out,
+                            (int16_t)frame.capture_demod_frame.demod_lpf);
+                    break;
+
                 default:
-                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.adc_data_in_frame.adc_dat_a_16s, (int16_t)frame.adc_data_in_frame.adc_dat_b_16s, (int16_t)frame.adc_data_in_frame.i_feed_w, (int16_t)frame.adc_data_in_frame.q_feed_w); 
+                    fprintf(f, "%d, %d, %d, %d\n", (int16_t)frame.adc_data_in_frame.adc_dat_a_16s, (int16_t)frame.adc_data_in_frame.adc_dat_b_16s, (int16_t)frame.adc_data_in_frame.i_feed_w, (int16_t)frame.adc_data_in_frame.q_feed_w);
                     break;
             }
         }
@@ -931,11 +939,12 @@ int cmd_test_frame(cmd_ctx_t* ctx)
 
 int cmd_sweep_ramp(cmd_ctx_t* ctx)
 {
-    float    v0         = ctx->float_args[0];
-    float    v1         = ctx->float_args[1];
-    uint32_t num_points = ctx->uint_args[0];
-    uint32_t dac_sel    = ctx->uint_args[1];
-    uint32_t delay_us   = ctx->uint_args[2];
+    float    v0          = ctx->float_args[0];
+    float    v1          = ctx->float_args[1];
+    uint32_t num_points  = ctx->uint_args[0];
+    uint32_t dac_sel     = ctx->uint_args[1];
+    uint32_t delay_us    = ctx->uint_args[2];
+    uint32_t demod_mode  = ctx->uint_args[3];  /* 0 = adc/iq feeds, 1 = demod LPF */
 
     if (v0 < -1.0f || v0 > 1.0f || v1 < -1.0f || v1 > 1.0f)
         return SWEEP_RAMP_INVALID_RANGE;
@@ -994,15 +1003,24 @@ int cmd_sweep_ramp(cmd_ctx_t* ctx)
 
         if (delay_us > 0) usleep(delay_us);
 
-        float vals[4] = {0};
-        for (int s = 0; s < 4; s++)
+        if (demod_mode)
         {
-            cs_cmd.cs_cmd.reg_sel = sels[s];
+            cs_cmd.cs_cmd.reg_sel = CHECK_DEMOD_LPF;
             pdh_callback_t cb = pdh_execute_cmd(cs_cmd);
-            vals[s] = (int16_t)cb.cs_cb.payload / 8192.0f;
+            float lpf = (int16_t)cb.cs_cb.payload / 8192.0f;
+            fprintf(f, "%f,%f\n", v, lpf);
         }
-
-        fprintf(f, "%f,%f,%f,%f,%f\n", v, vals[0], vals[1], vals[2], vals[3]);
+        else
+        {
+            float vals[4] = {0};
+            for (int s = 0; s < 4; s++)
+            {
+                cs_cmd.cs_cmd.reg_sel = sels[s];
+                pdh_callback_t cb = pdh_execute_cmd(cs_cmd);
+                vals[s] = (int16_t)cb.cs_cb.payload / 8192.0f;
+            }
+            fprintf(f, "%f,%f,%f,%f,%f\n", v, vals[0], vals[1], vals[2], vals[3]);
+        }
     }
 
     fclose(f);
@@ -1216,7 +1234,7 @@ int cmd_config_io_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
     /* Pre-strobe range checks (surfaced here so the error code is preserved) */
     if (dac1 > 3) return CONFIG_IO_INVALID_DAC1;
     if (dac2 > 3) return CONFIG_IO_INVALID_DAC2;
-    if (pid  > 5) return CONFIG_IO_INVALID_PID;
+    if (pid  > 6) return CONFIG_IO_INVALID_PID;
 
     uint32_t echo_dac1 = cb.config_io_cb.dac1_dat_sel_r;
     uint32_t echo_dac2 = cb.config_io_cb.dac2_dat_sel_r;
@@ -1351,6 +1369,13 @@ int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
                             frame.pid_io_frame.err,
                             frame.pid_io_frame.pid_out & 0x3FFF);
                     break;
+                case CAPTURE_DEMOD:
+                    fprintf(f, "%d, %d, %d, %d\n",
+                            (int16_t)frame.capture_demod_frame.demod_in,
+                            (int16_t)frame.capture_demod_frame.demod_ref,
+                            (int16_t)frame.capture_demod_frame.demod_out,
+                            (int16_t)frame.capture_demod_frame.demod_lpf);
+                    break;
                 default:
                     fprintf(f, "%d, %d, %d, %d\n",
                             (int16_t)frame.adc_data_in_frame.adc_dat_a_16s,
@@ -1376,39 +1401,45 @@ int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
 
 int cmd_config_demod_send(cmd_ctx_t* ctx)
 {
-    /* Always strobe. Values are 1-bit and 3-bit fields; FPGA masks upper bits.
+    /* Always strobe. Values are 1-bit, 3-bit, and 4-bit fields; FPGA masks upper bits.
      * Range validation is caught in _cb via echo mismatch. */
-    uint32_t ref_sel = ctx->uint_args[0];
-    uint32_t in_sel  = ctx->uint_args[1];
+    uint32_t ref_sel   = ctx->uint_args[0];
+    uint32_t in_sel    = ctx->uint_args[1];
+    uint32_t lpf_alpha = ctx->uint_args[2];
 
     pdh_cmd_t cmd;
     cmd.raw = 0;
-    cmd.config_demod_cmd.cmd     = CMD_CONFIG_DEMOD;
-    cmd.config_demod_cmd.ref_sel = ref_sel & 0x1;
-    cmd.config_demod_cmd.in_sel  = in_sel  & 0x7;
+    cmd.config_demod_cmd.cmd       = CMD_CONFIG_DEMOD;
+    cmd.config_demod_cmd.ref_sel   = ref_sel   & 0x1;
+    cmd.config_demod_cmd.in_sel    = in_sel    & 0x7;
+    cmd.config_demod_cmd.lpf_alpha = lpf_alpha & 0xF;
     pdh_strobe_cmd(cmd);
     return CONFIG_DEMOD_OK;
 }
 
 int cmd_config_demod_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
 {
-    uint32_t ref_sel = ctx->uint_args[0];
-    uint32_t in_sel  = ctx->uint_args[1];
+    uint32_t ref_sel   = ctx->uint_args[0];
+    uint32_t in_sel    = ctx->uint_args[1];
+    uint32_t lpf_alpha = ctx->uint_args[2] & 0xF;
 
     if (ref_sel > 1) return CONFIG_DEMOD_INVALID_REF;
     if (in_sel  > 6) return CONFIG_DEMOD_INVALID_IN;
 
-    uint32_t echo_ref = cb.config_demod_cb.ref_sel_r;
-    uint32_t echo_in  = cb.config_demod_cb.in_sel_r;
-    uint32_t echo_cmd = cb.config_demod_cb.cmd;
-    uint32_t cmdval   = CMD_CONFIG_DEMOD;
+    uint32_t echo_ref   = cb.config_demod_cb.ref_sel_r;
+    uint32_t echo_in    = cb.config_demod_cb.in_sel_r;
+    uint32_t echo_alpha = cb.config_demod_cb.lpf_alpha_r;
+    uint32_t echo_cmd   = cb.config_demod_cb.cmd;
+    uint32_t cmdval     = CMD_CONFIG_DEMOD;
 
-    int rc = validate_cb(&echo_ref, &ref_sel, UINT_TAG, __func__, "REF_SEL_CB", CONFIG_DEMOD_OK, CONFIG_DEMOD_REF_CB_FAIL);
-    rc = validate_cb(&echo_in,  &in_sel,  UINT_TAG, __func__, "IN_SEL_CB",  rc, CONFIG_DEMOD_IN_CB_FAIL);
-    rc = validate_cb(&echo_cmd, &cmdval,  UINT_TAG, __func__, CMD,          rc, PDH_INVALID_CMD);
+    int rc = validate_cb(&echo_ref,   &ref_sel,   UINT_TAG, __func__, "REF_SEL_CB",   CONFIG_DEMOD_OK,        CONFIG_DEMOD_REF_CB_FAIL);
+    rc = validate_cb(&echo_in,        &in_sel,    UINT_TAG, __func__, "IN_SEL_CB",    rc,                     CONFIG_DEMOD_IN_CB_FAIL);
+    rc = validate_cb(&echo_alpha,     &lpf_alpha, UINT_TAG, __func__, "LPF_ALPHA_CB", rc,                     CONFIG_DEMOD_ALPHA_CB_FAIL);
+    rc = validate_cb(&echo_cmd,       &cmdval,    UINT_TAG, __func__, CMD,            rc,                     PDH_INVALID_CMD);
 
     size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_ref, UINT_TAG, "REF_SEL_CB");
-    push_ctx_cb(ctx, &index, &echo_in,  UINT_TAG, "IN_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_ref,   UINT_TAG, "REF_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_in,    UINT_TAG, "IN_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_alpha, UINT_TAG, "LPF_ALPHA_CB");
     return rc;
 }

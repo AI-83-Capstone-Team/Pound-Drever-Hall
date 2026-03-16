@@ -22,7 +22,7 @@ from .types import (
     CsSel, ConfigDemodResult, ConfigIoResult, ControlMetricsResult,
     DacDatSel, DacSel, DemodInSel, DemodRefSel, FRAME_COLUMNS,
     FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, PSDResult,
-    SWEEP_COLUMNS,
+    SWEEP_COLUMNS, SWEEP_DEMOD_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
     SetFirResult, SetLedResult, SetNcoResult, SetPidResult, SetRotResult,
     SweepRampResult,
@@ -54,7 +54,7 @@ __all__ = [
     # enums / types re-exported for one-stop import
     "FrameCode", "DacSel", "DacDatSel", "PidDatSel", "CsSel", "FirInputSel",
     "DemodRefSel", "DemodInSel",
-    "SWEEP_COLUMNS",
+    "SWEEP_COLUMNS", "SWEEP_DEMOD_COLUMNS",
     # result dataclasses
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
@@ -330,16 +330,18 @@ def api_config_io(
 def api_config_demod(
     ref_sel: DemodRefSel | int,
     in_sel: DemodInSel | int,
+    lpf_alpha: int = 8,
 ) -> ConfigDemodResult:
-    """Configure the IQ demodulator reference and input signal sources."""
+    """Configure the IQ demodulator reference, input signal sources, and EMA LPF alpha."""
     r = execute_cmd(
         f"CMD:config_demod\n"
-        f"U:{int(ref_sel)},{int(in_sel)}\n"
+        f"U:{int(ref_sel)},{int(in_sel)},{int(lpf_alpha)}\n"
     )
     return ConfigDemodResult(
         status=r.get("status", -1),
         ref_sel_cb=r.get("REF_SEL_CB", 0),
         in_sel_cb=r.get("IN_SEL_CB", 0),
+        lpf_alpha_cb=r.get("LPF_ALPHA_CB", 0),
     )
 
 
@@ -387,22 +389,26 @@ def api_sweep_ramp(
     num_points: int,
     dac_sel: DacSel | int,
     write_delay_us: int = 0,
+    demod_mode: int = 0,
     remote_dir: str = "sw/build",
 ) -> SweepRampResult:
     """
-    Sweep the selected DAC from v0 to v1, reading all four signals (ADC_A,
-    ADC_B, I_FEED, Q_FEED) at every step via CMD_CHECK_SIGNED.
+    Sweep the selected DAC from v0 to v1.
 
-    Writes sweep_log.csv on the RP; fetches and returns a (num_points, 5)
-    ndarray with columns: dac_v, adc_a, adc_b, i_feed, q_feed.
+    demod_mode=0 (default): reads ADC_A, ADC_B, I_FEED, Q_FEED at every step.
+                             Returns (num_points, 5) array; columns = SWEEP_COLUMNS.
+    demod_mode=1:           reads the EMA-filtered demod output (demod_lpf) at every step.
+                             Returns (num_points, 2) array; columns = SWEEP_DEMOD_COLUMNS.
+                             Requires api_config_demod to have been called first.
     """
     r = execute_cmd(
         f"CMD:sweep_ramp\n"
         f"F:{v0},{v1}\n"
-        f"U:{num_points},{int(dac_sel)},{write_delay_us}\n"
+        f"U:{num_points},{int(dac_sel)},{write_delay_us},{int(demod_mode)}\n"
     )
     status = r.get("status", -1)
-    data = np.empty((0, 5))
+    cols = SWEEP_DEMOD_COLUMNS if demod_mode else SWEEP_COLUMNS
+    data = np.empty((0, len(cols)))
     if status == 0:
         local = _ssh_fetch_csv(f"{remote_dir}/sweep_log.csv", "sweep_log.csv")
         data  = np.loadtxt(local, delimiter=",")
@@ -410,7 +416,7 @@ def api_sweep_ramp(
         status=status,
         num_points_cb=r.get("NUM_POINTS_CB", 0),
         data=data,
-        columns=SWEEP_COLUMNS,
+        columns=cols,
     )
 
 

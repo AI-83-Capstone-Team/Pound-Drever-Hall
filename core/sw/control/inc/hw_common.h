@@ -118,6 +118,7 @@ typedef enum
     CHECK_ADC_DAT_B_16S = 0b00001,
     CHECK_I_FEED = 0b00110,
     CHECK_Q_FEED = 0b00111,
+    CHECK_DEMOD_LPF = 0b01001,
 }   cs_sel_e;
 
 
@@ -156,6 +157,7 @@ typedef enum
     DAT_B_16_S = 0b011,
     FIR_OUT = 0b100,
     IQ_DEMOD_OUT_PID = 0b101,
+    IQ_DEMOD_LPF_PID = 0b110,
 }   pid_dat_sel_e;
 
 
@@ -269,6 +271,7 @@ typedef enum
     FIR_INPUT_I_FEED     = 0b010,
     FIR_INPUT_Q_FEED     = 0b011,
     FIR_INPUT_IQ_DEMOD_OUT = 0b100,
+    FIR_INPUT_IQ_DEMOD_LPF = 0b101,
 }   fir_input_sel_e;
 
 
@@ -323,6 +326,7 @@ typedef enum
     CONFIG_DEMOD_INVALID_IN,
     CONFIG_DEMOD_REF_CB_FAIL,
     CONFIG_DEMOD_IN_CB_FAIL,
+    CONFIG_DEMOD_ALPHA_CB_FAIL,
 }   config_demod_e;
 
 typedef enum
@@ -458,11 +462,12 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t ref_sel  : 1;
-        uint32_t in_sel   : 3;
-        uint32_t _padding : 22;
-        uint32_t cmd      : 4;
-        uint32_t _padding2: 2;
+        uint32_t ref_sel   : 1;
+        uint32_t in_sel    : 3;
+        uint32_t lpf_alpha : 4;
+        uint32_t _padding  : 18;
+        uint32_t cmd       : 4;
+        uint32_t _padding2 : 2;
     }   config_demod_cmd;
 
     struct __attribute__((packed))
@@ -588,10 +593,11 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        uint32_t ref_sel_r  : 1;
-        uint32_t in_sel_r   : 3;
-        uint32_t _padding   : 24;
-        uint32_t cmd        : 4;
+        uint32_t ref_sel_r    : 1;
+        uint32_t in_sel_r     : 3;
+        uint32_t lpf_alpha_r  : 4;
+        uint32_t _padding     : 20;
+        uint32_t cmd          : 4;
     }   config_demod_cb;
 
     uint32_t raw;
@@ -665,10 +671,10 @@ typedef union __attribute__((packed))
 
     struct __attribute__((packed))
     {
-        int16_t  demod_out;  // [15:0]  iq_demod output (Q15)
-        int16_t  demod_in;   // [31:16] muxed demod input (Q15)
-        int16_t  nco1;       // [47:32] nco_out1_r (Q15)
-        int16_t  nco2;       // [63:48] nco_out2_r (Q15)
+        int16_t  demod_in;   // [15:0]  muxed demod input (Q15)
+        int16_t  demod_ref;  // [31:16] muxed demod reference (Q15)
+        int16_t  demod_out;  // [47:32] iq_demod unfiltered output (Q15)
+        int16_t  demod_lpf;  // [63:48] EMA-filtered demod output (Q15)
     }   capture_demod_frame;
 
     uint64_t raw;

@@ -89,9 +89,10 @@ PID_SEL_ADCB  = 0b011
 
 # ── Check-signed register selects ─────────────────────────────────────────────
 
-CS_ADC_A = 0b00000
-CS_ADC_B = 0b00001
-CS_IO    = 0b10000
+CS_ADC_A     = 0b00000
+CS_ADC_B     = 0b00001
+CS_DEMOD_LPF = 0b01001
+CS_IO        = 0b10000
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -285,11 +286,12 @@ def _cb_fir(cb: int) -> dict:
     }
 
 def _cb_config_demod(cb: int) -> dict:
-    # {CMD_CONFIG_DEMOD, 24'b0, in_sel[2:0], ref_sel[0]}
+    # {CMD_CONFIG_DEMOD, 20'b0, lpf_alpha[3:0], in_sel[2:0], ref_sel[0]}
     return {
-        "ref_sel": (cb >> 0) & 0x1,
-        "in_sel":  (cb >> 1) & 0x7,
-        "cmd":     _cb_cmd(cb),
+        "ref_sel":   (cb >> 0) & 0x1,
+        "in_sel":    (cb >> 1) & 0x7,
+        "lpf_alpha": (cb >> 4) & 0xF,
+        "cmd":       _cb_cmd(cb),
     }
 
 
@@ -836,29 +838,33 @@ async def test_pdh_core(dut):
     dut.dma_ready_i.value = 1   # leave ready=1 for any subsequent tests
 
     # ── 16. Config Demod — command echo ───────────────────────────────────────
-    # config_demod_cb_w = {CMD_CONFIG_DEMOD, 24'b0, demod_in_sel_r[2:0], demod_ref_sel_r[0]}
-    # data bits: [0]=ref_sel, [3:1]=in_sel
+    # config_demod_cb_w = {CMD_CONFIG_DEMOD, 20'b0, lpf_alpha[3:0], in_sel[2:0], ref_sel[0]}
+    # data bits: [0]=ref_sel, [3:1]=in_sel, [7:4]=lpf_alpha
     _section("16. Config Demod (echo)")
 
-    async def _config_demod(ref_sel: int, in_sel: int) -> int:
-        data = ((in_sel & 0x7) << 1) | (ref_sel & 0x1)
+    async def _config_demod(ref_sel: int, in_sel: int, lpf_alpha: int = 8) -> int:
+        data = ((lpf_alpha & 0xF) << 4) | ((in_sel & 0x7) << 1) | (ref_sel & 0x1)
         return await _send(dut, CMD_CONFIG_DEMOD, data)
 
-    cb = await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_I_FEED)
+    cb = await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_I_FEED, lpf_alpha=8)
     f  = _cb_config_demod(cb)
-    _check("config_demod: ref_sel NCO1 echo",   f["ref_sel"] == DEMOD_REF_NCO1,
+    _check("config_demod: ref_sel NCO1 echo",   f["ref_sel"]   == DEMOD_REF_NCO1,
            f"got={f['ref_sel']} exp={DEMOD_REF_NCO1}")
-    _check("config_demod: in_sel I_FEED echo",  f["in_sel"]  == DEMOD_IN_I_FEED,
+    _check("config_demod: in_sel I_FEED echo",  f["in_sel"]    == DEMOD_IN_I_FEED,
            f"got={f['in_sel']} exp={DEMOD_IN_I_FEED}")
-    _check("config_demod: cmd echo",            f["cmd"]     == CMD_CONFIG_DEMOD)
+    _check("config_demod: lpf_alpha=8 echo",    f["lpf_alpha"] == 8,
+           f"got={f['lpf_alpha']} exp=8")
+    _check("config_demod: cmd echo",            f["cmd"]       == CMD_CONFIG_DEMOD)
 
-    cb = await _config_demod(DEMOD_REF_NCO2, DEMOD_IN_ADC_A)
+    cb = await _config_demod(DEMOD_REF_NCO2, DEMOD_IN_ADC_A, lpf_alpha=10)
     f  = _cb_config_demod(cb)
-    _check("config_demod2: ref_sel NCO2 echo",  f["ref_sel"] == DEMOD_REF_NCO2,
+    _check("config_demod2: ref_sel NCO2 echo",  f["ref_sel"]   == DEMOD_REF_NCO2,
            f"got={f['ref_sel']} exp={DEMOD_REF_NCO2}")
-    _check("config_demod2: in_sel ADC_A echo",  f["in_sel"]  == DEMOD_IN_ADC_A,
+    _check("config_demod2: in_sel ADC_A echo",  f["in_sel"]    == DEMOD_IN_ADC_A,
            f"got={f['in_sel']} exp={DEMOD_IN_ADC_A}")
-    _check("config_demod2: cmd echo",           f["cmd"]     == CMD_CONFIG_DEMOD)
+    _check("config_demod2: lpf_alpha=10 echo",  f["lpf_alpha"] == 10,
+           f"got={f['lpf_alpha']} exp=10")
+    _check("config_demod2: cmd echo",           f["cmd"]       == CMD_CONFIG_DEMOD)
 
     # ── 17. IQ Demod functional — in-phase and quadrature ─────────────────────
     # Uses the NCO's two outputs as self-contained stimulus:
@@ -875,7 +881,9 @@ async def test_pdh_core(dut):
     DEMOD_QUAD_MEAN_THRESH = 2000
     DEMOD_QUAD_STD_THRESH  = 100
 
-    # Set frame code to CAPTURE_DEMOD so dma_data_o[15:0] = demod_out
+    # Set frame code to CAPTURE_DEMOD.
+    # Frame packing: {demod_lpf_r[63:48], demod_out_w[47:32], demod_ref_w[31:16], demod_in_w[15:0]}
+    # demod_out_w is in bits [47:32].
     await _send(dut, CMD_GET_FRAME, (CAPTURE_DEMOD << 22) | 1)
 
     # ── Test A: in-phase (shift=0, NCO1=NCO2) ─────────────────────────────────
@@ -892,7 +900,7 @@ async def test_pdh_core(dut):
     samples_a = []
     for _ in range(DEMOD_SAMPLES):
         await RisingEdge(dut.clk)
-        samples_a.append(_as_signed16(int(dut.dma_data_o.value) & 0xFFFF))
+        samples_a.append(_as_signed16((int(dut.dma_data_o.value) >> 32) & 0xFFFF))
 
     mean_a = sum(samples_a) / len(samples_a)
     _check("demod in-phase: mean(demod_out) > threshold",
@@ -910,7 +918,7 @@ async def test_pdh_core(dut):
     samples_b = []
     for _ in range(DEMOD_SAMPLES):
         await RisingEdge(dut.clk)
-        samples_b.append(_as_signed16(int(dut.dma_data_o.value) & 0xFFFF))
+        samples_b.append(_as_signed16((int(dut.dma_data_o.value) >> 32) & 0xFFFF))
 
     mean_b  = sum(samples_b) / len(samples_b)
     var_b   = sum((x - mean_b) ** 2 for x in samples_b) / len(samples_b)
@@ -924,6 +932,38 @@ async def test_pdh_core(dut):
            f"std={std_b:.1f}  threshold={DEMOD_QUAD_STD_THRESH}")
 
     # Restore NCO to disabled state
+    await _nco(NCO_SELECT_EN, 0)
+
+    # ── 18. Demod LPF via CMD_CHECK_SIGNED ────────────────────────────────────
+    # EMA LPF runs at 125 MHz on demod_out_w.
+    # With alpha=8, τ = 256 / 125e6 ≈ 2 µs → 5τ ≈ 1280 cycles.
+    # Use in-phase NCO (shift=0): demod_out = cos²(ωt) → DC ≈ 16383.
+    # After ~2000 cycles the LPF should settle to the same DC level.
+    _section("18. Demod LPF — CMD_CHECK_SIGNED")
+
+    # Configure: NCO at DEMOD_STRIDE, shift=0; demod ref=NCO1, in=NCO1, alpha=8
+    await _nco(NCO_SELECT_EN,     0)
+    await _nco(NCO_SELECT_STRIDE, DEMOD_STRIDE)
+    await _nco(NCO_SELECT_SHIFT,  0)
+    await _nco(NCO_SELECT_EN,     1)
+    await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_NCO1, lpf_alpha=8)
+
+    # Wait ≥ 5τ (1280 cycles at alpha=8) for the EMA to settle
+    await ClockCycles(dut.clk, 2000)
+
+    # Read back demod_lpf_r via CMD_CHECK_SIGNED with CS_DEMOD_LPF
+    cb = await _send(dut, CMD_CHECK_SIGNED, CS_DEMOD_LPF & 0x1F)
+    f  = _cb_cs(cb)
+    _check("demod_lpf check_signed: reg_sel echo",
+           f["reg_sel"] == CS_DEMOD_LPF,
+           f"got={f['reg_sel']} exp={CS_DEMOD_LPF}")
+    _check("demod_lpf check_signed: cmd echo",
+           f["cmd"] == CMD_CHECK_SIGNED)
+    _check("demod_lpf check_signed: LPF settled to DC > threshold  [cos²(ωt) → DC ≈ 16383]",
+           f["payload"] > 5000,
+           f"payload={f['payload']}  threshold=5000")
+
+    # Disable NCO again
     await _nco(NCO_SELECT_EN, 0)
 
     # ── Summary ────────────────────────────────────────────────────────────────

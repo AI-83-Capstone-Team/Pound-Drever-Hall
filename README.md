@@ -164,7 +164,7 @@ Requires `cocotb`, and either Verilator or Icarus Verilog (`iverilog`).
 
 Exercises every command that has an observable callback echo and checks that the FPGA register round-trips match what was sent. DMA/frame capture is out of scope — inputs are tied to benign static values.
 
-Checks covered (93 in total):
+Checks covered (98 in total):
 - **Reset**: `led_o` and `rst_o` cleared
 - **Set LED**: `led_o` pin value and callback echo
 - **Config IO**: DAC1/DAC2 source select and PID input select echoes
@@ -176,8 +176,9 @@ Checks covered (93 in total):
 - **Set FIR**: address, coefficient, input select, write-enable, chain-write-enable echoes
 - **Check Signed**: ADC_A, ADC_B, I feed, Q feed, IO routing register reads
 - **Interrupt**: `irq_o` fires within expected cycles after strobe for a non-`CMD_GET_FRAME` command
-- **Config Demod**: ref_sel and in_sel echo checks for two configurations
-- **IQ Demod functional**: in-phase product (NCO1×NCO1 → DC mean > 5000 counts) and quadrature product (NCO1×NCO2 → mean ≈ 0, std > 100 counts) checks via `dma_data_o`
+- **Config Demod**: ref_sel, in_sel, and alpha echo checks (including 2 alpha echo checks)
+- **IQ Demod functional**: in-phase product (NCO1×NCO1 → DC mean > 5000 counts) and quadrature product (NCO1×NCO2 → mean ≈ 0, std > 100 counts) checks via `dma_data_o`; demod_lpf DC check in `CAPTURE_DEMOD` test
+- **EMA LPF routing**: 3 checks in section 18 verifying `demod_lpf` as a routing source for FIR and PID inputs
 
 ```bash
 cd core/hw/sim
@@ -289,7 +290,7 @@ Col 2: PID, Frame Capture
 Three groups of radio buttons configure the signal routing:
 
 - **DAC1 Source** / **DAC2 Source**: `Register` (manual value), `PID` (PID output), `NCO 1`, `NCO 2`.
-- **PID Input**: `I Feed`, `Q Feed`, `ADC A`, `ADC B`, `FIR Out`, `IQ Demod Out`.
+- **PID Input**: `I Feed`, `Q Feed`, `ADC A`, `ADC B`, `FIR Out`, `IQ Demod Out`, `IQ Demod LPF`.
 
 Click **Apply** to write all three selections in one `config_io` command. The feedback line beneath the button shows the values echoed back by the FPGA.
 
@@ -323,14 +324,15 @@ Configures the instantaneous-product demodulator. The demodulator multiplies a r
 |---------|---------|-------|
 | **Reference** | NCO 1, NCO 2 | Selects the reference (local oscillator) signal. |
 | **Input** | NCO 1, NCO 2, ADC A, ADC B, I Feed, Q Feed, FIR Out | Selects the signal to demodulate. |
+| **Alpha** | 0–15 | EMA LPF time constant exponent (default 8; larger = more smoothing). Controls the `demod_lpf` output. |
 
-Click **Apply** to write both selections. The feedback line shows the echoed values (e.g. `ref=NCO1 in=I_FEED`).
+Click **Apply** to write all three selections. The feedback line shows the echoed values (e.g. `ref=NCO1 in=I_FEED alpha=8`).
 
 #### FIR
 
 Designs and programs a windowed-sinc lowpass filter into the FPGA FIR block.
 
-**FIR Input** selects which signal is fed into the filter: `ADC 1`, `ADC 2`, `I Feed`, `Q Feed`, or `IQ Demod Out`.
+**FIR Input** selects which signal is fed into the filter: `ADC 1`, `ADC 2`, `I Feed`, `Q Feed`, `IQ Demod Out`, or `IQ Demod LPF`.
 
 **Filter Design** fields:
 
@@ -372,7 +374,7 @@ Click **Capture Frame** to start a capture. The button disables while the DMA tr
 
 #### Sweep Ramp
 
-Steps a selected DAC from V0 to V1 and reads all four internal signals (ADC A, ADC B, I Feed, Q Feed) at every step via `CMD_CHECK_SIGNED`.
+Steps a selected DAC from V0 to V1 and reads signals at every step.
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -381,7 +383,8 @@ Steps a selected DAC from V0 to V1 and reads all four internal signals (ADC A, A
 | V1 | 1.0 | End voltage in [−1.0, 1.0] V (not included). |
 | Points | 100 | Number of steps [2, 16384]. |
 | Delay µs | 0 | Per-step settling delay in microseconds. |
-| Plot checkboxes | all on | Select which of the four signals to plot. |
+| Demod mode | 0 | `0` (default): reads ADC A, ADC B, I Feed, Q Feed via `CMD_CHECK_SIGNED`. `1`: captures `dac_v` and `demod_lpf` only — for use with internal IQ demodulation. |
+| Plot checkboxes | all on | Select which of the available signals to plot. |
 
 Click **Run Sweep** to execute. The CSV (`sweep_log.csv`) is fetched from the RP and plotted as one subplot per selected signal versus DAC voltage, with a shared x-axis. Each click creates an independent window.
 
@@ -773,10 +776,11 @@ A programmable FIR lowpass filter sits between the IQ demodulation stage and the
 ### Signal Placement
 
 ```
-ADC A/B      ──┐
-I Feed       ──┤
-Q Feed       ──┼─► [FIR input mux] ──► fir.sv ──► FIR Out ──► [PID input mux] ──► pid_core
-IQ Demod Out ──┘
+ADC A/B          ──┐
+I Feed           ──┤
+Q Feed           ──┼─► [FIR input mux] ──► fir.sv ──► FIR Out ──► [PID input mux] ──► pid_core
+IQ Demod Out     ──┤
+IQ Demod LPF Out ──┘
 ```
 
 The FIR input source and whether the PID consumes the FIR output are both controlled independently via `config_io`. The filter can be programmed and its input/output routed at any time without affecting other subsystems.
@@ -888,6 +892,25 @@ out[n] = (ref[n] × in[n]) >> 15
 
 Both `ref` and `in` are 16-bit Q15 signed values. Their 32-bit product is an arithmetic right-shifted by 15 to renormalize back to Q15, matching the convention used by the rotation matrix. The shift is applied in a single registered pipeline stage (one clock cycle latency).
 
+### EMA Low-Pass Filter on Demodulator Output
+
+A continuously-running exponential moving average (EMA) low-pass filter is applied to the demodulator output at the full 125 MHz clock rate:
+
+```
+lpf[n] = lpf[n-1] + (demod_out[n] - lpf[n-1]) >> alpha
+```
+
+This is a first-order IIR filter. The `alpha` parameter (4-bit, range 0–15, default 8) controls the time constant:
+
+| alpha | Time constant τ | −3 dB frequency |
+|-------|----------------|-----------------|
+| 8     | ≈ 2 µs         | ≈ 79 kHz        |
+| 10    | ≈ 8 µs         | ≈ 19 kHz        |
+
+Larger `alpha` gives a longer memory (more smoothing) and a lower cutoff frequency. The filter runs continuously regardless of whether any downstream consumer is active, so its output (`demod_lpf`) is always valid.
+
+`alpha` is configured via `CMD_CONFIG_DEMOD` (see command description below). The filtered output `demod_lpf` is available as a routing source for both the FIR filter input and the PID error input, in addition to the unfiltered `demod_out`.
+
 ### Reference Source Selection
 
 `demod_ref_sel_r` (1 bit) selects the reference (local oscillator) signal:
@@ -913,28 +936,30 @@ Both `ref` and `in` are 16-bit Q15 signed values. Their 32-bit product is an ari
 
 ### Command: `config_demod` (opcode `0b1011`)
 
-Both source selects are written in one `cmd_config_demod` command. Data word layout:
+Source selects and the EMA LPF alpha are written in one `cmd_config_demod` command. Data word layout:
 
 ```
-Bit  [0]   : ref_sel  (0 = NCO1, 1 = NCO2)
-Bits [3:1] : in_sel   (3-bit, 0–6)
+Bit  [0]    : ref_sel  (0 = NCO1, 1 = NCO2)
+Bits [3:1]  : in_sel   (3-bit, 0–6)
+Bits [7:4]  : alpha    (4-bit EMA exponent, default = 8)
 ```
 
 The callback echoes the registered values:
 
 ```
 Bits [31:28] : CMD_CONFIG_DEMOD (0b1011)
-Bits [27:4]  : 0 (padding)
+Bits [27:8]  : 0 (padding)
+Bits [7:4]   : demod_alpha_r
 Bits [3:1]   : demod_in_sel_r
 Bit  [0]     : demod_ref_sel_r
 ```
 
 ### Downstream Routing
 
-The demodulator output `demod_out_w` feeds into the existing IO routing muxes:
+Both the raw demodulator output and the EMA-filtered output feed into the IO routing muxes:
 
-- **FIR filter input**: set FIR input to `IQ_DEMOD_OUT` (code 4) via `config_io`
-- **PID controller input**: set PID input to `IQ_DEMOD_OUT` (code 5) via `config_io`
+- **FIR filter input**: set FIR input to `IQ_DEMOD_OUT` (code 4) or `IQ_DEMOD_LPF` (code 5) via `config_io`
+- **PID controller input**: set PID input to `IQ_DEMOD_OUT` (code 5) or `IQ_DEMOD_LPF` (code 6) via `config_io`
 
 FIR can be set to take the demodulator output while the demodulator is also set to take FIR output. This is safe because both paths are fully registered — there is no combinatorial loop.
 
@@ -943,13 +968,13 @@ FIR can be set to take the demodulator output while the demodulator is also set 
 The `CAPTURE_DEMOD` frame type (code `0b1000`) packs all demodulator-relevant signals into a single 64-bit DMA word:
 
 ```
-Bits [63:48] : nco_out2_r  (quadrature NCO / reference option 2)
-Bits [47:32] : nco_out1_r  (in-phase NCO / reference option 1)
-Bits [31:16] : demod_in_w  (muxed input signal, before multiply)
-Bits [15:0]  : demod_out_w (product output, Q15)
+Bits [63:48] : demod_lpf_r (EMA low-pass filtered demodulator output)
+Bits [47:32] : demod_out_w (instantaneous product output, Q15)
+Bits [31:16] : demod_ref_w (muxed reference signal, before multiply)
+Bits [15:0]  : demod_in_w  (muxed input signal, before multiply)
 ```
 
-CSV columns: `demod_in`, `demod_out`, `nco1`, `nco2`.
+CSV columns: `demod_in`, `demod_ref`, `demod_out`, `demod_lpf`.
 
 ---
 
@@ -1070,7 +1095,7 @@ The `frame_code` field selects which internal signals are packed into each 64-bi
 | `LOOPBACK`          | dac1_feed, dac2_feed, adc_a, adc_b                  | DAC outputs vs. raw ADC (offset-binary) |
 | `FIR_IO`            | fir_in, fir_out                                     | FIR filter input and output         |
 | `PID_IO`            | pid_in, err, pid_out                                | PID process variable, error, output |
-| `CAPTURE_DEMOD`     | demod_in, demod_out, nco1, nco2                     | IQ demodulator input, product output, and both NCO signals |
+| `CAPTURE_DEMOD`     | demod_in, demod_ref, demod_out, demod_lpf           | IQ demodulator input, reference, product output, and EMA-filtered output |
 
 `api_psd(decimation)` wraps `ADC_DATA_IN` capture and computes a one-sided PSD for all four channels via the Wiener-Khinchin theorem (FFT of the autocorrelation). Effective sample rate is `125e6 / decimation` Hz; frequency resolution is `fs / (2N − 1)` where N = 16384 samples.
 
@@ -1123,28 +1148,30 @@ DAC1 and DAC2 are selected independently via `dac1_dat_sel_r` and `dac2_dat_sel_
 
 The PID error input `dat_i` can be sourced from:
 
-| Code | Name           | Source                                        |
-|------|----------------|-----------------------------------------------|
-| 0    | I_FEED         | I channel of IQ demodulation (rotated ADC A)  |
-| 1    | Q_FEED         | Q channel of IQ demodulation (rotated ADC B)  |
-| 2    | ADC_A          | Raw ADC channel A (adc_dat_a_16s)             |
-| 3    | ADC_B          | Raw ADC channel B (adc_dat_b_16s)             |
-| 4    | FIR_OUT        | FIR filter output                             |
-| 5    | IQ_DEMOD_OUT   | IQ demodulator product output                 |
+| Code | Name             | Source                                        |
+|------|------------------|-----------------------------------------------|
+| 0    | I_FEED           | I channel of IQ demodulation (rotated ADC A)  |
+| 1    | Q_FEED           | Q channel of IQ demodulation (rotated ADC B)  |
+| 2    | ADC_A            | Raw ADC channel A (adc_dat_a_16s)             |
+| 3    | ADC_B            | Raw ADC channel B (adc_dat_b_16s)             |
+| 4    | FIR_OUT          | FIR filter output                             |
+| 5    | IQ_DEMOD_OUT     | IQ demodulator product output                 |
+| 6    | IQ_DEMOD_LPF     | EMA low-pass filtered demodulator output      |
 
-For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage. `FIR_OUT` inserts the programmable FIR lowpass between the demodulation stage and the PID, which is the normal operating mode for bandwidth-limited locking. `IQ_DEMOD_OUT` routes the instantaneous-product demodulator output directly to the PID, bypassing the rotation matrix.
+For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage. `FIR_OUT` inserts the programmable FIR lowpass between the demodulation stage and the PID, which is the normal operating mode for bandwidth-limited locking. `IQ_DEMOD_OUT` routes the instantaneous-product demodulator output directly to the PID, bypassing the rotation matrix. `IQ_DEMOD_LPF` routes the EMA-filtered demodulator output, providing an alternative integrated lowpass path.
 
 ### FIR Input Selection
 
 The FIR filter input can be sourced from:
 
-| Code | Name           | Source                                        |
-|------|----------------|-----------------------------------------------|
-| 0    | ADC1           | Raw ADC channel A (adc_dat_a_16s)             |
-| 1    | ADC2           | Raw ADC channel B (adc_dat_b_16s)             |
-| 2    | I_FEED         | I channel of IQ demodulation (rotated ADC A)  |
-| 3    | Q_FEED         | Q channel of IQ demodulation (rotated ADC B)  |
-| 4    | IQ_DEMOD_OUT   | IQ demodulator product output                 |
+| Code | Name             | Source                                        |
+|------|------------------|-----------------------------------------------|
+| 0    | ADC1             | Raw ADC channel A (adc_dat_a_16s)             |
+| 1    | ADC2             | Raw ADC channel B (adc_dat_b_16s)             |
+| 2    | I_FEED           | I channel of IQ demodulation (rotated ADC A)  |
+| 3    | Q_FEED           | Q channel of IQ demodulation (rotated ADC B)  |
+| 4    | IQ_DEMOD_OUT     | IQ demodulator product output                 |
+| 5    | IQ_DEMOD_LPF     | EMA low-pass filtered demodulator output      |
 
 ---
 
@@ -1265,8 +1292,14 @@ The GUI exposes this via the **Compute Control Metrics** button in the PID tab.
 Post-processes a sweep-ramp capture to determine the optimal IQ rotation angle and PDH lock point.
 
 ```python
+# Standard sweep (demod_mode=0): captures dac_v, adc_a, adc_b, i_feed, q_feed
 sweep = api.api_sweep_ramp(v0=-1.0, v1=1.0, num_points=500,
-                            dac_sel=DacSel.DAC_1)
+                            dac_sel=DacSel.DAC_1, demod_mode=0)
+
+# Internal demodulation sweep (demod_mode=1): captures dac_v, demod_lpf
+sweep = api.api_sweep_ramp(v0=-1.0, v1=1.0, num_points=500,
+                            dac_sel=DacSel.DAC_1, demod_mode=1)
+
 result = api.compute_lockpoint(sweep.data, sign_sel="I", window=10)
 # result.G                  — "golden" demodulated signal in volts, shape (N,)
 # result.optimal_angle_deg  — IQ rotation angle that maximises the PDH slope

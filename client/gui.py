@@ -450,7 +450,8 @@ class _IORoutingPanel(_Panel):
         for label, val in [("I Feed",      api.PidDatSel.I_FEED),       ("Q Feed",  api.PidDatSel.Q_FEED),
                            ("ADC A",       api.PidDatSel.ADC_A),        ("ADC B",   api.PidDatSel.ADC_B),
                            ("FIR Out",     api.PidDatSel.FIR_OUT),
-                           ("IQ Demod",    api.PidDatSel.IQ_DEMOD_OUT)]:
+                           ("IQ Demod",    api.PidDatSel.IQ_DEMOD_OUT),
+                           ("IQ Demod LPF", api.PidDatSel.IQ_DEMOD_LPF)]:
             ttk.Radiobutton(pid_frm, text=label, variable=self._pid_sel,
                             value=int(val)).pack(side=tk.LEFT, padx=2)
 
@@ -603,6 +604,13 @@ class _DemodPanel(_Panel):
             ttk.Radiobutton(in_frm, text=label, variable=self._in_sel,
                             value=int(val)).pack(side=tk.LEFT, padx=2)
 
+        alpha_frm = ttk.Frame(self)
+        alpha_frm.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(alpha_frm, text="LPF Alpha:").pack(side=tk.LEFT)
+        self._alpha_var = tk.StringVar(value="8")
+        ttk.Entry(alpha_frm, textvariable=self._alpha_var, width=4).pack(side=tk.LEFT, padx=4)
+        ttk.Label(alpha_frm, text="(0–15; higher = more filtering)", foreground="gray").pack(side=tk.LEFT)
+
         self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
         self._apply_btn.pack(anchor=tk.W, pady=(4, 2))
         self._fb_var = tk.StringVar(value="")
@@ -611,20 +619,27 @@ class _DemodPanel(_Panel):
     def _on_apply(self) -> None:
         ref = api.DemodRefSel(self._ref_sel.get())
         inp = api.DemodInSel(self._in_sel.get())
+        try:
+            alpha = int(self._alpha_var.get())
+        except ValueError:
+            self.err(ValueError("LPF Alpha must be an integer 0–15")); return
+        if not (0 <= alpha <= 15):
+            self.err(ValueError("LPF Alpha must be 0–15")); return
         ip, port = self._conn()
         self._prep_call(ip, port)
         self._busy(self._apply_btn)
         def on_ok(r):
             self._fb_var.set(
                 f"ref={api.DemodRefSel(r.ref_sel_cb).name}  "
-                f"in={api.DemodInSel(r.in_sel_cb).name}"
+                f"in={api.DemodInSel(r.in_sel_cb).name}  "
+                f"alpha={r.lpf_alpha_cb}"
             )
             self._unbusy(self._apply_btn, "Apply")
             self.ok("IQ demod configured")
         def on_err(e):
             self._unbusy(self._apply_btn, "Apply")
             self.err(e)
-        self.app.run_in_bg(lambda: api.api_config_demod(ref, inp), on_ok, on_err)
+        self.app.run_in_bg(lambda: api.api_config_demod(ref, inp, alpha), on_ok, on_err)
 
 
 # ── FIR panel ─────────────────────────────────────────────────────────────────
@@ -640,7 +655,8 @@ class _FIRPanel(_Panel):
         self._input_sel = tk.IntVar(value=int(api.FirInputSel.ADC1))
         for label, val in [("ADC 1",   api.FirInputSel.ADC1),    ("ADC 2",  api.FirInputSel.ADC2),
                            ("I Feed",  api.FirInputSel.I_FEED),  ("Q Feed", api.FirInputSel.Q_FEED),
-                           ("IQ Demod", api.FirInputSel.IQ_DEMOD_OUT)]:
+                           ("IQ Demod", api.FirInputSel.IQ_DEMOD_OUT),
+                           ("IQ Demod LPF", api.FirInputSel.IQ_DEMOD_LPF)]:
             ttk.Radiobutton(in_frm, text=label, variable=self._input_sel,
                             value=int(val)).pack(side=tk.LEFT, padx=2)
 
@@ -1099,19 +1115,36 @@ class _SweepRampPanel(_Panel):
         self._delay_var = tk.StringVar(value="0")
         ttk.Entry(rng_frm, textvariable=self._delay_var, width=8).grid(row=1, column=3, padx=4, pady=(4, 0))
 
-        plot_frm = ttk.LabelFrame(self, text="Plot", padding=6)
-        plot_frm.pack(fill=tk.X, pady=(0, 6))
+        mode_frm = ttk.LabelFrame(self, text="Mode", padding=6)
+        mode_frm.pack(fill=tk.X, pady=(0, 6))
+        self._demod_mode = tk.IntVar(value=0)
+        ttk.Radiobutton(mode_frm, text="External demod  (ADC A/B, I/Q Feed)",
+                        variable=self._demod_mode, value=0,
+                        command=self._on_mode_change).pack(anchor=tk.W)
+        ttk.Radiobutton(mode_frm, text="Internal demod  (Demod LPF)",
+                        variable=self._demod_mode, value=1,
+                        command=self._on_mode_change).pack(anchor=tk.W)
+
+        self._plot_frm = ttk.LabelFrame(self, text="Plot", padding=6)
+        self._plot_frm.pack(fill=tk.X, pady=(0, 6))
         self._plot_adc_a = tk.BooleanVar(value=True)
         self._plot_adc_b = tk.BooleanVar(value=True)
         self._plot_i     = tk.BooleanVar(value=True)
         self._plot_q     = tk.BooleanVar(value=True)
-        ttk.Checkbutton(plot_frm, text="ADC A", variable=self._plot_adc_a).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
-        ttk.Checkbutton(plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self._plot_frm, text="ADC A", variable=self._plot_adc_a).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self._plot_frm, text="ADC B", variable=self._plot_adc_b).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self._plot_frm, text="I Feed", variable=self._plot_i).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self._plot_frm, text="Q Feed", variable=self._plot_q).pack(side=tk.LEFT, padx=4)
 
         self._run_btn = ttk.Button(self, text="Run Sweep", command=self._on_run)
         self._run_btn.pack(anchor=tk.W, pady=(2, 0))
+
+    def _on_mode_change(self) -> None:
+        """Show/hide the external-demod channel checkboxes based on sweep mode."""
+        if self._demod_mode.get() == 1:
+            self._plot_frm.pack_forget()
+        else:
+            self._plot_frm.pack(fill=tk.X, pady=(0, 6), before=self._run_btn)
 
     def _on_run(self) -> None:
         try:
@@ -1128,13 +1161,18 @@ class _SweepRampPanel(_Panel):
         if delay < 0:
             self.err(ValueError("Delay must be >= 0")); return
 
-        dac = api.DacSel(self._dac_sel.get())
-        active_cols = [
-            col for col, var in zip(
-                ["adc_a", "adc_b", "i_feed", "q_feed"],
-                [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
-            ) if var.get()
-        ]
+        dac        = api.DacSel(self._dac_sel.get())
+        demod_mode = self._demod_mode.get()
+        active_cols: list[str]
+        if demod_mode:
+            active_cols = ["demod_lpf"]
+        else:
+            active_cols = [
+                col for col, var in zip(
+                    ["adc_a", "adc_b", "i_feed", "q_feed"],
+                    [self._plot_adc_a, self._plot_adc_b, self._plot_i, self._plot_q],
+                ) if var.get()
+            ]
 
         ip, port = self._conn()
         self._prep_call(ip, port)
@@ -1151,7 +1189,8 @@ class _SweepRampPanel(_Panel):
             self.err(e)
 
         self.app.run_in_bg(
-            lambda: api.api_sweep_ramp(v0, v1, pts, dac, write_delay_us=delay),
+            lambda: api.api_sweep_ramp(v0, v1, pts, dac,
+                                       write_delay_us=delay, demod_mode=demod_mode),
             on_ok, on_err,
         )
 
@@ -1160,7 +1199,7 @@ class _SweepRampPanel(_Panel):
         n = len(active_cols)
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), squeeze=False, sharex=True)
         for i, col in enumerate(active_cols):
-            idx = api.SWEEP_COLUMNS.index(col)
+            idx = r.columns.index(col)
             axes[i, 0].plot(x, r.data[:, idx], linewidth=PLOT_LINEWIDTH)
             axes[i, 0].set_ylabel(col, fontsize=PLOT_FONTSIZE)
             axes[i, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
@@ -1168,7 +1207,7 @@ class _SweepRampPanel(_Panel):
         axes[-1, 0].set_xlabel("DAC voltage (V)", fontsize=PLOT_FONTSIZE)
         axes[-1, 0].tick_params(labelsize=PLOT_FONTSIZE * 0.85)
         fig.tight_layout()
-        _add_figure_menu(fig, r.data, list(api.SWEEP_COLUMNS))
+        _add_figure_menu(fig, r.data, r.columns)
         plt.show(block=False)
 
 

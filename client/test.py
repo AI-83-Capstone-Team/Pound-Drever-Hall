@@ -24,9 +24,10 @@ import numpy as np
 
 from pdh_api import (
     DacDatSel, DacSel, DemodInSel, DemodRefSel, FirInputSel, FrameCode, PidDatSel, CsSel,
+    SWEEP_DEMOD_COLUMNS,
     api_check_signed, api_config_demod, api_config_io, api_get_adc, api_get_frame,
     api_reset_fpga, api_set_dac, api_set_led,
-    api_set_fir, api_set_nco, api_set_pid, api_set_rotation,
+    api_set_fir, api_set_nco, api_set_pid, api_set_rotation, api_sweep_ramp,
 )
 
 REMOTE_DIR = "sw/build"
@@ -363,42 +364,53 @@ def main() -> None:
 
     # ── 15. IQ Demod — config echo checks ────────────────────────────────────
     _section("15. IQ Demod — Config Echo")
-    dm = api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+    dm = api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2, lpf_alpha=8)
     _check("config_demod: status == 0", dm.status == 0)
     _check("config_demod: ref_sel echo", dm.ref_sel_cb == int(DemodRefSel.NCO1),
            f"got={dm.ref_sel_cb}  expected={int(DemodRefSel.NCO1)}")
     _check("config_demod: in_sel echo",  dm.in_sel_cb  == int(DemodInSel.NCO2),
            f"got={dm.in_sel_cb}  expected={int(DemodInSel.NCO2)}")
+    _check("config_demod: lpf_alpha echo (8)", dm.lpf_alpha_cb == 8,
+           f"got={dm.lpf_alpha_cb}  expected=8")
 
     # Change config and verify again
-    dm2 = api_config_demod(DemodRefSel.NCO2, DemodInSel.I_FEED)
+    dm2 = api_config_demod(DemodRefSel.NCO2, DemodInSel.I_FEED, lpf_alpha=10)
     _check("config_demod (2): ref_sel echo", dm2.ref_sel_cb == int(DemodRefSel.NCO2))
     _check("config_demod (2): in_sel echo",  dm2.in_sel_cb  == int(DemodInSel.I_FEED))
+    _check("config_demod (2): lpf_alpha echo (10)", dm2.lpf_alpha_cb == 10,
+           f"got={dm2.lpf_alpha_cb}  expected=10")
 
     # ── 15b. IQ Demod — functional validation ────────────────────────────────
     _section("15b. IQ Demod — Functional (NCO1 × NCO2)")
 
     # Set up NCO at DEMOD_FREQ, shift=0 (NCO1 == NCO2, in-phase)
     api_set_nco(DEMOD_FREQ, shift_deg=0.0, en=1)
-    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2, lpf_alpha=8)
     api_config_io(DacDatSel.REGISTER, DacDatSel.REGISTER, PidDatSel.ADC_A)
 
     frame_inphase = api_get_frame(1, FrameCode.CAPTURE_DEMOD, REMOTE_DIR)
     _check("CAPTURE_DEMOD (in-phase): received", frame_inphase.data.size > 0)
     if frame_inphase.data.size > 0:
-        # Column order: demod_in, demod_out, nco1, nco2
+        # Column order: demod_in, demod_ref, demod_out, demod_lpf
         demod_out_col = frame_inphase.columns.index("demod_out")
+        demod_lpf_col = frame_inphase.columns.index("demod_lpf")
         mean_inphase  = abs(float(np.mean(frame_inphase.data[:, demod_out_col])))
+        mean_lpf      = abs(float(np.mean(frame_inphase.data[:, demod_lpf_col])))
         _check(
             "CAPTURE_DEMOD (in-phase): DC > threshold  [cos²(ωt) → DC ≈ 0.5]",
             mean_inphase > DEMOD_DC_THRESH,
             f"|mean|={mean_inphase:.1f}  threshold={DEMOD_DC_THRESH}",
         )
+        _check(
+            "CAPTURE_DEMOD (in-phase): demod_lpf DC > threshold  [EMA settled]",
+            mean_lpf > DEMOD_DC_THRESH,
+            f"|mean_lpf|={mean_lpf:.1f}  threshold={DEMOD_DC_THRESH}",
+        )
         figs.append(_plot_frame(frame_inphase, "CAPTURE_DEMOD — in-phase (NCO1×NCO2, shift=0°)"))
 
     # Shift NCO2 by 90°: NCO1=cos(ωt), NCO2=sin(ωt), product = ½sin(2ωt) → mean≈0
     api_set_nco(DEMOD_FREQ, shift_deg=90.0, en=1)
-    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2, lpf_alpha=8)
 
     frame_quad = api_get_frame(1, FrameCode.CAPTURE_DEMOD, REMOTE_DIR)
     _check("CAPTURE_DEMOD (quadrature): received", frame_quad.data.size > 0)
@@ -418,6 +430,41 @@ def main() -> None:
             f"std={std_quad:.1f}",
         )
         figs.append(_plot_frame(frame_quad, "CAPTURE_DEMOD — quadrature (NCO1×NCO2, shift=90°)"))
+
+    # ── 16. Sweep demod mode ──────────────────────────────────────────────────
+    _section("16. Sweep Ramp — Internal Demod Mode")
+
+    # Configure demod: NCO1 as reference and input (in-phase), alpha=8
+    api_set_nco(DEMOD_FREQ, shift_deg=0.0, en=1)
+    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO1, lpf_alpha=8)
+    api_config_io(DacDatSel.REGISTER, DacDatSel.REGISTER, PidDatSel.ADC_A)
+    api_set_dac(0.0, DacSel.DAC_1)
+
+    # Sweep with demod_mode=1: should return 2 columns (dac_v, demod_lpf)
+    sw = api_sweep_ramp(-0.5, 0.5, 100, DacSel.DAC_1,
+                        write_delay_us=20, demod_mode=1)
+    _check("sweep (demod mode): status == 0", sw.status == 0)
+    _check("sweep (demod mode): columns == SWEEP_DEMOD_COLUMNS",
+           sw.columns == SWEEP_DEMOD_COLUMNS,
+           f"got={sw.columns}")
+    _check("sweep (demod mode): data shape (N, 2)",
+           sw.data.ndim == 2 and sw.data.shape[1] == 2,
+           f"shape={sw.data.shape}")
+    if sw.data.ndim == 2 and sw.data.shape[1] == 2:
+        lpf_mean = abs(float(np.mean(sw.data[:, 1])))
+        _check(
+            "sweep (demod mode): demod_lpf has DC component  [cos²(ωt) → DC]",
+            lpf_mean > DEMOD_DC_THRESH,
+            f"|mean_lpf|={lpf_mean:.1f}  threshold={DEMOD_DC_THRESH}",
+        )
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(sw.data[:, 0], sw.data[:, 1], linewidth=0.8)
+        ax.set_xlabel("DAC voltage (V)")
+        ax.set_ylabel("demod_lpf (Q15 code)")
+        ax.set_title("Sweep demod mode — demod_lpf vs DAC voltage")
+        ax.grid(True, alpha=0.4)
+        fig.tight_layout()
+        figs.append(fig)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()

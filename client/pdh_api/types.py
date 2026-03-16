@@ -24,11 +24,12 @@ class FrameCode(IntEnum):
 
 class FirInputSel(IntEnum):
     """FIR filter input source selection (mirrors fir_input_sel_t in RTL)."""
-    ADC1          = 0b000
-    ADC2          = 0b001
-    I_FEED        = 0b010
-    Q_FEED        = 0b011
-    IQ_DEMOD_OUT  = 0b100
+    ADC1            = 0b000
+    ADC2            = 0b001
+    I_FEED          = 0b010
+    Q_FEED          = 0b011
+    IQ_DEMOD_OUT    = 0b100
+    IQ_DEMOD_LPF    = 0b101
 
 
 class DacSel(IntEnum):
@@ -52,6 +53,7 @@ class PidDatSel(IntEnum):
     ADC_B        = 0b011
     FIR_OUT      = 0b100
     IQ_DEMOD_OUT = 0b101
+    IQ_DEMOD_LPF = 0b110
 
 
 class DemodRefSel(IntEnum):
@@ -73,11 +75,12 @@ class DemodInSel(IntEnum):
 
 class CsSel(IntEnum):
     """Register select codes for cmd_check_signed."""
-    ADC_A   = 0b00000
-    ADC_B   = 0b00001
-    I_FEED  = 0b00110
-    Q_FEED  = 0b00111
-    IO      = 0b10000
+    ADC_A      = 0b00000
+    ADC_B      = 0b00001
+    I_FEED     = 0b00110
+    Q_FEED     = 0b00111
+    DEMOD_LPF  = 0b01001
+    IO         = 0b10000
 
 
 # ── Frame column metadata ──────────────────────────────────────────────────────
@@ -92,7 +95,7 @@ FRAME_COLUMNS: dict[FrameCode, list[str]] = {
     FrameCode.LOOPBACK:     ["dac1_feed", "dac2_feed", "adc_a",     "adc_b"],
     FrameCode.FIR_IO:       ["fir_in",    "fir_out"],
     FrameCode.PID_IO:       ["pid_in",    "err",       "pid_out"],
-    FrameCode.CAPTURE_DEMOD: ["demod_in", "demod_out", "nco1",      "nco2"],
+    FrameCode.CAPTURE_DEMOD: ["demod_in", "demod_ref", "demod_out", "demod_lpf"],
 }
 
 
@@ -186,6 +189,7 @@ class ConfigDemodResult:
     status: int
     ref_sel_cb: int
     in_sel_cb: int
+    lpf_alpha_cb: int
 
 
 @dataclass
@@ -198,15 +202,16 @@ class FrameResult:
     columns: list[str]
 
 
-SWEEP_COLUMNS = ["dac_v", "adc_a", "adc_b", "i_feed", "q_feed"]
+SWEEP_COLUMNS       = ["dac_v", "adc_a", "adc_b", "i_feed", "q_feed"]
+SWEEP_DEMOD_COLUMNS = ["dac_v", "demod_lpf"]
 
 
 @dataclass
 class SweepRampResult:
     status:        int
     num_points_cb: int
-    data:          np.ndarray   # shape (num_points, 5): dac_v, adc_a, adc_b, i_feed, q_feed
-    columns:       list[str]    # always SWEEP_COLUMNS
+    data:          np.ndarray   # shape (num_points, 5) or (num_points, 2) depending on demod_mode
+    columns:       list[str]    # SWEEP_COLUMNS (mode 0) or SWEEP_DEMOD_COLUMNS (mode 1)
 
 
 @dataclass
