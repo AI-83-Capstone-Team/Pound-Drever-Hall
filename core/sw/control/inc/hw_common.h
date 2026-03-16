@@ -100,8 +100,9 @@ typedef enum
     CMD_SET_PID_COEFFS = 0b1000,
     CMD_SET_NCO = 0b1001,
     CMD_SET_FIR = 0b1010,
+    CMD_CONFIG_DEMOD = 0b1011,
     CMD_CONFIG_IO = 0b1110,
-}   pdh_cmd_e;   
+}   pdh_cmd_e;
 
 typedef enum
 {
@@ -154,6 +155,7 @@ typedef enum
     DAT_A_16_S = 0b010,
     DAT_B_16_S = 0b011,
     FIR_OUT = 0b100,
+    IQ_DEMOD_OUT_PID = 0b101,
 }   pid_dat_sel_e;
 
 
@@ -262,10 +264,11 @@ typedef enum
 
 typedef enum
 {
-    FIR_INPUT_ADC1   = 0b000,
-    FIR_INPUT_ADC2   = 0b001,
-    FIR_INPUT_I_FEED = 0b010,
-    FIR_INPUT_Q_FEED = 0b011,
+    FIR_INPUT_ADC1       = 0b000,
+    FIR_INPUT_ADC2       = 0b001,
+    FIR_INPUT_I_FEED     = 0b010,
+    FIR_INPUT_Q_FEED     = 0b011,
+    FIR_INPUT_IQ_DEMOD_OUT = 0b100,
 }   fir_input_sel_e;
 
 
@@ -298,6 +301,32 @@ typedef enum
 
 typedef enum
 {
+    DEMOD_REF_NCO1 = 0,
+    DEMOD_REF_NCO2 = 1,
+}   demod_ref_sel_e;
+
+typedef enum
+{
+    DEMOD_IN_NCO1   = 0b000,
+    DEMOD_IN_NCO2   = 0b001,
+    DEMOD_IN_ADC_A  = 0b010,
+    DEMOD_IN_ADC_B  = 0b011,
+    DEMOD_IN_I_FEED = 0b100,
+    DEMOD_IN_Q_FEED = 0b101,
+    DEMOD_IN_FIR    = 0b110,
+}   demod_in_sel_e;
+
+typedef enum
+{
+    CONFIG_DEMOD_OK,
+    CONFIG_DEMOD_INVALID_REF,
+    CONFIG_DEMOD_INVALID_IN,
+    CONFIG_DEMOD_REF_CB_FAIL,
+    CONFIG_DEMOD_IN_CB_FAIL,
+}   config_demod_e;
+
+typedef enum
+{
     LOCK_IN_OK,
     LOCK_IN_INVALID_DAC,
     LOCK_IN_INVALID_PID_FEED,
@@ -307,14 +336,15 @@ typedef enum
 
 typedef enum
 {
-    ADC_DATA_IN = 0b0000,
-    PID_ERR_TAPS = 0b0001,
-    IO_SUM_ERR = 0b0010,
-    OSC_INSPECT = 0b0011,
+    ADC_DATA_IN    = 0b0000,
+    PID_ERR_TAPS   = 0b0001,
+    IO_SUM_ERR     = 0b0010,
+    OSC_INSPECT    = 0b0011,
     OSC_ADDR_CHECK = 0b0100,
-    LOOPBACK = 0b0101,
-    FIR_IO = 0b0110,
-    PID_IO = 0b0111,
+    LOOPBACK       = 0b0101,
+    FIR_IO         = 0b0110,
+    PID_IO         = 0b0111,
+    CAPTURE_DEMOD  = 0b1000,
 }   frame_code_e;
 
 
@@ -425,6 +455,15 @@ typedef union __attribute__((packed))
         uint32_t cmd          : 4;
         uint32_t _padding2    : 2;
     }   config_io_cmd;
+
+    struct __attribute__((packed))
+    {
+        uint32_t ref_sel  : 1;
+        uint32_t in_sel   : 3;
+        uint32_t _padding : 22;
+        uint32_t cmd      : 4;
+        uint32_t _padding2: 2;
+    }   config_demod_cmd;
 
     struct __attribute__((packed))
     {
@@ -547,6 +586,14 @@ typedef union __attribute__((packed))
         uint32_t cmd            : 4;
     }   config_io_cb;
 
+    struct __attribute__((packed))
+    {
+        uint32_t ref_sel_r  : 1;
+        uint32_t in_sel_r   : 3;
+        uint32_t _padding   : 24;
+        uint32_t cmd        : 4;
+    }   config_demod_cb;
+
     uint32_t raw;
 }   pdh_callback_t;
 
@@ -615,6 +662,14 @@ typedef union __attribute__((packed))
         uint16_t pid_out;  // [47:32] pid_out_w (14b + 2b pad)
         uint16_t pad;      // [63:48] zero
     }   pid_io_frame;
+
+    struct __attribute__((packed))
+    {
+        int16_t  demod_out;  // [15:0]  iq_demod output (Q15)
+        int16_t  demod_in;   // [31:16] muxed demod input (Q15)
+        int16_t  nco1;       // [47:32] nco_out1_r (Q15)
+        int16_t  nco2;       // [63:48] nco_out2_r (Q15)
+    }   capture_demod_frame;
 
     uint64_t raw;
 }   dma_frame_t;

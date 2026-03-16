@@ -102,6 +102,7 @@ module pdh_core #
         CMD_SET_PID_COEFFS = 4'b1000,
         CMD_SET_NCO = 4'b1001,
         CMD_SET_FIR = 4'b1010,
+        CMD_CONFIG_DEMOD = 4'b1011,
         CMD_CONFIG_IO = 4'b1110
     } cmd_t;
     logic [AXI_GPIO_IN_WIDTH-1:0] axi_from_ps_r, next_axi_from_ps_w;
@@ -158,7 +159,8 @@ module pdh_core #
         set_pid_cb_w,
         set_nco_cb_w,
         config_io_cb_w,
-        set_fir_cb_w;
+        set_fir_cb_w,
+        config_demod_cb_w;
 
         
     assign idle_cb_w    = 32'b0;
@@ -295,7 +297,7 @@ module pdh_core #
     assign commit_rot_cb_w = {CMD_COMMIT_ROT_COEFFS, q_feed_r[15:2], i_feed_r[15:2]};
     assign get_frame_cb_w = {CMD_GET_FRAME, 1'd0, frame_code_r, dma_decimation_code_r, dma_ready_3ff};
     assign set_pid_cb_w = {CMD_SET_PID_COEFFS, 8'd0, pid_coeff_select_w, pid_payload_w};
-    assign config_io_cb_w = {CMD_CONFIG_IO, 19'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
+    assign config_io_cb_w    = {CMD_CONFIG_IO,    19'b0, pid_sel_r, dac2_dat_sel_r, dac1_dat_sel_r};
 
 
     logic [AXI_GPIO_OUT_WIDTH-1 : 0] callback_r, next_callback_w;
@@ -380,7 +382,8 @@ typedef enum logic [2:0]
     ADC1 = 3'b000,
     ADC2 = 3'b001,
     I_FEED = 3'b010,
-    Q_FEED = 3'b011
+    Q_FEED = 3'b011,
+    FIR_IQ_DEMOD_OUT = 3'b100
 }   fir_input_sel_t;
 logic [2:0] fir_input_sel_r, fir_input_sel_w;
 
@@ -388,11 +391,12 @@ logic [2:0] fir_input_sel_r, fir_input_sel_w;
 
 always_comb begin
     unique case(fir_input_sel_r)
-        ADC1:    fir_in_w = adc_dat_a_16s_r;
-        ADC2:    fir_in_w = adc_dat_b_16s_r;
-        I_FEED:  fir_in_w = i_feed_r;
-        Q_FEED:  fir_in_w = q_feed_r;
-        default: fir_in_w = adc_dat_a_16s_r;
+        ADC1:           fir_in_w = adc_dat_a_16s_r;
+        ADC2:           fir_in_w = adc_dat_b_16s_r;
+        I_FEED:         fir_in_w = i_feed_r;
+        Q_FEED:         fir_in_w = q_feed_r;
+        FIR_IQ_DEMOD_OUT: fir_in_w = demod_out_w;
+        default:        fir_in_w = adc_dat_a_16s_r;
     endcase
 end
 
@@ -429,8 +433,60 @@ fir # (
 
     .din_i(fir_in_w),
     .dout_o(fir_out_w)
-); 
+);
 
+
+////////////////////// IQ DEMOD BLOCK /////////////////////////////////////////
+// Instantaneous-product demodulator: multiplies a configurable reference signal
+// (NCO1 or NCO2) by a configurable input signal, producing a Q15 output.
+// The output is available as a source for the FIR and PID input muxes.
+
+    typedef enum logic [2:0]
+    {
+        DEMOD_IN_NCO1   = 3'b000,
+        DEMOD_IN_NCO2   = 3'b001,
+        DEMOD_IN_ADC_A  = 3'b010,
+        DEMOD_IN_ADC_B  = 3'b011,
+        DEMOD_IN_I_FEED = 3'b100,
+        DEMOD_IN_Q_FEED = 3'b101,
+        DEMOD_IN_FIR    = 3'b110
+    }   demod_in_sel_t;
+
+    logic        demod_ref_sel_r, next_demod_ref_sel_w;
+    logic [2:0]  demod_in_sel_r,  next_demod_in_sel_w;
+    logic signed [15:0] demod_ref_w, demod_in_w, demod_out_w;
+
+    // Reference mux: 0 = NCO1, 1 = NCO2
+    assign demod_ref_w = demod_ref_sel_r ? nco_out2_r : nco_out1_r;
+
+    // Input mux (7 sources)
+    always_comb begin
+        unique case(demod_in_sel_r)
+            DEMOD_IN_NCO1:   demod_in_w = nco_out1_r;
+            DEMOD_IN_NCO2:   demod_in_w = nco_out2_r;
+            DEMOD_IN_ADC_A:  demod_in_w = adc_dat_a_16s_r;
+            DEMOD_IN_ADC_B:  demod_in_w = adc_dat_b_16s_r;
+            DEMOD_IN_I_FEED: demod_in_w = i_feed_r;
+            DEMOD_IN_Q_FEED: demod_in_w = q_feed_r;
+            DEMOD_IN_FIR:    demod_in_w = fir_out_w;
+            default:         demod_in_w = nco_out1_r;
+        endcase
+    end
+
+    iq_demod u_iq_demod (
+        .clk(clk),
+        .rst(rst_sync_r),
+        .ref_i(demod_ref_w),
+        .in_i(demod_in_w),
+        .out_o(demod_out_w)
+    );
+
+    assign next_demod_ref_sel_w = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[0]   : demod_ref_sel_r;
+    assign next_demod_in_sel_w  = (cmd_w == CMD_CONFIG_DEMOD) ? data_w[3:1] : demod_in_sel_r;
+
+    assign config_demod_cb_w = {CMD_CONFIG_DEMOD, 24'b0, demod_in_sel_r, demod_ref_sel_r};
+
+///////////////////////////////////////////////////////////////////////////////
 
 
 
@@ -453,7 +509,8 @@ fir # (
         Q_FEED_W = 3'b001,
         SAT_A_16S = 3'b010,
         SAT_B_16S = 3'b011,
-        FIR_OUT_W = 3'b100
+        FIR_OUT_W = 3'b100,
+        IQ_DEMOD_OUT_W = 3'b101
     }   pid_sel_t;
     logic [2:0] pid_sel_r, next_pid_sel_w;
 
@@ -514,6 +571,10 @@ fir # (
                 pid_in_w = fir_out_w;
             end
 
+            IQ_DEMOD_OUT_W: begin
+                pid_in_w = demod_out_w;
+            end
+
             default begin
                 pid_in_w = adc_dat_a_16s_r;
             end
@@ -563,7 +624,8 @@ fir # (
         OSC_ADDR_CHECK = 4'b0100,
         LOOPBACK = 4'b0101,
         FIR_IO = 4'b0110,
-        PID_IO = 4'b0111
+        PID_IO = 4'b0111,
+        CAPTURE_DEMOD = 4'b1000
     }   frame_code_t;
     logic [3:0] frame_code_r, next_frame_code_w;
 
@@ -576,9 +638,10 @@ fir # (
             OSC_INSPECT: dma_data_w = {2'b0, nco_feed2_r, 2'b0, nco_feed1_r, nco_out2_r, nco_out1_r};
             OSC_ADDR_CHECK : dma_data_w = {4'b0, addr2_w, 4'b0, addr1_w, 2'b0, phi2_w, 2'b0, phi1_w};
             LOOPBACK: dma_data_w = {2'b0, dac1_feed_w, 2'b0, dac2_feed_w, 2'b0, adc_dat_a_i, 2'b0, adc_dat_b_i};
-            FIR_IO: dma_data_w = {32'b0, fir_out_w, fir_in_w};
-            PID_IO: dma_data_w = {16'b0, 2'b0, pid_out_w, err_tap_w, pid_in_w};
-            default: dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r};
+            FIR_IO:        dma_data_w = {32'b0, fir_out_w, fir_in_w};
+            PID_IO:        dma_data_w = {16'b0, 2'b0, pid_out_w, err_tap_w, pid_in_w};
+            CAPTURE_DEMOD: dma_data_w = {nco_out2_r, nco_out1_r, demod_in_w, demod_out_w};
+            default:       dma_data_w = {i_feed_r, q_feed_r, adc_dat_a_16s_r, adc_dat_b_16s_r};
         endcase
     end
 
@@ -626,6 +689,10 @@ fir # (
 
             CMD_CONFIG_IO: begin
                 next_callback_w = config_io_cb_w;
+            end
+
+            CMD_CONFIG_DEMOD: begin
+                next_callback_w = config_demod_cb_w;
             end
 
             CMD_SET_FIR: begin
@@ -889,6 +956,8 @@ fir # (
             dac1_dat_sel_r      <= '0;
             dac2_dat_sel_r      <= '0;
             pid_sel_r           <= '0;
+            demod_ref_sel_r     <= '0;
+            demod_in_sel_r      <= '0;
 
             tap_addr_r          <= '0;
             tap_coeff_r         <= '0;
@@ -948,6 +1017,8 @@ fir # (
             dac1_dat_sel_r      <= next_dac1_dat_sel_w;
             dac2_dat_sel_r      <= next_dac2_dat_sel_w;
             pid_sel_r           <= next_pid_sel_w;
+            demod_ref_sel_r     <= next_demod_ref_sel_w;
+            demod_in_sel_r      <= next_demod_in_sel_w;
 
             tap_addr_r          <= tap_addr_w;
             tap_coeff_r         <= tap_coeff_w;

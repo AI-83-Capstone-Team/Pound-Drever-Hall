@@ -19,7 +19,8 @@ import numpy as np
 import paramiko
 
 from .types import (
-    CsSel, ConfigIoResult, ControlMetricsResult, DacDatSel, DacSel, FRAME_COLUMNS,
+    CsSel, ConfigDemodResult, ConfigIoResult, ControlMetricsResult,
+    DacDatSel, DacSel, DemodInSel, DemodRefSel, FRAME_COLUMNS,
     FirInputSel, FrameCode, FrameResult, LockPointResult, PidDatSel, PSDResult,
     SWEEP_COLUMNS,
     AdcResult, CheckSignedResult, ResetResult, SetDacResult,
@@ -52,16 +53,19 @@ __all__ = [
     "FPGA_FS",
     # enums / types re-exported for one-stop import
     "FrameCode", "DacSel", "DacDatSel", "PidDatSel", "CsSel", "FirInputSel",
+    "DemodRefSel", "DemodInSel",
     "SWEEP_COLUMNS",
     # result dataclasses
     "ResetResult", "SetLedResult", "AdcResult", "SetDacResult",
     "CheckSignedResult", "SetRotResult", "SetPidResult",
-    "SetNcoResult", "SetFirResult", "ConfigIoResult", "FrameResult", "SweepRampResult",
+    "SetNcoResult", "SetFirResult", "ConfigIoResult", "ConfigDemodResult",
+    "FrameResult", "SweepRampResult",
     "LockPointResult", "PSDResult", "ControlMetricsResult",
     # API functions
     "api_reset_fpga", "api_set_led", "api_get_adc", "api_set_dac",
     "api_check_signed", "api_set_rotation", "api_set_nco",
     "api_set_pid", "api_set_fir", "api_set_fir_coeffs", "api_config_io",
+    "api_config_demod",
     "api_get_frame", "api_sweep_ramp", "compute_lockpoint", "api_psd",
     "api_control_metrics",
 ]
@@ -319,6 +323,23 @@ def api_config_io(
         dac1_dat_sel_cb=r.get("DAC1_DAT_SEL_CB", 0),
         dac2_dat_sel_cb=r.get("DAC2_DAT_SEL_CB", 0),
         pid_dat_sel_cb=r.get("PID_DAT_SEL_CB", 0),
+    )
+
+
+@api_cmd
+def api_config_demod(
+    ref_sel: DemodRefSel | int,
+    in_sel: DemodInSel | int,
+) -> ConfigDemodResult:
+    """Configure the IQ demodulator reference and input signal sources."""
+    r = execute_cmd(
+        f"CMD:config_demod\n"
+        f"U:{int(ref_sel)},{int(in_sel)}\n"
+    )
+    return ConfigDemodResult(
+        status=r.get("status", -1),
+        ref_sel_cb=r.get("REF_SEL_CB", 0),
+        in_sel_cb=r.get("IN_SEL_CB", 0),
     )
 
 

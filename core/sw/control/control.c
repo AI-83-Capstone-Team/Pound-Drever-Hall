@@ -1216,7 +1216,7 @@ int cmd_config_io_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
     /* Pre-strobe range checks (surfaced here so the error code is preserved) */
     if (dac1 > 3) return CONFIG_IO_INVALID_DAC1;
     if (dac2 > 3) return CONFIG_IO_INVALID_DAC2;
-    if (pid  > 4) return CONFIG_IO_INVALID_PID;
+    if (pid  > 5) return CONFIG_IO_INVALID_PID;
 
     uint32_t echo_dac1 = cb.config_io_cb.dac1_dat_sel_r;
     uint32_t echo_dac2 = cb.config_io_cb.dac2_dat_sel_r;
@@ -1369,4 +1369,46 @@ int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
     ctx->output.num_outputs = 5;
 
     return return_code;
+}
+
+
+/* ── cmd_config_demod ────────────────────────────────────────────────────── */
+
+int cmd_config_demod_send(cmd_ctx_t* ctx)
+{
+    /* Always strobe. Values are 1-bit and 3-bit fields; FPGA masks upper bits.
+     * Range validation is caught in _cb via echo mismatch. */
+    uint32_t ref_sel = ctx->uint_args[0];
+    uint32_t in_sel  = ctx->uint_args[1];
+
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.config_demod_cmd.cmd     = CMD_CONFIG_DEMOD;
+    cmd.config_demod_cmd.ref_sel = ref_sel & 0x1;
+    cmd.config_demod_cmd.in_sel  = in_sel  & 0x7;
+    pdh_strobe_cmd(cmd);
+    return CONFIG_DEMOD_OK;
+}
+
+int cmd_config_demod_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+{
+    uint32_t ref_sel = ctx->uint_args[0];
+    uint32_t in_sel  = ctx->uint_args[1];
+
+    if (ref_sel > 1) return CONFIG_DEMOD_INVALID_REF;
+    if (in_sel  > 6) return CONFIG_DEMOD_INVALID_IN;
+
+    uint32_t echo_ref = cb.config_demod_cb.ref_sel_r;
+    uint32_t echo_in  = cb.config_demod_cb.in_sel_r;
+    uint32_t echo_cmd = cb.config_demod_cb.cmd;
+    uint32_t cmdval   = CMD_CONFIG_DEMOD;
+
+    int rc = validate_cb(&echo_ref, &ref_sel, UINT_TAG, __func__, "REF_SEL_CB", CONFIG_DEMOD_OK, CONFIG_DEMOD_REF_CB_FAIL);
+    rc = validate_cb(&echo_in,  &in_sel,  UINT_TAG, __func__, "IN_SEL_CB",  rc, CONFIG_DEMOD_IN_CB_FAIL);
+    rc = validate_cb(&echo_cmd, &cmdval,  UINT_TAG, __func__, CMD,          rc, PDH_INVALID_CMD);
+
+    size_t index = 0;
+    push_ctx_cb(ctx, &index, &echo_ref, UINT_TAG, "REF_SEL_CB");
+    push_ctx_cb(ctx, &index, &echo_in,  UINT_TAG, "IN_SEL_CB");
+    return rc;
 }

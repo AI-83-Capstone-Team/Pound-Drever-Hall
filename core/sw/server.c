@@ -15,7 +15,7 @@
 
 #define SERVER_PORT     5555
 #define MAX_BYTES       1024
-#define NUM_CMDS        13
+#define NUM_CMDS        14
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -59,6 +59,7 @@ static dispatch_entry_t gCmds[NUM_CMDS] = {
     {"set_fir",        NULL,                 NULL,                 cmd_set_fir,    0, 0, 1},
     {"set_nco",        NULL,                 NULL,                 cmd_set_nco,    2, 0, 1},
     {"config_io",      cmd_config_io_send,   cmd_config_io_cb,     NULL,           0, 0, 3},
+    {"config_demod",   cmd_config_demod_send,cmd_config_demod_cb,  NULL,           0, 0, 2},
     {"sweep_ramp",     NULL,                 NULL,                 cmd_sweep_ramp, 2, 0, 3},
 };
 

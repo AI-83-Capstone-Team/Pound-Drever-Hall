@@ -14,11 +14,12 @@ A hardware/software co-design implementation of a **Pound-Drever-Hall (PDH) lase
 6. [NCO Design](#nco-design)
 7. [PID Controller Design](#pid-controller-design)
 8. [FIR Filter Design](#fir-filter-design)
-9. [DMA Live Capture Design](#dma-live-capture-design)
-10. [Signal Representation and Fixed-Point Conventions](#signal-representation-and-fixed-point-conventions)
-11. [IO Routing](#io-routing)
-12. [Notable Design Choices](#notable-design-choices)
-13. [Python Analysis Functions](#python-analysis-functions)
+9. [IQ Demodulator Design](#iq-demodulator-design)
+10. [DMA Live Capture Design](#dma-live-capture-design)
+11. [Signal Representation and Fixed-Point Conventions](#signal-representation-and-fixed-point-conventions)
+12. [IO Routing](#io-routing)
+13. [Notable Design Choices](#notable-design-choices)
+14. [Python Analysis Functions](#python-analysis-functions)
 
 ---
 
@@ -30,8 +31,9 @@ core/
     prj/pdh_core/
       rtl/               FPGA RTL (SystemVerilog)
         pdh_top.sv       Board-level wrapper: clocking, PS instantiation, HP0 AXI tie-offs
-        pdh_core.sv      Main control module: command decoder, IQ rotation, DMA orchestrator
+        pdh_core.sv      Main control module: command decoder, IQ rotation, IQ demod, DMA orchestrator
         nco.sv           Numerically controlled oscillator (dual-output, quarter-ROM)
+        iq_demod.sv      Instantaneous-product demodulator (configurable ref × input, Q15)
         pid_core.sv      Discrete PID with EMA derivative, anti-windup, decimation
         bram_controller.sv  Dual-clock BRAM capture buffer (pdh_clk write / fclk0 read)
         dma_controller.sv   AXI4 master for HP0 DDR burst writes
@@ -162,7 +164,7 @@ Requires `cocotb`, and either Verilator or Icarus Verilog (`iverilog`).
 
 Exercises every command that has an observable callback echo and checks that the FPGA register round-trips match what was sent. DMA/frame capture is out of scope — inputs are tied to benign static values.
 
-Checks covered (40 in total):
+Checks covered (93 in total):
 - **Reset**: `led_o` and `rst_o` cleared
 - **Set LED**: `led_o` pin value and callback echo
 - **Config IO**: DAC1/DAC2 source select and PID input select echoes
@@ -174,6 +176,8 @@ Checks covered (40 in total):
 - **Set FIR**: address, coefficient, input select, write-enable, chain-write-enable echoes
 - **Check Signed**: ADC_A, ADC_B, I feed, Q feed, IO routing register reads
 - **Interrupt**: `irq_o` fires within expected cycles after strobe for a non-`CMD_GET_FRAME` command
+- **Config Demod**: ref_sel and in_sel echo checks for two configurations
+- **IQ Demod functional**: in-phase product (NCO1×NCO1 → DC mean > 5000 counts) and quadrature product (NCO1×NCO2 → mean ≈ 0, std > 100 counts) checks via `dma_data_o`
 
 ```bash
 cd core/hw/sim
@@ -265,7 +269,7 @@ The **IP** and **Port** fields at the top of the window default to `10.42.0.62` 
 
 ```
 Col 0: System, IO Routing, Sweep Ramp
-Col 1: NCO, Rotation, FIR
+Col 1: NCO, Rotation, IQ Demod, FIR
 Col 2: PID, Frame Capture
 ```
 
@@ -285,7 +289,7 @@ Col 2: PID, Frame Capture
 Three groups of radio buttons configure the signal routing:
 
 - **DAC1 Source** / **DAC2 Source**: `Register` (manual value), `PID` (PID output), `NCO 1`, `NCO 2`.
-- **PID Input**: `I Feed`, `Q Feed`, `ADC A`, `ADC B`, `FIR Out`.
+- **PID Input**: `I Feed`, `Q Feed`, `ADC A`, `ADC B`, `FIR Out`, `IQ Demod Out`.
 
 Click **Apply** to write all three selections in one `config_io` command. The feedback line beneath the button shows the values echoed back by the FPGA.
 
@@ -311,11 +315,22 @@ Sets the IQ demodulation rotation angle. Use this to align the PDH error signal 
 
 Feedback shows the applied cos θ, sin θ, and the resulting I/Q feed values.
 
+#### IQ Demod
+
+Configures the instantaneous-product demodulator. The demodulator multiplies a reference signal by an input signal, producing a baseband output that can be routed to the FIR filter or PID controller.
+
+| Control | Options | Notes |
+|---------|---------|-------|
+| **Reference** | NCO 1, NCO 2 | Selects the reference (local oscillator) signal. |
+| **Input** | NCO 1, NCO 2, ADC A, ADC B, I Feed, Q Feed, FIR Out | Selects the signal to demodulate. |
+
+Click **Apply** to write both selections. The feedback line shows the echoed values (e.g. `ref=NCO1 in=I_FEED`).
+
 #### FIR
 
 Designs and programs a windowed-sinc lowpass filter into the FPGA FIR block.
 
-**FIR Input** selects which signal is fed into the filter: `ADC 1`, `ADC 2`, `I Feed`, or `Q Feed`.
+**FIR Input** selects which signal is fed into the filter: `ADC 1`, `ADC 2`, `I Feed`, `Q Feed`, or `IQ Demod Out`.
 
 **Filter Design** fields:
 
@@ -447,7 +462,7 @@ All values are plain ASCII. The Python client's `_parse_response()` coerces each
 
 ### Server Dispatch Table
 
-`server.c` maintains a static table of 13 entries. Each entry carries a `send_func` / `cb_func` pair for interrupt-driven commands, or a `mono_func` for commands that complete synchronously in Thread 1.
+`server.c` maintains a static table of 14 entries. Each entry carries a `send_func` / `cb_func` pair for interrupt-driven commands, or a `mono_func` for commands that complete synchronously in Thread 1.
 
 | Command | Mode | floats | ints | uints |
 |---------|------|--------|------|-------|
@@ -463,6 +478,7 @@ All values are plain ASCII. The Python client's `_parse_response()` coerces each
 | `set_fir` | mono | 0 | 0 | 1 |
 | `set_nco` | mono | 2 | 0 | 1 |
 | `config_io` | split (send+cb) | 0 | 0 | 3 |
+| `config_demod` | split (send+cb) | 0 | 0 | 2 |
 | `sweep_ramp` | mono | 2 | 0 | 3 |
 
 **Split commands** (`send_func` + `cb_func`): Thread 1 calls `_send`, writes the strobe, then pushes the pending context to `g_pending`. Thread 2 blocks on `uio_wait_irq()` and calls `_cb` after the FPGA interrupt fires.
@@ -757,9 +773,10 @@ A programmable FIR lowpass filter sits between the IQ demodulation stage and the
 ### Signal Placement
 
 ```
-ADC A/B  ──┐
-I Feed   ──┼─► [FIR input mux] ──► fir.sv ──► FIR Out ──► [PID input mux] ──► pid_core
-Q Feed   ──┘
+ADC A/B      ──┐
+I Feed       ──┤
+Q Feed       ──┼─► [FIR input mux] ──► fir.sv ──► FIR Out ──► [PID input mux] ──► pid_core
+IQ Demod Out ──┘
 ```
 
 The FIR input source and whether the PID consumes the FIR output are both controlled independently via `config_io`. The filter can be programmed and its input/output routed at any time without affecting other subsystems.
@@ -856,6 +873,83 @@ python run_fir_freq.py --no-sim                     # replot most recent result
 ```
 
 Artifacts (coefficient CSV, results JSON, response PNG) are written to `sim/artifacts/fir_freq/fir_freq_N/` with an auto-incrementing index so successive runs never overwrite each other.
+
+---
+
+## IQ Demodulator Design
+
+The `iq_demod` module implements a single-cycle registered instantaneous-product demodulator. It multiplies a configurable reference signal by a configurable input signal to produce a Q15 baseband output — the core operation of lock-in detection and PDH frequency discrimination.
+
+### Operation
+
+```
+out[n] = (ref[n] × in[n]) >> 15
+```
+
+Both `ref` and `in` are 16-bit Q15 signed values. Their 32-bit product is an arithmetic right-shifted by 15 to renormalize back to Q15, matching the convention used by the rotation matrix. The shift is applied in a single registered pipeline stage (one clock cycle latency).
+
+### Reference Source Selection
+
+`demod_ref_sel_r` (1 bit) selects the reference (local oscillator) signal:
+
+| Code | Name | Source |
+|------|------|--------|
+| 0    | NCO1 | `nco_out1_r` — in-phase NCO output |
+| 1    | NCO2 | `nco_out2_r` — quadrature NCO output |
+
+### Input Source Selection
+
+`demod_in_sel_r` (3 bits) selects the signal to demodulate:
+
+| Code | Name        | Source |
+|------|-------------|--------|
+| 0    | NCO1        | `nco_out1_r` |
+| 1    | NCO2        | `nco_out2_r` |
+| 2    | ADC_A       | `adc_dat_a_16s_r` (signed, centred) |
+| 3    | ADC_B       | `adc_dat_b_16s_r` |
+| 4    | I_FEED      | `i_feed_r` (rotation matrix I output) |
+| 5    | Q_FEED      | `q_feed_r` (rotation matrix Q output) |
+| 6    | FIR_OUT     | `fir_out_w` (FIR filter output) |
+
+### Command: `config_demod` (opcode `0b1011`)
+
+Both source selects are written in one `cmd_config_demod` command. Data word layout:
+
+```
+Bit  [0]   : ref_sel  (0 = NCO1, 1 = NCO2)
+Bits [3:1] : in_sel   (3-bit, 0–6)
+```
+
+The callback echoes the registered values:
+
+```
+Bits [31:28] : CMD_CONFIG_DEMOD (0b1011)
+Bits [27:4]  : 0 (padding)
+Bits [3:1]   : demod_in_sel_r
+Bit  [0]     : demod_ref_sel_r
+```
+
+### Downstream Routing
+
+The demodulator output `demod_out_w` feeds into the existing IO routing muxes:
+
+- **FIR filter input**: set FIR input to `IQ_DEMOD_OUT` (code 4) via `config_io`
+- **PID controller input**: set PID input to `IQ_DEMOD_OUT` (code 5) via `config_io`
+
+FIR can be set to take the demodulator output while the demodulator is also set to take FIR output. This is safe because both paths are fully registered — there is no combinatorial loop.
+
+### `CAPTURE_DEMOD` Frame
+
+The `CAPTURE_DEMOD` frame type (code `0b1000`) packs all demodulator-relevant signals into a single 64-bit DMA word:
+
+```
+Bits [63:48] : nco_out2_r  (quadrature NCO / reference option 2)
+Bits [47:32] : nco_out1_r  (in-phase NCO / reference option 1)
+Bits [31:16] : demod_in_w  (muxed input signal, before multiply)
+Bits [15:0]  : demod_out_w (product output, Q15)
+```
+
+CSV columns: `demod_in`, `demod_out`, `nco1`, `nco2`.
 
 ---
 
@@ -976,6 +1070,7 @@ The `frame_code` field selects which internal signals are packed into each 64-bi
 | `LOOPBACK`          | dac1_feed, dac2_feed, adc_a, adc_b                  | DAC outputs vs. raw ADC (offset-binary) |
 | `FIR_IO`            | fir_in, fir_out                                     | FIR filter input and output         |
 | `PID_IO`            | pid_in, err, pid_out                                | PID process variable, error, output |
+| `CAPTURE_DEMOD`     | demod_in, demod_out, nco1, nco2                     | IQ demodulator input, product output, and both NCO signals |
 
 `api_psd(decimation)` wraps `ADC_DATA_IN` capture and computes a one-sided PSD for all four channels via the Wiener-Khinchin theorem (FFT of the autocorrelation). Effective sample rate is `125e6 / decimation` Hz; frequency resolution is `fs / (2N − 1)` where N = 16384 samples.
 
@@ -1028,15 +1123,28 @@ DAC1 and DAC2 are selected independently via `dac1_dat_sel_r` and `dac2_dat_sel_
 
 The PID error input `dat_i` can be sourced from:
 
-| Code | Name     | Source                                        |
-|------|----------|-----------------------------------------------|
-| 0    | I_FEED   | I channel of IQ demodulation (rotated ADC A)  |
-| 1    | Q_FEED   | Q channel of IQ demodulation (rotated ADC B)  |
-| 2    | ADC_A    | Raw ADC channel A (adc_dat_a_16s)             |
-| 3    | ADC_B    | Raw ADC channel B (adc_dat_b_16s)             |
-| 4    | FIR_OUT  | FIR filter output                             |
+| Code | Name           | Source                                        |
+|------|----------------|-----------------------------------------------|
+| 0    | I_FEED         | I channel of IQ demodulation (rotated ADC A)  |
+| 1    | Q_FEED         | Q channel of IQ demodulation (rotated ADC B)  |
+| 2    | ADC_A          | Raw ADC channel A (adc_dat_a_16s)             |
+| 3    | ADC_B          | Raw ADC channel B (adc_dat_b_16s)             |
+| 4    | FIR_OUT        | FIR filter output                             |
+| 5    | IQ_DEMOD_OUT   | IQ demodulator product output                 |
 
-For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage. `FIR_OUT` inserts the programmable FIR lowpass between the demodulation stage and the PID, which is the normal operating mode for bandwidth-limited locking.
+For standard PDH locking, the PID is fed from `I_FEED` (the demodulated error signal). For direct DC locking or loopback tests, `ADC_A` or `ADC_B` provides the unprocessed voltage. `FIR_OUT` inserts the programmable FIR lowpass between the demodulation stage and the PID, which is the normal operating mode for bandwidth-limited locking. `IQ_DEMOD_OUT` routes the instantaneous-product demodulator output directly to the PID, bypassing the rotation matrix.
+
+### FIR Input Selection
+
+The FIR filter input can be sourced from:
+
+| Code | Name           | Source                                        |
+|------|----------------|-----------------------------------------------|
+| 0    | ADC1           | Raw ADC channel A (adc_dat_a_16s)             |
+| 1    | ADC2           | Raw ADC channel B (adc_dat_b_16s)             |
+| 2    | I_FEED         | I channel of IQ demodulation (rotated ADC A)  |
+| 3    | Q_FEED         | Q channel of IQ demodulation (rotated ADC B)  |
+| 4    | IQ_DEMOD_OUT   | IQ demodulator product output                 |
 
 ---
 

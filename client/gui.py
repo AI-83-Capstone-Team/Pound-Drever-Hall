@@ -226,9 +226,10 @@ class _App(tk.Tk):
         self._io_panel.pack(fill=tk.X, pady=(0, 4))
         _SweepRampPanel(col0, self).pack(fill=tk.X)
 
-        # Col 1: NCO, Rotation, FIR, Autolock
+        # Col 1: NCO, Rotation, Demod, FIR, Autolock
         _NCOPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
         _RotationPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
+        _DemodPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
         _FIRPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
         _AutolockPanel(col1, self).pack(fill=tk.X)
 
@@ -446,9 +447,10 @@ class _IORoutingPanel(_Panel):
         pid_frm = ttk.LabelFrame(self, text="PID Input", padding=6)
         pid_frm.pack(fill=tk.X, pady=(0, 6))
         self._pid_sel = tk.IntVar(value=int(api.PidDatSel.I_FEED))
-        for label, val in [("I Feed",  api.PidDatSel.I_FEED), ("Q Feed",  api.PidDatSel.Q_FEED),
-                           ("ADC A",   api.PidDatSel.ADC_A),  ("ADC B",   api.PidDatSel.ADC_B),
-                           ("FIR Out", api.PidDatSel.FIR_OUT)]:
+        for label, val in [("I Feed",      api.PidDatSel.I_FEED),       ("Q Feed",  api.PidDatSel.Q_FEED),
+                           ("ADC A",       api.PidDatSel.ADC_A),        ("ADC B",   api.PidDatSel.ADC_B),
+                           ("FIR Out",     api.PidDatSel.FIR_OUT),
+                           ("IQ Demod",    api.PidDatSel.IQ_DEMOD_OUT)]:
             ttk.Radiobutton(pid_frm, text=label, variable=self._pid_sel,
                             value=int(val)).pack(side=tk.LEFT, padx=2)
 
@@ -576,6 +578,55 @@ class _RotationPanel(_Panel):
         self.app.run_in_bg(lambda: api.api_set_rotation(theta), on_ok, on_err)
 
 
+# ── IQ Demod panel ────────────────────────────────────────────────────────────
+
+class _DemodPanel(_Panel):
+    def __init__(self, parent, app):
+        super().__init__(parent, app, "IQ Demod")
+        self._build()
+
+    def _build(self) -> None:
+        ref_frm = ttk.LabelFrame(self, text="Reference", padding=6)
+        ref_frm.pack(fill=tk.X, pady=(0, 6))
+        self._ref_sel = tk.IntVar(value=int(api.DemodRefSel.NCO1))
+        for label, val in [("NCO 1", api.DemodRefSel.NCO1), ("NCO 2", api.DemodRefSel.NCO2)]:
+            ttk.Radiobutton(ref_frm, text=label, variable=self._ref_sel,
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
+
+        in_frm = ttk.LabelFrame(self, text="Input", padding=6)
+        in_frm.pack(fill=tk.X, pady=(0, 6))
+        self._in_sel = tk.IntVar(value=int(api.DemodInSel.NCO2))
+        for label, val in [("NCO 1",   api.DemodInSel.NCO1),   ("NCO 2",   api.DemodInSel.NCO2),
+                           ("ADC A",   api.DemodInSel.ADC_A),  ("ADC B",   api.DemodInSel.ADC_B),
+                           ("I Feed",  api.DemodInSel.I_FEED), ("Q Feed",  api.DemodInSel.Q_FEED),
+                           ("FIR Out", api.DemodInSel.FIR_OUT)]:
+            ttk.Radiobutton(in_frm, text=label, variable=self._in_sel,
+                            value=int(val)).pack(side=tk.LEFT, padx=2)
+
+        self._apply_btn = ttk.Button(self, text="Apply", command=self._on_apply)
+        self._apply_btn.pack(anchor=tk.W, pady=(4, 2))
+        self._fb_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self._fb_var, foreground="gray").pack(anchor=tk.W)
+
+    def _on_apply(self) -> None:
+        ref = api.DemodRefSel(self._ref_sel.get())
+        inp = api.DemodInSel(self._in_sel.get())
+        ip, port = self._conn()
+        self._prep_call(ip, port)
+        self._busy(self._apply_btn)
+        def on_ok(r):
+            self._fb_var.set(
+                f"ref={api.DemodRefSel(r.ref_sel_cb).name}  "
+                f"in={api.DemodInSel(r.in_sel_cb).name}"
+            )
+            self._unbusy(self._apply_btn, "Apply")
+            self.ok("IQ demod configured")
+        def on_err(e):
+            self._unbusy(self._apply_btn, "Apply")
+            self.err(e)
+        self.app.run_in_bg(lambda: api.api_config_demod(ref, inp), on_ok, on_err)
+
+
 # ── FIR panel ─────────────────────────────────────────────────────────────────
 
 class _FIRPanel(_Panel):
@@ -587,8 +638,9 @@ class _FIRPanel(_Panel):
         in_frm = ttk.LabelFrame(self, text="Input", padding=6)
         in_frm.pack(fill=tk.X, pady=(0, 6))
         self._input_sel = tk.IntVar(value=int(api.FirInputSel.ADC1))
-        for label, val in [("ADC 1",  api.FirInputSel.ADC1), ("ADC 2",  api.FirInputSel.ADC2),
-                           ("I Feed", api.FirInputSel.I_FEED), ("Q Feed", api.FirInputSel.Q_FEED)]:
+        for label, val in [("ADC 1",   api.FirInputSel.ADC1),    ("ADC 2",  api.FirInputSel.ADC2),
+                           ("I Feed",  api.FirInputSel.I_FEED),  ("Q Feed", api.FirInputSel.Q_FEED),
+                           ("IQ Demod", api.FirInputSel.IQ_DEMOD_OUT)]:
             ttk.Radiobutton(in_frm, text=label, variable=self._input_sel,
                             value=int(val)).pack(side=tk.LEFT, padx=2)
 

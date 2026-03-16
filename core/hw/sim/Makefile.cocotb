@@ -13,7 +13,8 @@ VERILOG_SOURCES = \
 	$(RTL_DIR)/posedge_detector.sv \
 	$(RTL_DIR)/sine_qtr_rom.sv  \
 	$(RTL_DIR)/fir.sv           \
-	$(RTL_DIR)/fir_tap.sv
+	$(RTL_DIR)/fir_tap.sv       \
+	$(RTL_DIR)/iq_demod.sv
 
 NTAPS ?= 32
 AW    ?= 5   # ceil(log2(NTAPS))

@@ -70,5 +70,8 @@ int  cmd_check_signed_cb  (cmd_ctx_t* ctx, pdh_callback_t cb);
 int  cmd_config_io_send  (cmd_ctx_t* ctx);
 int  cmd_config_io_cb    (cmd_ctx_t* ctx, pdh_callback_t cb);
 
+int  cmd_config_demod_send(cmd_ctx_t* ctx);
+int  cmd_config_demod_cb  (cmd_ctx_t* ctx, pdh_callback_t cb);
+
 int  cmd_get_frame_send  (cmd_ctx_t* ctx);
 int  cmd_get_frame_cb    (cmd_ctx_t* ctx, pdh_callback_t cb);

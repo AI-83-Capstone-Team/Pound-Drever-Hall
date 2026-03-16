@@ -11,7 +11,7 @@ import numpy as np
 # ── Enums (mirror hw_common.h / control code) ─────────────────────────────────
 
 class FrameCode(IntEnum):
-    ADC_DATA_IN = 0b0000
+    ADC_DATA_IN      = 0b0000
     PID_ERR_TAPS     = 0b0001
     IO_SUM_ERR       = 0b0010
     OSC_INSPECT      = 0b0011
@@ -19,14 +19,16 @@ class FrameCode(IntEnum):
     LOOPBACK         = 0b0101
     FIR_IO           = 0b0110
     PID_IO           = 0b0111
+    CAPTURE_DEMOD    = 0b1000
 
 
 class FirInputSel(IntEnum):
     """FIR filter input source selection (mirrors fir_input_sel_t in RTL)."""
-    ADC1   = 0b000
-    ADC2   = 0b001
-    I_FEED = 0b010
-    Q_FEED = 0b011
+    ADC1          = 0b000
+    ADC2          = 0b001
+    I_FEED        = 0b010
+    Q_FEED        = 0b011
+    IQ_DEMOD_OUT  = 0b100
 
 
 class DacSel(IntEnum):
@@ -44,11 +46,29 @@ class DacDatSel(IntEnum):
 
 class PidDatSel(IntEnum):
     """Error input source for the PID controller (config_io pid_dat_sel)."""
-    I_FEED  = 0b000
-    Q_FEED  = 0b001
-    ADC_A   = 0b010
-    ADC_B   = 0b011
-    FIR_OUT = 0b100
+    I_FEED       = 0b000
+    Q_FEED       = 0b001
+    ADC_A        = 0b010
+    ADC_B        = 0b011
+    FIR_OUT      = 0b100
+    IQ_DEMOD_OUT = 0b101
+
+
+class DemodRefSel(IntEnum):
+    """Reference signal source for the IQ demodulator."""
+    NCO1 = 0
+    NCO2 = 1
+
+
+class DemodInSel(IntEnum):
+    """Input signal source for the IQ demodulator."""
+    NCO1   = 0b000
+    NCO2   = 0b001
+    ADC_A  = 0b010
+    ADC_B  = 0b011
+    I_FEED = 0b100
+    Q_FEED = 0b101
+    FIR_OUT = 0b110
 
 
 class CsSel(IntEnum):
@@ -64,14 +84,15 @@ class CsSel(IntEnum):
 
 # Column labels for each frame type, in CSV column order (matches C fprintf order).
 FRAME_COLUMNS: dict[FrameCode, list[str]] = {
-    FrameCode.ADC_DATA_IN: ["adc_a",    "adc_b",     "i_feed",    "q_feed"],
-    FrameCode.PID_ERR_TAPS:    ["err",       "perr",      "derr",      "ierr"],
-    FrameCode.IO_SUM_ERR:      ["err",       "pid_out",   "sum_err"],           # 3 cols
-    FrameCode.OSC_INSPECT:     ["nco_out1",  "nco_out2",  "nco_feed1", "nco_feed2"],
-    FrameCode.OSC_ADDR_CHECK:  ["phi1",      "phi2",      "addr1",     "addr2"],
-    FrameCode.LOOPBACK:        ["dac1_feed", "dac2_feed", "adc_a",     "adc_b"],
-    FrameCode.FIR_IO:          ["fir_in",    "fir_out"],
-    FrameCode.PID_IO:          ["pid_in",    "err",       "pid_out"],
+    FrameCode.ADC_DATA_IN:  ["adc_a",    "adc_b",     "i_feed",    "q_feed"],
+    FrameCode.PID_ERR_TAPS: ["err",       "perr",      "derr",      "ierr"],
+    FrameCode.IO_SUM_ERR:   ["err",       "pid_out",   "sum_err"],           # 3 cols
+    FrameCode.OSC_INSPECT:  ["nco_out1",  "nco_out2",  "nco_feed1", "nco_feed2"],
+    FrameCode.OSC_ADDR_CHECK: ["phi1",    "phi2",      "addr1",     "addr2"],
+    FrameCode.LOOPBACK:     ["dac1_feed", "dac2_feed", "adc_a",     "adc_b"],
+    FrameCode.FIR_IO:       ["fir_in",    "fir_out"],
+    FrameCode.PID_IO:       ["pid_in",    "err",       "pid_out"],
+    FrameCode.CAPTURE_DEMOD: ["demod_in", "demod_out", "nco1",      "nco2"],
 }
 
 
@@ -158,6 +179,13 @@ class ConfigIoResult:
     dac1_dat_sel_cb: int
     dac2_dat_sel_cb: int
     pid_dat_sel_cb: int
+
+
+@dataclass
+class ConfigDemodResult:
+    status: int
+    ref_sel_cb: int
+    in_sel_cb: int
 
 
 @dataclass

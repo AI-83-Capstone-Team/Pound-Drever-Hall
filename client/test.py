@@ -23,8 +23,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pdh_api import (
-    DacDatSel, DacSel, FirInputSel, FrameCode, PidDatSel, CsSel,
-    api_check_signed, api_config_io, api_get_adc, api_get_frame,
+    DacDatSel, DacSel, DemodInSel, DemodRefSel, FirInputSel, FrameCode, PidDatSel, CsSel,
+    api_check_signed, api_config_demod, api_config_io, api_get_adc, api_get_frame,
     api_reset_fpga, api_set_dac, api_set_led,
     api_set_fir, api_set_nco, api_set_pid, api_set_rotation,
 )
@@ -53,6 +53,13 @@ PID_ALPHA = 2
 PID_SAT   = 18
 
 LED_PATTERN = 0b10101010
+
+DEMOD_FREQ       = 500_000.0   # Hz — NCO frequency for demod test
+# For in-phase product (shift=0): cos²(ωt) mean ≈ 0.5 * (Q15_MAX/32768)² * 32768
+# Q15_MAX ≈ 32767; product >> 15 ≈ 32767; mean of cos² * 32767 ≈ 16383
+# Use a conservative threshold of 5000 (counts in Q15 output space)
+DEMOD_DC_THRESH  = 5000        # minimum |mean(demod_out)| for in-phase test
+DEMOD_NOISE_THRESH = 2000      # maximum |mean(demod_out)| for quadrature test
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -353,6 +360,64 @@ def main() -> None:
             fir_frame,
             "FIR_IO — filter input vs output (fc=100 kHz low-pass)",
         ))
+
+    # ── 15. IQ Demod — config echo checks ────────────────────────────────────
+    _section("15. IQ Demod — Config Echo")
+    dm = api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+    _check("config_demod: status == 0", dm.status == 0)
+    _check("config_demod: ref_sel echo", dm.ref_sel_cb == int(DemodRefSel.NCO1),
+           f"got={dm.ref_sel_cb}  expected={int(DemodRefSel.NCO1)}")
+    _check("config_demod: in_sel echo",  dm.in_sel_cb  == int(DemodInSel.NCO2),
+           f"got={dm.in_sel_cb}  expected={int(DemodInSel.NCO2)}")
+
+    # Change config and verify again
+    dm2 = api_config_demod(DemodRefSel.NCO2, DemodInSel.I_FEED)
+    _check("config_demod (2): ref_sel echo", dm2.ref_sel_cb == int(DemodRefSel.NCO2))
+    _check("config_demod (2): in_sel echo",  dm2.in_sel_cb  == int(DemodInSel.I_FEED))
+
+    # ── 15b. IQ Demod — functional validation ────────────────────────────────
+    _section("15b. IQ Demod — Functional (NCO1 × NCO2)")
+
+    # Set up NCO at DEMOD_FREQ, shift=0 (NCO1 == NCO2, in-phase)
+    api_set_nco(DEMOD_FREQ, shift_deg=0.0, en=1)
+    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+    api_config_io(DacDatSel.REGISTER, DacDatSel.REGISTER, PidDatSel.ADC_A)
+
+    frame_inphase = api_get_frame(1, FrameCode.CAPTURE_DEMOD, REMOTE_DIR)
+    _check("CAPTURE_DEMOD (in-phase): received", frame_inphase.data.size > 0)
+    if frame_inphase.data.size > 0:
+        # Column order: demod_in, demod_out, nco1, nco2
+        demod_out_col = frame_inphase.columns.index("demod_out")
+        mean_inphase  = abs(float(np.mean(frame_inphase.data[:, demod_out_col])))
+        _check(
+            "CAPTURE_DEMOD (in-phase): DC > threshold  [cos²(ωt) → DC ≈ 0.5]",
+            mean_inphase > DEMOD_DC_THRESH,
+            f"|mean|={mean_inphase:.1f}  threshold={DEMOD_DC_THRESH}",
+        )
+        figs.append(_plot_frame(frame_inphase, "CAPTURE_DEMOD — in-phase (NCO1×NCO2, shift=0°)"))
+
+    # Shift NCO2 by 90°: NCO1=cos(ωt), NCO2=sin(ωt), product = ½sin(2ωt) → mean≈0
+    api_set_nco(DEMOD_FREQ, shift_deg=90.0, en=1)
+    api_config_demod(DemodRefSel.NCO1, DemodInSel.NCO2)
+
+    frame_quad = api_get_frame(1, FrameCode.CAPTURE_DEMOD, REMOTE_DIR)
+    _check("CAPTURE_DEMOD (quadrature): received", frame_quad.data.size > 0)
+    if frame_quad.data.size > 0:
+        demod_out_col = frame_quad.columns.index("demod_out")
+        demod_out_q   = frame_quad.data[:, demod_out_col]
+        mean_quad  = abs(float(np.mean(demod_out_q)))
+        std_quad   = float(np.std(demod_out_q))
+        _check(
+            "CAPTURE_DEMOD (quadrature): |mean| < threshold  [sin(ωt)cos(ωt) → zero DC]",
+            mean_quad < DEMOD_NOISE_THRESH,
+            f"|mean|={mean_quad:.1f}  threshold={DEMOD_NOISE_THRESH}",
+        )
+        _check(
+            "CAPTURE_DEMOD (quadrature): std > 0  [output is not dead]",
+            std_quad > 100,
+            f"std={std_quad:.1f}",
+        )
+        figs.append(_plot_frame(frame_quad, "CAPTURE_DEMOD — quadrature (NCO1×NCO2, shift=90°)"))
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()

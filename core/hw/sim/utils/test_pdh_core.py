@@ -27,6 +27,7 @@ CMD_GET_FRAME         = 0b0111
 CMD_SET_PID_COEFFS    = 0b1000
 CMD_SET_NCO           = 0b1001
 CMD_SET_FIR           = 0b1010
+CMD_CONFIG_DEMOD      = 0b1011
 CMD_CONFIG_IO         = 0b1110
 
 # ── PID coeff selects ──────────────────────────────────────────────────────────
@@ -58,6 +59,21 @@ FIR_SELECT_COEFF          = 0b001
 FIR_SELECT_INPUT_SEL      = 0b010
 FIR_SELECT_MEM_WRITE_EN   = 0b011
 FIR_SELECT_CHAIN_WRITE_EN = 0b100
+
+# ── IQ Demod selects ───────────────────────────────────────────────────────────
+
+DEMOD_REF_NCO1   = 0
+DEMOD_REF_NCO2   = 1
+
+DEMOD_IN_NCO1    = 0b000
+DEMOD_IN_NCO2    = 0b001
+DEMOD_IN_ADC_A   = 0b010
+DEMOD_IN_ADC_B   = 0b011
+DEMOD_IN_I_FEED  = 0b100
+DEMOD_IN_Q_FEED  = 0b101
+DEMOD_IN_FIR     = 0b110
+
+CAPTURE_DEMOD    = 0b1000
 
 # ── IO routing selects ─────────────────────────────────────────────────────────
 
@@ -266,6 +282,14 @@ def _cb_fir(cb: int) -> dict:
         "payload":    cb & 0xFFFF,
         "update_sel": (cb >> 16) & 0x7,
         "cmd":        _cb_cmd(cb),
+    }
+
+def _cb_config_demod(cb: int) -> dict:
+    # {CMD_CONFIG_DEMOD, 24'b0, in_sel[2:0], ref_sel[0]}
+    return {
+        "ref_sel": (cb >> 0) & 0x1,
+        "in_sel":  (cb >> 1) & 0x7,
+        "cmd":     _cb_cmd(cb),
     }
 
 
@@ -810,6 +834,97 @@ async def test_pdh_core(dut):
             break
     _check("irq: fires on dma_ready_i rising edge (GET_FRAME)", irq_after_dma)
     dut.dma_ready_i.value = 1   # leave ready=1 for any subsequent tests
+
+    # ── 16. Config Demod — command echo ───────────────────────────────────────
+    # config_demod_cb_w = {CMD_CONFIG_DEMOD, 24'b0, demod_in_sel_r[2:0], demod_ref_sel_r[0]}
+    # data bits: [0]=ref_sel, [3:1]=in_sel
+    _section("16. Config Demod (echo)")
+
+    async def _config_demod(ref_sel: int, in_sel: int) -> int:
+        data = ((in_sel & 0x7) << 1) | (ref_sel & 0x1)
+        return await _send(dut, CMD_CONFIG_DEMOD, data)
+
+    cb = await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_I_FEED)
+    f  = _cb_config_demod(cb)
+    _check("config_demod: ref_sel NCO1 echo",   f["ref_sel"] == DEMOD_REF_NCO1,
+           f"got={f['ref_sel']} exp={DEMOD_REF_NCO1}")
+    _check("config_demod: in_sel I_FEED echo",  f["in_sel"]  == DEMOD_IN_I_FEED,
+           f"got={f['in_sel']} exp={DEMOD_IN_I_FEED}")
+    _check("config_demod: cmd echo",            f["cmd"]     == CMD_CONFIG_DEMOD)
+
+    cb = await _config_demod(DEMOD_REF_NCO2, DEMOD_IN_ADC_A)
+    f  = _cb_config_demod(cb)
+    _check("config_demod2: ref_sel NCO2 echo",  f["ref_sel"] == DEMOD_REF_NCO2,
+           f"got={f['ref_sel']} exp={DEMOD_REF_NCO2}")
+    _check("config_demod2: in_sel ADC_A echo",  f["in_sel"]  == DEMOD_IN_ADC_A,
+           f"got={f['in_sel']} exp={DEMOD_IN_ADC_A}")
+    _check("config_demod2: cmd echo",           f["cmd"]     == CMD_CONFIG_DEMOD)
+
+    # ── 17. IQ Demod functional — in-phase and quadrature ─────────────────────
+    # Uses the NCO's two outputs as self-contained stimulus:
+    #   Test A (in-phase):  NCO shift=0  → NCO1=NCO2=cos(ωt)
+    #                       ref=NCO1, in=NCO1 → cos²(ωt) → DC mean ≈ amplitude²/2 > 5000
+    #   Test B (quadrature): NCO shift=4095 → NCO2 ≈ sin(ωt)
+    #                        ref=NCO1, in=NCO2 → ½sin(2ωt) → mean ≈ 0 < 2000
+    #                        std > 100 confirms the multiplier is live
+    _section("17. IQ Demod functional (in-phase and quadrature)")
+
+    DEMOD_STRIDE = 100        # ~762.9 kHz; period ≈ 164 clock cycles
+    DEMOD_SAMPLES = 1000      # ≈6 full NCO periods — enough for stable mean
+    DEMOD_IN_PHASE_THRESH  = 5000
+    DEMOD_QUAD_MEAN_THRESH = 2000
+    DEMOD_QUAD_STD_THRESH  = 100
+
+    # Set frame code to CAPTURE_DEMOD so dma_data_o[15:0] = demod_out
+    await _send(dut, CMD_GET_FRAME, (CAPTURE_DEMOD << 22) | 1)
+
+    # ── Test A: in-phase (shift=0, NCO1=NCO2) ─────────────────────────────────
+    await _nco(NCO_SELECT_EN,     0)          # disable while reconfiguring
+    await _nco(NCO_SELECT_STRIDE, DEMOD_STRIDE)
+    await _nco(NCO_SELECT_SHIFT,  0)
+    await _nco(NCO_SELECT_INV,    0)
+    await _nco(NCO_SELECT_SUB,    0)
+    await _nco(NCO_SELECT_EN,     1)
+
+    await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_NCO1)
+    await ClockCycles(dut.clk, 32)     # allow NCO and demod pipeline to fill
+
+    samples_a = []
+    for _ in range(DEMOD_SAMPLES):
+        await RisingEdge(dut.clk)
+        samples_a.append(_as_signed16(int(dut.dma_data_o.value) & 0xFFFF))
+
+    mean_a = sum(samples_a) / len(samples_a)
+    _check("demod in-phase: mean(demod_out) > threshold",
+           mean_a > DEMOD_IN_PHASE_THRESH,
+           f"mean={mean_a:.1f}  threshold={DEMOD_IN_PHASE_THRESH}")
+
+    # ── Test B: quadrature (shift≈90°, NCO1=cos, NCO2=sin) ────────────────────
+    await _nco(NCO_SELECT_EN,     0)
+    await _nco(NCO_SELECT_SHIFT,  4095)    # ≈89.98° offset; phi2 = phi1 + 4095
+    await _nco(NCO_SELECT_EN,     1)
+
+    await _config_demod(DEMOD_REF_NCO1, DEMOD_IN_NCO2)
+    await ClockCycles(dut.clk, 32)     # pipeline settle
+
+    samples_b = []
+    for _ in range(DEMOD_SAMPLES):
+        await RisingEdge(dut.clk)
+        samples_b.append(_as_signed16(int(dut.dma_data_o.value) & 0xFFFF))
+
+    mean_b  = sum(samples_b) / len(samples_b)
+    var_b   = sum((x - mean_b) ** 2 for x in samples_b) / len(samples_b)
+    std_b   = var_b ** 0.5
+
+    _check("demod quadrature: abs(mean(demod_out)) < threshold",
+           abs(mean_b) < DEMOD_QUAD_MEAN_THRESH,
+           f"mean={mean_b:.1f}  threshold=±{DEMOD_QUAD_MEAN_THRESH}")
+    _check("demod quadrature: std(demod_out) > threshold (live output)",
+           std_b > DEMOD_QUAD_STD_THRESH,
+           f"std={std_b:.1f}  threshold={DEMOD_QUAD_STD_THRESH}")
+
+    # Restore NCO to disabled state
+    await _nco(NCO_SELECT_EN, 0)
 
     # ── Summary ────────────────────────────────────────────────────────────────
     _summary()
