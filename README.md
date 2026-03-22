@@ -216,8 +216,6 @@ Key arguments:
 
 Artifacts written to `sim/artifacts/bode/bode_N/`: `bode_results.json`, `bode_plot.png`.
 
-[`figures/bode_margins.pdf`](figures/bode_margins.pdf) is a synthetic reference diagram annotating gain crossover frequency, phase crossover frequency, phase margin, and gain margin on a classic two-panel Bode plot.
-
 #### FIR Frequency-Response Verification (`run_fir_freq.py`)
 
 Designs a windowed-sinc lowpass filter, writes coefficients to a CSV, loads them into the RTL via cocotb, sweeps a sine through it, and overlays the measured RTL response against the ideal `sinc × window` response.
@@ -317,8 +315,6 @@ Sets the IQ demodulation rotation angle. Use this to align the PDH error signal 
 | Angle (°) | [−180, 180] (entry or slider) |
 
 Feedback shows the applied cos θ, sin θ, and the resulting I/Q feed values.
-
-[`figures/line_delay_phasor.pdf`](figures/line_delay_phasor.pdf) illustrates why the rotation is needed: electrical path length between DAC and ADC introduces a frequency-dependent phase delay τ, rotating the IQ phasor by −2πfτ. Multiplying by e^{−j2πfτ} (the rotation matrix) restores the intended quadrature relationship without changing the signal amplitude.
 
 #### IQ Demod
 
@@ -868,8 +864,6 @@ where `ωc = 2π × f_corner / fs` is the normalized cutoff and `nc = (NTAPS −
 
 `f_corner` is the half-amplitude (−6 dB) point of the ideal sinc kernel, not the −3 dB point. The actual −3 dB frequency shifts with window choice.
 
-[`figures/fir_windows.pdf`](figures/fir_windows.pdf) shows the four window shapes, the resulting windowed-sinc coefficient sets, and their frequency responses side by side.  [`figures/fir_ideal_vs_q15.pdf`](figures/fir_ideal_vs_q15.pdf) compares the float-coefficient DTFT response against the Q15-quantized response actually loaded into the FPGA, with a difference panel showing where 16-bit rounding limits stopband depth.
-
 ### Frequency-Response Simulation
 
 `core/hw/sim/run_fir_freq.py` designs a filter, writes the coefficients to a CSV, runs the cocotb/Verilator RTL simulation, and overlays the ideal frequency response against the measured RTL response:
@@ -884,7 +878,9 @@ python run_fir_freq.py --no-sim                     # replot most recent result
 
 Artifacts (coefficient CSV, results JSON, response PNG) are written to `sim/artifacts/fir_freq/fir_freq_N/` with an auto-incrementing index so successive runs never overwrite each other.
 
-[`figures/fir_ideal_vs_rtl.pdf`](figures/fir_ideal_vs_rtl.pdf) shows a representative result: the ideal DTFT response overlaid with the RTL-measured response from a 32-tap Hann-windowed filter at 5 MHz corner, confirming that quantization and pipeline rounding introduce negligible deviation across the passband.
+![FIR ideal vs RTL](figures/fir_ideal_vs_rtl.png)
+
+*Ideal DTFT response overlaid with the RTL-measured response (32-tap Hann, 5 MHz corner), confirming negligible deviation from quantization and pipeline rounding across the passband.*
 
 ---
 
@@ -1290,8 +1286,6 @@ r = api.api_control_metrics(decimation=10, pid_params=pid_params)
 ```
 
 `pid_params` is not sent to hardware — it is embedded in the result for plot labelling only. The FPGA must already be running with the desired PID configuration before calling this function.
-
-[`figures/settling_overshoot.pdf`](figures/settling_overshoot.pdf) diagrams the settling-time and overshoot definitions used by this function.  [`figures/ccf_diagram.pdf`](figures/ccf_diagram.pdf) shows a closed-loop simulation of the CCF: CCF[k≈0] ≈ 0 (the integral output is uncorrelated with the current instantaneous error) and CCF[k=loop\_delay] ≈ −1 (the accumulated correction is anticorrelated with future error, confirming negative feedback).
 
 The GUI exposes this via the **Compute Control Metrics** button in the PID tab.
 
