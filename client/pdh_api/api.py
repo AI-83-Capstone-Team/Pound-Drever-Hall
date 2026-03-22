@@ -573,12 +573,14 @@ def api_control_metrics(decimation: int, pid_params: dict) -> ControlMetricsResu
     er_z  = err     - err.mean()
     denom = float(np.std(po_z) * np.std(er_z))
     if denom > 0:
-        ccf_raw = np.correlate(po_z, er_z, mode='full') / (denom * N)
+        # np.correlate(er_z, po_z)[N-1+k] = Σ po_z[n]·er_z[n+k]  (positive k = future err)
+        # Peak at k = loop_delay is negative: high pid_out → low future err (negative feedback)
+        ccf_raw = np.correlate(er_z, po_z, mode='full') / (denom * N)
     else:
         ccf_raw = np.zeros(2 * N - 1)
     lag_samples  = np.arange(-(N - 1), N)
     ccf_lags     = lag_samples / fs                         # seconds
-    ccf_peak_idx = int(np.argmax(np.abs(ccf_raw)))
+    ccf_peak_idx = int(np.argmin(ccf_raw))                  # dominant causal peak is negative
     ccf_peak     = float(ccf_raw[ccf_peak_idx])
     ccf_peak_lag = float(ccf_lags[ccf_peak_idx])
 
