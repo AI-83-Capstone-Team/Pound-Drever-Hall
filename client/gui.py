@@ -332,7 +332,8 @@ class _App(tk.Tk):
                 result = fn()
                 self.after(0, lambda: on_success(result))
             except Exception as exc:
-                self.after(0, lambda: on_error(exc))
+                _exc = exc
+                self.after(0, lambda e=_exc: on_error(e))
         threading.Thread(target=worker, daemon=True).start()
 
 

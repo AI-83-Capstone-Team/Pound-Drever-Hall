@@ -2,6 +2,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <semaphore.h>
+
+/* Binary semaphore: 1 = DMA idle, 0 = DMA in progress.
+ * Defined in server.c; used by control.c to guard commands that must
+ * not run while a DMA transfer is outstanding. */
+extern sem_t g_dma_done_sem;
 
 #define NAME_SIZE 24
 #define RETURN_STATUS_FLAG "return_status"

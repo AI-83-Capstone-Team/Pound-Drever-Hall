@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
+#include <semaphore.h>
 #include "server.h"
 #include "hw_common.h"
 #include "control.h"
@@ -939,6 +940,10 @@ int cmd_test_frame(cmd_ctx_t* ctx)
 
 int cmd_sweep_ramp(cmd_ctx_t* ctx)
 {
+    /* Block until any in-flight DMA transfer is complete */
+    sem_wait(&g_dma_done_sem);
+    sem_post(&g_dma_done_sem);
+
     float    v0          = ctx->float_args[0];
     float    v1          = ctx->float_args[1];
     uint32_t num_points  = ctx->uint_args[0];
@@ -1263,6 +1268,9 @@ int cmd_get_frame_send(cmd_ctx_t* ctx)
     if (decimation_code < 1) decimation_code = 1;
     uint32_t frame_code_val = ctx->uint_args[1];
 
+    /* Claim the DMA slot — blocks if a previous transfer is still in flight */
+    sem_wait(&g_dma_done_sem);
+
     /* Reset DMA state machine (CMD_IDLE generates no interrupt) */
     pdh_cmd_t idle_cmd;
     idle_cmd.raw      = 0;
@@ -1303,6 +1311,9 @@ int cmd_get_frame_send(cmd_ctx_t* ctx)
 int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
 {
     (void)cb;   /* DMA data is in DDR, not the callback register */
+
+    /* Release the DMA slot — any command waiting in sem_wait may now proceed */
+    sem_post(&g_dma_done_sem);
     uint32_t frame_code_val = ctx->uint_args[1];
 
     FILE* f = fopen("dma_log.csv", "w");
