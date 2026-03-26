@@ -5,7 +5,7 @@ Every subsystem reachable from the Python API is reachable here.
 API calls run in background daemon threads; results are posted back
 to the main thread via root.after(0, callback).
 
-Layout: three side-by-side columns of labelled panels, all visible at once.
+Layout: three side-by-side scrollable columns of labelled panels.
   Col 0: System, IO Routing, Sweep Ramp
   Col 1: NCO, Rotation, FIR
   Col 2: PID, Frame Capture, PSD
@@ -176,6 +176,8 @@ class _App(tk.Tk):
         super().__init__()
         self.title("Pitaya Whisperer")
         self.resizable(True, True)
+        self._panels: list[_Panel] = []
+        self._scroll_canvas: tk.Canvas | None = None
         self._build_settings_bar()
         self._build_panels()
         self._build_status_bar()
@@ -195,6 +197,15 @@ class _App(tk.Tk):
         self._port_var = tk.StringVar(value=str(DEFAULT_PORT))
         ttk.Entry(bar, textvariable=self._port_var, width=7).pack(side=tk.LEFT, padx=(2, 0))
 
+        ttk.Button(bar, text="Reset Connection",
+                   command=self._on_reset_connection).pack(side=tk.LEFT, padx=(16, 0))
+
+    def _on_reset_connection(self) -> None:
+        """Unlock all buttons that may have been frozen by a hung request."""
+        for panel in self._panels:
+            panel.unlock_all()
+        self.set_status("Connection reset — all buttons unlocked", ok=True)
+
     def _connection_params(self) -> tuple[str, int]:
         try:
             port = int(self._port_var.get())
@@ -204,6 +215,50 @@ class _App(tk.Tk):
 
     # ── Panels ────────────────────────────────────────────────────────────────
 
+    def _make_scrollable_column(self, parent: ttk.Frame, col: int,
+                                padx: tuple) -> ttk.Frame:
+        """Return an inner ttk.Frame embedded in a scrollable Canvas+Scrollbar."""
+        outer = ttk.Frame(parent)
+        outer.grid(row=0, column=col, sticky=tk.NSEW, padx=padx)
+        outer.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        scroll = ttk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+
+        canvas.grid(row=0, column=0, sticky=tk.NSEW)
+        scroll.grid(row=0, column=1, sticky=tk.NS)
+
+        inner = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_inner_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(window_id, width=event.width)
+
+        inner.bind("<Configure>", _on_inner_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # When the pointer enters this column's canvas (or the inner frame),
+        # make this the active scroll target.  Root-level bindings always route
+        # to whichever canvas was most recently entered, so moving across
+        # columns naturally switches the scroll target.
+        def _set_active(event=None):
+            self._scroll_canvas = canvas
+
+        canvas.bind("<Enter>", _set_active)
+        inner.bind("<Enter>", _set_active)
+
+        return inner
+
+    def _reg(self, panel: _Panel) -> _Panel:
+        """Register a panel in the app's panel list and return it."""
+        self._panels.append(panel)
+        return panel
+
     def _build_panels(self) -> None:
         content = ttk.Frame(self, padding=4)
         content.pack(fill=tk.BOTH, expand=True)
@@ -212,32 +267,39 @@ class _App(tk.Tk):
         content.columnconfigure(2, weight=1)
         content.rowconfigure(0, weight=1)
 
-        # Three column frames so panels within each column stack cleanly.
-        col0 = ttk.Frame(content)
-        col1 = ttk.Frame(content)
-        col2 = ttk.Frame(content)
-        col0.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 4))
-        col1.grid(row=0, column=1, sticky=tk.NSEW, padx=4)
-        col2.grid(row=0, column=2, sticky=tk.NSEW, padx=(4, 0))
+        col0 = self._make_scrollable_column(content, 0, padx=(0, 4))
+        col1 = self._make_scrollable_column(content, 1, padx=4)
+        col2 = self._make_scrollable_column(content, 2, padx=(4, 0))
+
+        # Root-level scroll handlers route to whichever column was last entered.
+        self.bind("<MouseWheel>",
+                  lambda e: self._scroll_canvas and
+                  self._scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self.bind("<Button-4>",
+                  lambda e: self._scroll_canvas and
+                  self._scroll_canvas.yview_scroll(-1, "units"))
+        self.bind("<Button-5>",
+                  lambda e: self._scroll_canvas and
+                  self._scroll_canvas.yview_scroll(1, "units"))
 
         # Col 0: System, IO Routing, Sweep Ramp
-        _SystemPanel(col0, self).pack(fill=tk.X, pady=(0, 4))
-        self._io_panel = _IORoutingPanel(col0, self)
+        self._reg(_SystemPanel(col0, self)).pack(fill=tk.X, pady=(0, 4))
+        self._io_panel = self._reg(_IORoutingPanel(col0, self))
         self._io_panel.pack(fill=tk.X, pady=(0, 4))
-        _SweepRampPanel(col0, self).pack(fill=tk.X)
+        self._reg(_SweepRampPanel(col0, self)).pack(fill=tk.X)
 
         # Col 1: NCO, Rotation, Demod, FIR, Autolock
-        _NCOPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
-        _RotationPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
-        _DemodPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
-        _FIRPanel(col1, self).pack(fill=tk.X, pady=(0, 4))
-        _AutolockPanel(col1, self).pack(fill=tk.X)
+        self._reg(_NCOPanel(col1, self)).pack(fill=tk.X, pady=(0, 4))
+        self._reg(_RotationPanel(col1, self)).pack(fill=tk.X, pady=(0, 4))
+        self._reg(_DemodPanel(col1, self)).pack(fill=tk.X, pady=(0, 4))
+        self._reg(_FIRPanel(col1, self)).pack(fill=tk.X, pady=(0, 4))
+        self._reg(_AutolockPanel(col1, self)).pack(fill=tk.X)
 
         # Col 2: PID, Frame Capture, PSD
-        self._pid_panel = _PIDPanel(col2, self)
+        self._pid_panel = self._reg(_PIDPanel(col2, self))
         self._pid_panel.pack(fill=tk.X, pady=(0, 4))
-        _FrameCapturePanel(col2, self).pack(fill=tk.X, pady=(0, 4))
-        _PSDPanel(col2, self).pack(fill=tk.X)
+        self._reg(_FrameCapturePanel(col2, self)).pack(fill=tk.X, pady=(0, 4))
+        self._reg(_PSDPanel(col2, self)).pack(fill=tk.X)
 
     # ── Status bar ────────────────────────────────────────────────────────────
 
@@ -282,6 +344,7 @@ class _Panel(ttk.LabelFrame):
     def __init__(self, parent, app: _App, title: str) -> None:
         super().__init__(parent, text=title, padding=8)
         self.app = app
+        self._busy_btns: dict[ttk.Button, str] = {}  # btn → original label
 
     def _conn(self) -> tuple[str, int]:
         return self.app._connection_params()
@@ -290,10 +353,19 @@ class _Panel(ttk.LabelFrame):
         _update_connection(ip, port)
 
     def _busy(self, btn: ttk.Button, label: str = "Working…") -> None:
+        if btn not in self._busy_btns:
+            self._busy_btns[btn] = btn.cget("text")  # save original label
         btn.configure(state=tk.DISABLED, text=label)
 
     def _unbusy(self, btn: ttk.Button, label: str) -> None:
+        self._busy_btns.pop(btn, None)
         btn.configure(state=tk.NORMAL, text=label)
+
+    def unlock_all(self) -> None:
+        """Re-enable all currently disabled buttons (e.g. after a hung request)."""
+        for btn, label in list(self._busy_btns.items()):
+            btn.configure(state=tk.NORMAL, text=label)
+        self._busy_btns.clear()
 
     def ok(self, msg: str) -> None:
         self.app.set_status(msg, ok=True)
