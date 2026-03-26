@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import threading
 import tkinter as tk
 import tkinter.filedialog as _fd
@@ -182,6 +183,7 @@ class _App(tk.Tk):
         self._build_panels()
         self._build_status_bar()
         self._status_timer: str | None = None
+        self.protocol("WM_DELETE_WINDOW", lambda: os._exit(0))
 
     # ── Settings bar ──────────────────────────────────────────────────────────
 
