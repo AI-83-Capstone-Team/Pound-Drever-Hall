@@ -65,10 +65,10 @@ static dispatch_entry_t gCmds[NUM_CMDS] = {
 
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Pending queue — single entry (TCP protocol serialises commands)
+ * Pending queue — single entry (command_thread serialises access)
  *
- * Thread 1 writes after calling send_func.
- * Thread 2 reads after the UIO interrupt fires.
+ * command_thread writes after calling send_func, then blocks on g_complete_cond.
+ * callback_thread reads after the UIO interrupt fires, then signals g_complete_cond.
  * ══════════════════════════════════════════════════════════════════════════ */
 
 typedef struct
@@ -82,6 +82,31 @@ static pending_t           g_pending;
 static bool                g_pending_valid = false;
 static pthread_mutex_t     g_pending_mtx   = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t      g_pending_cond  = PTHREAD_COND_INITIALIZER;
+
+/* Completion signal — command_thread blocks here after dispatching a split
+ * command; callback_thread signals after send_response() + close(). */
+static bool                g_complete      = false;
+static pthread_cond_t      g_complete_cond = PTHREAD_COND_INITIALIZER;
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Work queue — accept_thread pushes, command_thread pops, one at a time.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct
+{
+    int     client_fd;
+    char    buf[MAX_BYTES];
+    ssize_t nread;
+} work_item_t;
+
+#define WORK_QUEUE_CAP 16
+static work_item_t     g_work_queue[WORK_QUEUE_CAP];
+static int             g_wq_head     = 0;
+static int             g_wq_tail     = 0;
+static int             g_wq_count    = 0;
+static pthread_mutex_t g_wq_mtx      = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  g_wq_notempty = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t  g_wq_notfull  = PTHREAD_COND_INITIALIZER;
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -283,6 +308,12 @@ static void* callback_thread(void* arg)
 
             send_response(pend.client_fd, status, pend.ctx);
             close(pend.client_fd);
+
+            /* Unblock command_thread so it can dequeue the next command */
+            pthread_mutex_lock(&g_pending_mtx);
+            g_complete = true;
+            pthread_cond_signal(&g_complete_cond);
+            pthread_mutex_unlock(&g_pending_mtx);
         }
         else
         {
@@ -297,7 +328,150 @@ static void* callback_thread(void* arg)
 
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Thread 1 — command thread  (main)
+ * accept_thread — accepts connections, reads the raw buffer, pushes to queue.
+ * Decoupled from command processing so the listen socket stays responsive.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void* accept_thread(void* arg)
+{
+    int listen_fd = *(int*)arg;
+
+    while (1)
+    {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+
+        int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd < 0)
+        {
+            if (errno == EINTR) continue;
+            perror("ERROR: accept_thread: accept\n");
+            break;
+        }
+
+        char    ip_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
+        DEBUG_INFO("Client connected from %s:%d\n", ip_str, ntohs(client_addr.sin_port));
+
+        work_item_t item;
+        item.client_fd = client_fd;
+        item.nread     = read(client_fd, item.buf, MAX_BYTES);
+        if (item.nread <= 0)
+        {
+            if (item.nread < 0) perror("ERROR: accept_thread: read\n");
+            close(client_fd);
+            continue;
+        }
+
+        pthread_mutex_lock(&g_wq_mtx);
+        while (g_wq_count == WORK_QUEUE_CAP)
+            pthread_cond_wait(&g_wq_notfull, &g_wq_mtx);
+        g_work_queue[g_wq_tail] = item;
+        g_wq_tail = (g_wq_tail + 1) % WORK_QUEUE_CAP;
+        g_wq_count++;
+        pthread_cond_signal(&g_wq_notempty);
+        pthread_mutex_unlock(&g_wq_mtx);
+    }
+
+    return NULL;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * command_thread — dequeues one item at a time, dispatches, waits for
+ * completion of split commands before dequeuing the next.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void* command_thread(void* arg)
+{
+    (void)arg;
+
+    while (1)
+    {
+        /* Dequeue one work item */
+        pthread_mutex_lock(&g_wq_mtx);
+        while (g_wq_count == 0)
+            pthread_cond_wait(&g_wq_notempty, &g_wq_mtx);
+        work_item_t item = g_work_queue[g_wq_head];
+        g_wq_head = (g_wq_head + 1) % WORK_QUEUE_CAP;
+        g_wq_count--;
+        pthread_cond_signal(&g_wq_notfull);
+        pthread_mutex_unlock(&g_wq_mtx);
+
+        /* Parse */
+        item.buf[item.nread - 1] = '\0';
+        cmd_ctx_t ctx;
+        memset(&ctx, 0, sizeof(ctx));
+        if (load_context(item.buf, &ctx) != LOAD_CTX_OK)
+        {
+            close(item.client_fd);
+            continue;
+        }
+
+        /* Look up command */
+        dispatch_entry_t* entry = NULL;
+        for (int i = 0; i < NUM_CMDS; i++)
+        {
+            if (strncmp(ctx.name, gCmds[i].name, COMMAND_SIZE) == 0)
+            {
+                entry = &gCmds[i];
+                break;
+            }
+        }
+        if (!entry)
+        {
+            DEBUG_INFO("Unknown command: %s\n", ctx.name);
+            close(item.client_fd);
+            continue;
+        }
+
+        /* Argument count validation */
+        if (ctx.num_floats < entry->required_floats ||
+            ctx.num_ints   < entry->required_ints   ||
+            ctx.num_uints  < entry->required_uints)
+        {
+            DEBUG_INFO("Arg mismatch for %s\n", entry->name);
+            close(item.client_fd);
+            continue;
+        }
+
+        if (entry->mono_func)
+        {
+            /* Mono: runs to completion here */
+            DEBUG_INFO("Dispatching mono: %s\n", entry->name);
+            int status = entry->mono_func(&ctx);
+            send_response(item.client_fd, status, ctx);
+            close(item.client_fd);
+        }
+        else
+        {
+            /* Split: fire strobe, push pending, then block until callback_thread
+             * signals completion — ensures only one command is in-flight at a time. */
+            DEBUG_INFO("Dispatching send: %s\n", entry->name);
+            int send_status = entry->send_func(&ctx);
+
+            pthread_mutex_lock(&g_pending_mtx);
+            g_pending.ctx       = ctx;
+            g_pending.client_fd = item.client_fd;
+            g_pending.cb_func   = entry->cb_func;
+            g_pending_valid     = true;
+            g_complete          = false;
+            pthread_cond_signal(&g_pending_cond);
+
+            while (!g_complete)
+                pthread_cond_wait(&g_complete_cond, &g_pending_mtx);
+            pthread_mutex_unlock(&g_pending_mtx);
+
+            (void)send_status;
+        }
+    }
+
+    return NULL;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * main
  * ══════════════════════════════════════════════════════════════════════════ */
 
 int main(void)
@@ -348,109 +522,34 @@ int main(void)
         return 1;
     }
 
-    /* Start callback thread */
-    pthread_t cb_tid;
+    /* Start callback thread, accept thread, and command thread */
+    pthread_t cb_tid, accept_tid, cmd_tid;
     if (pthread_create(&cb_tid, NULL, callback_thread, NULL) != 0)
     {
-        perror("ERROR: pthread_create\n");
+        perror("ERROR: pthread_create cb\n");
         close(listen_fd);
         return 1;
     }
     pthread_detach(cb_tid);
 
+    if (pthread_create(&cmd_tid, NULL, command_thread, NULL) != 0)
+    {
+        perror("ERROR: pthread_create cmd\n");
+        close(listen_fd);
+        return 1;
+    }
+    pthread_detach(cmd_tid);
+
     DEBUG_INFO("Server ready.\n");
 
-    while (1)
+    /* accept_thread owns the accept loop; main blocks until it exits */
+    if (pthread_create(&accept_tid, NULL, accept_thread, &listen_fd) != 0)
     {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-
-        int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd < 0)
-        {
-            if (errno == EINTR) continue;
-            perror("ERROR: can't accept client connection\n");
-            break;
-        }
-
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
-        DEBUG_INFO("Client connected from %s:%d\n", ip_str, ntohs(client_addr.sin_port));
-
-        char    inbuff[MAX_BYTES];
-        ssize_t nread = read(client_fd, inbuff, MAX_BYTES);
-        if (nread <= 0)
-        {
-            if (nread < 1) perror("ERROR: can't read\n");
-            close(client_fd);
-            continue;
-        }
-        inbuff[nread - 1] = '\0';
-
-        cmd_ctx_t ctx;
-        memset(&ctx, 0, sizeof(ctx));
-
-        if (load_context(inbuff, &ctx) != LOAD_CTX_OK)
-        {
-            close(client_fd);
-            continue;
-        }
-
-        /* Look up command */
-        dispatch_entry_t* entry = NULL;
-        for (int i = 0; i < NUM_CMDS; i++)
-        {
-            if (strncmp(ctx.name, gCmds[i].name, COMMAND_SIZE) == 0)
-            {
-                entry = &gCmds[i];
-                break;
-            }
-        }
-
-        if (!entry)
-        {
-            DEBUG_INFO("Unknown command: %s\n", ctx.name);
-            close(client_fd);
-            continue;
-        }
-
-        /* Argument count validation */
-        if (ctx.num_floats < entry->required_floats ||
-            ctx.num_ints   < entry->required_ints   ||
-            ctx.num_uints  < entry->required_uints)
-        {
-            DEBUG_INFO("Arg mismatch for %s\n", ctx.name);
-            close(client_fd);
-            continue;
-        }
-
-        if (entry->mono_func)
-        {
-            /* ── Mono command: run to completion in Thread 1, send response here ── */
-            DEBUG_INFO("Dispatching mono: %s\n", entry->name);
-            int status = entry->mono_func(&ctx);
-            send_response(client_fd, status, ctx);
-            close(client_fd);
-        }
-        else
-        {
-            /* ── Single-GP0 command: send phase here, callback phase in Thread 2 ── */
-            DEBUG_INFO("Dispatching send: %s\n", entry->name);
-            int send_status = entry->send_func(&ctx);
-
-            /* Push to pending queue. Thread 2 will pop this after the interrupt.
-             * send_func ALWAYS calls pdh_strobe_cmd (range errors are surfaced in cb),
-             * so the interrupt is guaranteed to fire. */
-            pthread_mutex_lock(&g_pending_mtx);
-            g_pending.ctx       = ctx;
-            g_pending.client_fd = client_fd;
-            g_pending.cb_func   = entry->cb_func;
-            g_pending_valid     = true;
-            pthread_cond_signal(&g_pending_cond);
-            pthread_mutex_unlock(&g_pending_mtx);
-            (void)send_status;
-        }
+        perror("ERROR: pthread_create accept\n");
+        close(listen_fd);
+        return 1;
     }
+    pthread_join(accept_tid, NULL);
 
     uio_Release();
     dma_Release();

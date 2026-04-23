@@ -37,4 +37,4 @@ core/hw/sim/artifacts/
 # Legacy loose outputs (now go into artifacts/)
 fir_freq_response.png
 fir_freq_results.json
-
+.DS_Store

@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import os
 import socket
+import threading
 from functools import wraps
 
 import numpy as np
@@ -94,13 +95,16 @@ def _parse_response(text: str) -> dict:
 
 CMD_TIMEOUT_S = 5.0   # seconds to wait for a server response before failing
 
+_api_lock = threading.Lock()  # serializes all commands across GUI threads
+
 def execute_cmd(cmd: str) -> dict:
     """Send a single command string to the server; return the parsed response."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(CMD_TIMEOUT_S)
-        s.connect((SERVER_IP, SERVER_PORT))
-        s.sendall(cmd.encode("ascii"))
-        raw = s.recv(4096)
+    with _api_lock:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(CMD_TIMEOUT_S)
+            s.connect((SERVER_IP, SERVER_PORT))
+            s.sendall(cmd.encode("ascii"))
+            raw = s.recv(4096)
     return _parse_response(raw.decode("ascii", errors="replace"))
 
 
