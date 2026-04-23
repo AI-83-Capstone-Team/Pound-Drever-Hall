@@ -163,10 +163,6 @@ ssh root@10.42.0.62 'cd /root/sw/build && ./server &'
 pyton gui.py
 ```
 
-#### 6. Configure for your physical setup
+## Hardware Specifics
 
-When the GUI is running you will see a bunch of stuff and it will look like this:
-
-[GUI Screenshot](figures/gui_ss.png)
-
-You can now click on buttons to make the RTL do things; depending on what you want the RTL to do, the buttons you press and the values you set will change accordingly. 
+The system is currently meant to be run on a [STEMLab 125-14](https://redpitaya.com/stemlab-125-14/?srsltid=AfmBOopgVo9Tuy0RZu55bZxuKTTzMArpQeF5WWGbn-Z-MORJmZ4-cLcS) (both generations should work but it has been tested on Gen1).
