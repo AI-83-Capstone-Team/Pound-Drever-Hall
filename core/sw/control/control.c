@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
-#include <semaphore.h>
+#include <sys/select.h>
 #include "server.h"
 #include "hw_common.h"
 #include "control.h"
@@ -26,7 +26,7 @@ static inline pdh_callback_t pdh_execute_cmd(pdh_cmd_t cmd)
     return cb;
 }
 
-/* Send strobe without reading callback — used by interrupt-driven _send handlers */
+/* Send strobe without reading callback */
 void pdh_strobe_cmd(pdh_cmd_t cmd)
 {
     cmd.strobe.val = 0;
@@ -742,46 +742,64 @@ int cmd_set_nco(cmd_ctx_t* ctx)
 
 #define DMA_BURST_CONST 330 //ceil10(16384 * 2.5) / 125)
 #define BRAM_DEC_CONST 140 //ceil10(16384 / 125)
-int cmd_get_frame(cmd_ctx_t* ctx) //This whole thing is sort of a hacky timing exploit right now and should probably be changed later
+int cmd_get_frame(cmd_ctx_t* ctx)
 {
     uint32_t decimation_code = ctx->uint_args[0];
-    if(decimation_code < 1) decimation_code = 1; //TODO: Proper handling of invalid frame and decimation codes
-    
+    if(decimation_code < 1) decimation_code = 1;
+
     uint32_t frame_code = ctx->uint_args[1];
 
+    /* Enable interrupt before strobing so we can't miss it */
+    uio_ack_irq();
+
+    /* Reset DMA state machine — CMD_IDLE generates no interrupt */
+    pdh_cmd_t idle_cmd;
+    idle_cmd.raw     = 0;
+    idle_cmd.cmd.val = CMD_IDLE;
+    pdh_strobe_cmd(idle_cmd);
+
+    /* Start DMA capture — interrupt fires on dma_ready_edge_w */
     pdh_cmd_t cmd;
     cmd.raw = 0;
-    cmd.cmd.val = CMD_IDLE;
-    pdh_execute_cmd(cmd);
-
-    cmd.raw = 0;
-    cmd.get_frame_cmd.cmd = CMD_GET_FRAME;
+    cmd.get_frame_cmd.cmd        = CMD_GET_FRAME;
     cmd.get_frame_cmd.decimation = decimation_code;
     cmd.get_frame_cmd.frame_code = frame_code;
-    pdh_callback_t cb = pdh_execute_cmd(cmd);
+    pdh_strobe_cmd(cmd);
+
+    /* Wait for DMA-complete interrupt; fall through on timeout */
+    int ufd = uio_fd_get();
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(ufd, &rfds);
+    long timeout_us = DMA_BURST_CONST + (long)(BRAM_DEC_CONST * decimation_code);
+    struct timeval tv = { .tv_sec = 0, .tv_usec = timeout_us };
+    int sel = select(ufd + 1, &rfds, NULL, NULL, &tv);
+
+    /* Read callback AFTER interrupt (or timeout) */
+    pdh_callback_t cb = {0};
+    pdh_get_callback(&cb);
+
+    if (sel > 0)
+    {
+        uio_wait_irq();  /* drain the count */
+        uio_ack_irq();   /* re-enable for next call */
+    }
 
     uint32_t echo_engaged = cb.get_frame_cb.dma_engaged;
-    //uint32_t dummy_engaged = 1;
+    uint32_t echo_dec     = cb.get_frame_cb.decimation;
+    uint32_t echo_frame   = cb.get_frame_cb.frame_code;
+    uint32_t echo_cmd     = cb.get_frame_cb.cmd;
+    uint32_t cmdval       = cmd.cmd.val;
 
-    uint32_t echo_dec = cb.get_frame_cb.decimation;
-    uint32_t echo_frame = cb.get_frame_cb.frame_code;
-    uint32_t echo_cmd = cb.get_frame_cb.cmd;
-
-    uint32_t cmdval = cmd.cmd.val;
-
-    //int return_code = validate_cb(&echo_engaged, &dummy_engaged, UINT_TAG, __func__, "DMA_ENGAGED_CB", GET_FRAME_OK, GET_FRAME_NOT_ENGAGED); 
     int return_code = validate_cb(&echo_dec, &decimation_code, UINT_TAG, __func__, "DECIMATION_CODE_CB", GET_FRAME_OK, GET_FRAME_INVALID_DEC);
     return_code = validate_cb(&echo_frame, &frame_code, UINT_TAG, __func__, "FRAME_CODE_CB", return_code, GET_FRAME_INVALID_CODE);
     return_code = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, return_code, PDH_INVALID_CMD);
 
     size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB"); 
-    push_ctx_cb(ctx, &index, &echo_dec, UINT_TAG, "DECIMATION_CODE_CB"); 
-    push_ctx_cb(ctx, &index, &echo_frame, UINT_TAG, "FRAME_CODE_CB");
-    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG, CMD);
-    
-
-    usleep(DMA_BURST_CONST + (BRAM_DEC_CONST * decimation_code)); //TODO: Handle waiting for DMA finish better
+    push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB");
+    push_ctx_cb(ctx, &index, &echo_dec,     UINT_TAG, "DECIMATION_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_frame,   UINT_TAG, "FRAME_CODE_CB");
+    push_ctx_cb(ctx, &index, &echo_cmd,     UINT_TAG, CMD);
 
 
     //TODO: Look into implementing this via arena stream
@@ -872,7 +890,7 @@ int cmd_config_io(cmd_ctx_t* ctx)
 
     if(dac1_code > 3) return_code = CONFIG_IO_INVALID_DAC1;
     if(dac2_code > 3) return_code = CONFIG_IO_INVALID_DAC2;
-    if(pid_code > 4) return_code = CONFIG_IO_INVALID_PID;
+    if(pid_code > 6) return_code = CONFIG_IO_INVALID_PID;
 
     if(return_code == CONFIG_IO_OK)
     {
@@ -940,10 +958,6 @@ int cmd_test_frame(cmd_ctx_t* ctx)
 
 int cmd_sweep_ramp(cmd_ctx_t* ctx)
 {
-    /* Block until any in-flight DMA transfer is complete */
-    sem_wait(&g_dma_done_sem);
-    sem_post(&g_dma_done_sem);
-
     float    v0          = ctx->float_args[0];
     float    v1          = ctx->float_args[1];
     uint32_t num_points  = ctx->uint_args[0];
@@ -1045,390 +1059,7 @@ int cmd_sweep_ramp(cmd_ctx_t* ctx)
 }
 
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Interrupt-driven split handlers
- *
- * _send: builds the command word, calls pdh_strobe_cmd, returns initial status.
- *        Thread 1 calls this and pushes (ctx, fd) to the pending queue.
- *
- * _cb  : called by Thread 2 after the UIO interrupt fires.
- *        Receives the callback register value, validates, fills ctx output,
- *        and returns the final func_status for send_response().
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── cmd_set_led ─────────────────────────────────────────────────────────── */
-
-int cmd_set_led_send(cmd_ctx_t* ctx)
-{
-    /* Always strobe so Thread 2's interrupt fires.
-     * The FPGA LED field is 8-bit; led_cmd.led_code naturally truncates.
-     * Range validation is done in _cb via callback echo comparison. */
-    uint32_t led_code = ctx->uint_args[0];
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.led_cmd.cmd      = CMD_SET_LED;
-    cmd.led_cmd.led_code = led_code & 0xFF;
-    pdh_strobe_cmd(cmd);
-    return SET_LED_OK;
-}
-
-int cmd_set_led_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    uint32_t led_code  = ctx->uint_args[0];
-    uint32_t echo_code = cb.led_cb.func_callback;
-    uint32_t echo_cmd  = cb.led_cb.cmd;
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_code, UINT_TAG, "LED_CODE_CB");
-    push_ctx_cb(ctx, &index, &echo_cmd,  UINT_TAG, CMD);
-
-    /* If led_code > 255 the FPGA will have truncated it; echo mismatch catches this. */
-    int rc = validate_cb(&echo_code, &led_code, UINT_TAG, __func__, "LED_CODE", SET_LED_OK, SET_LED_INVALID_LED_CB);
-    uint32_t cmdval = CMD_SET_LED;
-    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, rc, PDH_INVALID_CMD);
-}
-
-
-/* ── cmd_set_dac ─────────────────────────────────────────────────────────── */
-
-int cmd_set_dac_send(cmd_ctx_t* ctx)
-{
-    float val     = ctx->float_args[0];
-    bool  dac_sel = (bool)ctx->uint_args[0];
-
-    val *= -1.0f;
-    if (val >  1.0f) val =  1.0f;
-    if (val < -1.0f) val = -1.0f;
-
-    float y    = (val + 1.0f) * 0.5f;
-    int   code = (int)lrintf(y * 16383.0f);
-    if (code < 0)     code = 0;
-    if (code > 16383) code = 16383;
-
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.dac_cmd.dac_code = code;
-    cmd.dac_cmd.dac_sel  = dac_sel;
-    cmd.dac_cmd.cmd      = CMD_SET_DAC;
-    pdh_strobe_cmd(cmd);
-    return SET_DAC_OK;
-}
-
-int cmd_set_dac_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    float val     = ctx->float_args[0];
-    bool  dac_sel = (bool)ctx->uint_args[0];
-
-    val *= -1.0f;
-    if (val >  1.0f) val =  1.0f;
-    if (val < -1.0f) val = -1.0f;
-    float y    = (val + 1.0f) * 0.5f;
-    int   code = (int)lrintf(y * 16383.0f);
-    if (code < 0)     code = 0;
-    if (code > 16383) code = 16383;
-
-    uint32_t echo_dac1 = cb.dac_cb.dac1_code;
-    uint32_t echo_dac2 = cb.dac_cb.dac2_code;
-    uint32_t echo_cmd  = cb.dac_cb.cmd;
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_dac1, UINT_TAG, "DAC1_CODE_CB");
-    push_ctx_cb(ctx, &index, &echo_dac2, UINT_TAG, "DAC2_CODE_CB");
-
-    int rc = SET_DAC_OK;
-    if (dac_sel == 0)
-        rc = validate_cb(&echo_dac1, &code, UINT_TAG, __func__, "DAC1_CODE_CB", rc, SET_DAC_INVALID_CODE);
-    else
-        rc = validate_cb(&echo_dac2, &code, UINT_TAG, __func__, "DAC2_CODE_CB", rc, SET_DAC_INVALID_CODE);
-
-    uint32_t cmdval = CMD_SET_DAC;
-    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", rc, PDH_INVALID_CMD);
-}
-
-
-/* ── cmd_get_adc ─────────────────────────────────────────────────────────── */
-
-int cmd_get_adc_send(cmd_ctx_t* ctx)
-{
-    (void)ctx;
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.adc_cmd.cmd = CMD_GET_ADC;
-    pdh_strobe_cmd(cmd);
-    return GET_ADC_OK;
-}
-
-int cmd_get_adc_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    uint32_t echo_adc0  = cb.adc_cb.adc_0_code;
-    uint32_t echo_adc1  = cb.adc_cb.adc_1_code;
-    float    adc0_v     = -1.0f * (echo_adc0 * (2.0f / 16383.0f) - 1.0f);
-    float    adc1_v     = -1.0f * (echo_adc1 * (2.0f / 16383.0f) - 1.0f);
-    uint32_t echo_cmd   = cb.adc_cb.cmd;
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_adc0, UINT_TAG,  "IN1");
-    push_ctx_cb(ctx, &index, &echo_adc1, UINT_TAG,  "IN2");
-    push_ctx_cb(ctx, &index, &adc0_v,   FLOAT_TAG,  "IN1_V");
-    push_ctx_cb(ctx, &index, &adc1_v,   FLOAT_TAG,  "IN2_V");
-    push_ctx_cb(ctx, &index, &echo_cmd, UINT_TAG,   CMD);
-
-    uint32_t cmdval = CMD_GET_ADC;
-    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, GET_ADC_OK, PDH_INVALID_CMD);
-}
-
-
-/* ── cmd_check_signed ────────────────────────────────────────────────────── */
-
-int cmd_check_signed_send(cmd_ctx_t* ctx)
-{
-    uint32_t reg_sel = ctx->uint_args[0];
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.cs_cmd.cmd     = CMD_CHECK_SIGNED;
-    cmd.cs_cmd.reg_sel = reg_sel;
-    pdh_strobe_cmd(cmd);
-    return CHECK_SIGNED_OK;
-}
-
-int cmd_check_signed_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    uint32_t reg_sel      = ctx->uint_args[0];
-    uint32_t echo_reg_sel = cb.cs_cb.reg_sel;
-    int16_t  echo_p16     = (int16_t)cb.cs_cb.payload;
-    int32_t  echo_p32     = (int32_t)echo_p16;
-    uint32_t echo_cmd     = cb.cs_cb.cmd;
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_reg_sel, UINT_TAG, "REG_SEL_CB");
-    push_ctx_cb(ctx, &index, &echo_p32,     INT_TAG,  "REG_VALUE_CB");
-    push_ctx_cb(ctx, &index, &echo_cmd,     UINT_TAG, CMD);
-
-    int rc = validate_cb(&echo_reg_sel, &reg_sel, UINT_TAG, __func__, "REG_SEL", CHECK_SIGNED_OK, CHECK_SIGNED_INVALID_REG_SEL_CB);
-    uint32_t cmdval = CMD_CHECK_SIGNED;
-    return validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, "CMD", rc, PDH_INVALID_CMD);
-}
-
-
-/* ── cmd_config_io ───────────────────────────────────────────────────────── */
-
-int cmd_config_io_send(cmd_ctx_t* ctx)
-{
-    /* Always strobe. Values are 3-bit fields; FPGA masks upper bits.
-     * Range validation (> 3 / > 4) is caught in _cb via echo mismatch. */
-    uint32_t dac1 = ctx->uint_args[0];
-    uint32_t dac2 = ctx->uint_args[1];
-    uint32_t pid  = ctx->uint_args[2];
-
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.config_io_cmd.cmd          = CMD_CONFIG_IO;
-    cmd.config_io_cmd.dac1_dat_sel = dac1 & 0x7;
-    cmd.config_io_cmd.dac2_dat_sel = dac2 & 0x7;
-    cmd.config_io_cmd.pid_dat_sel  = pid  & 0x7;
-    pdh_strobe_cmd(cmd);
-    return CONFIG_IO_OK;
-}
-
-int cmd_config_io_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    uint32_t dac1 = ctx->uint_args[0];
-    uint32_t dac2 = ctx->uint_args[1];
-    uint32_t pid  = ctx->uint_args[2];
-
-    /* Pre-strobe range checks (surfaced here so the error code is preserved) */
-    if (dac1 > 3) return CONFIG_IO_INVALID_DAC1;
-    if (dac2 > 3) return CONFIG_IO_INVALID_DAC2;
-    if (pid  > 6) return CONFIG_IO_INVALID_PID;
-
-    uint32_t echo_dac1 = cb.config_io_cb.dac1_dat_sel_r;
-    uint32_t echo_dac2 = cb.config_io_cb.dac2_dat_sel_r;
-    uint32_t echo_pid  = cb.config_io_cb.pid_dat_sel_r;
-    uint32_t echo_cmd  = cb.config_io_cb.cmd;
-    uint32_t cmdval    = CMD_CONFIG_IO;
-
-    int rc = validate_cb(&echo_dac1, &dac1, UINT_TAG, __func__, "DAC1_DAT_SEL_CB", CONFIG_IO_OK, CONFIG_IO_DAC1_CB_FAIL);
-    rc = validate_cb(&echo_dac2, &dac2, UINT_TAG, __func__, "DAC2_DAT_SEL_CB", rc, CONFIG_IO_DAC2_CB_FAIL);
-    rc = validate_cb(&echo_pid,  &pid,  UINT_TAG, __func__, "PID_DAT_SEL_CB",  rc, CONFIG_IO_PID_CB_FAIL);
-    rc = validate_cb(&echo_cmd, &cmdval, UINT_TAG, __func__, CMD, rc, PDH_INVALID_CMD);
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_dac1, UINT_TAG, "DAC1_DAT_SEL_CB");
-    push_ctx_cb(ctx, &index, &echo_dac2, UINT_TAG, "DAC2_DAT_SEL_CB");
-    push_ctx_cb(ctx, &index, &echo_pid,  UINT_TAG, "PID_DAT_SEL_CB");
-    return rc;
-}
-
-
-/* ── cmd_get_frame ───────────────────────────────────────────────────────── */
-
-int cmd_get_frame_send(cmd_ctx_t* ctx)
-{
-    uint32_t decimation_code = ctx->uint_args[0];
-    if (decimation_code < 1) decimation_code = 1;
-    uint32_t frame_code_val = ctx->uint_args[1];
-
-    /* Claim the DMA slot — blocks if a previous transfer is still in flight */
-    sem_wait(&g_dma_done_sem);
-
-    /* Reset DMA state machine (CMD_IDLE generates no interrupt) */
-    pdh_cmd_t idle_cmd;
-    idle_cmd.raw      = 0;
-    idle_cmd.cmd.val  = CMD_IDLE;
-    pdh_strobe_cmd(idle_cmd);
-
-    /* Send CMD_GET_FRAME — interrupt fires later on dma_ready_edge_w */
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.get_frame_cmd.cmd        = CMD_GET_FRAME;
-    cmd.get_frame_cmd.decimation = decimation_code;
-    cmd.get_frame_cmd.frame_code = frame_code_val;
-    pdh_strobe_cmd(cmd);
-
-    /* Read the immediate callback echo (dec, frame_code, cmd) */
-    pdh_callback_t cb = {0};
-    pdh_get_callback(&cb);
-
-    uint32_t echo_engaged = cb.get_frame_cb.dma_engaged;
-    uint32_t echo_dec     = cb.get_frame_cb.decimation;
-    uint32_t echo_frame   = cb.get_frame_cb.frame_code;
-    uint32_t echo_cmd_val = cb.get_frame_cb.cmd;
-    uint32_t cmdval       = CMD_GET_FRAME;
-
-    int rc = validate_cb(&echo_dec,     &decimation_code, UINT_TAG, __func__, "DECIMATION_CODE_CB", GET_FRAME_OK, GET_FRAME_INVALID_DEC);
-    rc     = validate_cb(&echo_frame,   &frame_code_val,  UINT_TAG, __func__, "FRAME_CODE_CB",     rc,            GET_FRAME_INVALID_CODE);
-    rc     = validate_cb(&echo_cmd_val, &cmdval,          UINT_TAG, __func__, CMD,                 rc,            PDH_INVALID_CMD);
-
-    size_t index = 0;
-    push_ctx_cb(ctx, &index, &echo_engaged, UINT_TAG, "DMA_ENGAGED_CB");
-    push_ctx_cb(ctx, &index, &echo_dec,     UINT_TAG, "DECIMATION_CODE_CB");
-    push_ctx_cb(ctx, &index, &echo_frame,   UINT_TAG, "FRAME_CODE_CB");
-    push_ctx_cb(ctx, &index, &echo_cmd_val, UINT_TAG, CMD);
-
-    return rc;
-}
-
-int cmd_get_frame_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
-{
-    (void)cb;   /* DMA data is in DDR, not the callback register */
-
-    /* Release the DMA slot — any command waiting in sem_wait may now proceed */
-    sem_post(&g_dma_done_sem);
-    uint32_t frame_code_val = ctx->uint_args[1];
-
-    FILE* f = fopen("dma_log.csv", "w");
-    int return_code = f ? DMA_OK : DMA_FOPEN_ERR;
-
-    if (return_code == DMA_OK)
-    {
-        for (size_t offset = 0; offset < HP0_RANGE; offset += 8)
-        {
-            dma_frame_t frame;
-            frame.raw = dma_get_frame(offset);
-
-            switch (frame_code_val)
-            {
-                case ADC_DATA_IN:
-                    fprintf(f, "%d, %d, %d, %d\n",
-                            (int16_t)frame.adc_data_in_frame.adc_dat_a_16s,
-                            (int16_t)frame.adc_data_in_frame.adc_dat_b_16s,
-                            (int16_t)frame.adc_data_in_frame.i_feed_w,
-                            (int16_t)frame.adc_data_in_frame.q_feed_w);
-                    break;
-                case PID_ERR_TAPS:
-                    fprintf(f, "%d, %d, %d, %d\n",
-                            (int16_t)frame.pid_err_taps_frame.err_tap_w,
-                            (int16_t)frame.pid_err_taps_frame.perr_tap_w,
-                            (int16_t)frame.pid_err_taps_frame.derr_tap_w,
-                            (int16_t)frame.pid_err_taps_frame.ierr_tap_w);
-                    break;
-                case IO_SUM_ERR:
-                    fprintf(f, "%d, %u, %d\n",
-                            (int16_t)frame.io_sum_err_frame.err_tap_w,
-                            (uint16_t)frame.io_sum_err_frame.pid_out_w,
-                            (int32_t)frame.io_sum_err_frame.sum_err_tap_w);
-                    break;
-                case OSC_INSPECT:
-                    fprintf(f, "%d, %d, %u, %u\n",
-                            (int16_t)frame.osc_inspect_frame.nco_out1_r,
-                            (int16_t)frame.osc_inspect_frame.nco_out2_r,
-                            (uint16_t)frame.osc_inspect_frame.nco_feed1_r,
-                            (uint16_t)frame.osc_inspect_frame.nco_feed2_r);
-                    break;
-                case OSC_ADDR_CHECK:
-                    fprintf(f, "%u, %u, %u, %u\n",
-                            frame.addr_check_frame.phi1_w,
-                            frame.addr_check_frame.phi2_w,
-                            frame.addr_check_frame.addr1_r,
-                            frame.addr_check_frame.addr2_r);
-                    break;
-                case LOOPBACK:
-                    fprintf(f, "%u, %u, %u, %u\n",
-                            frame.loopback_frame.dac1_feed_w,
-                            frame.loopback_frame.dac2_feed_w,
-                            frame.loopback_frame.adc_dat_a_i,
-                            frame.loopback_frame.adc_dat_b_i);
-                    break;
-                case FIR_IO:
-                    fprintf(f, "%d, %d\n",
-                            (int16_t)frame.fir_io_frame.fir_in_w,
-                            (int16_t)frame.fir_io_frame.fir_out_w);
-                    break;
-                case PID_IO:
-                    fprintf(f, "%d, %d, %u\n",
-                            frame.pid_io_frame.pid_in,
-                            frame.pid_io_frame.err,
-                            frame.pid_io_frame.pid_out & 0x3FFF);
-                    break;
-                case CAPTURE_DEMOD:
-                    fprintf(f, "%d, %d, %d, %d\n",
-                            (int16_t)frame.capture_demod_frame.demod_in,
-                            (int16_t)frame.capture_demod_frame.demod_ref,
-                            (int16_t)frame.capture_demod_frame.demod_out,
-                            (int16_t)frame.capture_demod_frame.demod_lpf);
-                    break;
-                default:
-                    fprintf(f, "%d, %d, %d, %d\n",
-                            (int16_t)frame.adc_data_in_frame.adc_dat_a_16s,
-                            (int16_t)frame.adc_data_in_frame.adc_dat_b_16s,
-                            (int16_t)frame.adc_data_in_frame.i_feed_w,
-                            (int16_t)frame.adc_data_in_frame.q_feed_w);
-                    break;
-            }
-        }
-        fclose(f);
-    }
-
-    ctx->output.output_items[4].data.u = return_code;
-    ctx->output.output_items[4].tag    = UINT_TAG;
-    strcpy(ctx->output.output_items[4].name, "return_code");
-    ctx->output.num_outputs = 5;
-
-    return return_code;
-}
-
-
-/* ── cmd_config_demod ────────────────────────────────────────────────────── */
-
-int cmd_config_demod_send(cmd_ctx_t* ctx)
-{
-    /* Always strobe. Values are 1-bit, 3-bit, and 4-bit fields; FPGA masks upper bits.
-     * Range validation is caught in _cb via echo mismatch. */
-    uint32_t ref_sel   = ctx->uint_args[0];
-    uint32_t in_sel    = ctx->uint_args[1];
-    uint32_t lpf_alpha = ctx->uint_args[2];
-
-    pdh_cmd_t cmd;
-    cmd.raw = 0;
-    cmd.config_demod_cmd.cmd       = CMD_CONFIG_DEMOD;
-    cmd.config_demod_cmd.ref_sel   = ref_sel   & 0x1;
-    cmd.config_demod_cmd.in_sel    = in_sel    & 0x7;
-    cmd.config_demod_cmd.lpf_alpha = lpf_alpha & 0xF;
-    pdh_strobe_cmd(cmd);
-    return CONFIG_DEMOD_OK;
-}
-
-int cmd_config_demod_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
+int cmd_config_demod(cmd_ctx_t* ctx)
 {
     uint32_t ref_sel   = ctx->uint_args[0];
     uint32_t in_sel    = ctx->uint_args[1];
@@ -1437,16 +1068,24 @@ int cmd_config_demod_cb(cmd_ctx_t* ctx, pdh_callback_t cb)
     if (ref_sel > 1) return CONFIG_DEMOD_INVALID_REF;
     if (in_sel  > 6) return CONFIG_DEMOD_INVALID_IN;
 
+    pdh_cmd_t cmd;
+    cmd.raw = 0;
+    cmd.config_demod_cmd.cmd       = CMD_CONFIG_DEMOD;
+    cmd.config_demod_cmd.ref_sel   = ref_sel   & 0x1;
+    cmd.config_demod_cmd.in_sel    = in_sel    & 0x7;
+    cmd.config_demod_cmd.lpf_alpha = lpf_alpha & 0xF;
+    pdh_callback_t cb = pdh_execute_cmd(cmd);
+
     uint32_t echo_ref   = cb.config_demod_cb.ref_sel_r;
     uint32_t echo_in    = cb.config_demod_cb.in_sel_r;
     uint32_t echo_alpha = cb.config_demod_cb.lpf_alpha_r;
     uint32_t echo_cmd   = cb.config_demod_cb.cmd;
     uint32_t cmdval     = CMD_CONFIG_DEMOD;
 
-    int rc = validate_cb(&echo_ref,   &ref_sel,   UINT_TAG, __func__, "REF_SEL_CB",   CONFIG_DEMOD_OK,        CONFIG_DEMOD_REF_CB_FAIL);
-    rc = validate_cb(&echo_in,        &in_sel,    UINT_TAG, __func__, "IN_SEL_CB",    rc,                     CONFIG_DEMOD_IN_CB_FAIL);
-    rc = validate_cb(&echo_alpha,     &lpf_alpha, UINT_TAG, __func__, "LPF_ALPHA_CB", rc,                     CONFIG_DEMOD_ALPHA_CB_FAIL);
-    rc = validate_cb(&echo_cmd,       &cmdval,    UINT_TAG, __func__, CMD,            rc,                     PDH_INVALID_CMD);
+    int rc = validate_cb(&echo_ref,   &ref_sel,   UINT_TAG, __func__, "REF_SEL_CB",   CONFIG_DEMOD_OK, CONFIG_DEMOD_REF_CB_FAIL);
+    rc = validate_cb(&echo_in,        &in_sel,    UINT_TAG, __func__, "IN_SEL_CB",    rc,              CONFIG_DEMOD_IN_CB_FAIL);
+    rc = validate_cb(&echo_alpha,     &lpf_alpha, UINT_TAG, __func__, "LPF_ALPHA_CB", rc,              CONFIG_DEMOD_ALPHA_CB_FAIL);
+    rc = validate_cb(&echo_cmd,       &cmdval,    UINT_TAG, __func__, CMD,            rc,              PDH_INVALID_CMD);
 
     size_t index = 0;
     push_ctx_cb(ctx, &index, &echo_ref,   UINT_TAG, "REF_SEL_CB");

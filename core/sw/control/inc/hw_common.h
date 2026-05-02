@@ -8,8 +8,6 @@
 
 
 #define ABS(V) ((V) > 0 ? (V) : -(V))
-#define SWEEP_BUFFER_SIZE 2000
-#define ADC_BUFFER_SIZE 1
 
 #define AXI_BUS_OFFSET 0x42000000
 #define AXI_BUS_DEVBIND "/dev/mem"
@@ -329,13 +327,6 @@ typedef enum
     CONFIG_DEMOD_ALPHA_CB_FAIL,
 }   config_demod_e;
 
-typedef enum
-{
-    LOCK_IN_OK,
-    LOCK_IN_INVALID_DAC,
-    LOCK_IN_INVALID_PID_FEED,
-    LOCK_IN_FOPEN_ERR,
-}   lock_in_e;
 
 
 typedef enum
