@@ -6,10 +6,10 @@ A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://
 
 ## Table of Contents
 
-0.  [Why Would You Want This?]
-1.  [How Does It Work?] 
-1.  [Repository Structure](#repository-structure)
-2.  [High-Level System Overview](#system-overview)
+0.  [Repository Structure](#repository-structure)
+1.  [Why Would You Want This?](#why-would-you-want-this?)
+2.  [PDH Conceptual Overview](#pdh-conceptual-overview)
+3.  [System Overview](#system-overview)
 3.  [Client-side API and GUI]
 4.  [Server Architecture]
 5.  [Control Plane]
@@ -54,7 +54,8 @@ core/
     Makefile.fir_freq      FIR freq-response make rules
     artifacts/             Auto-indexed simulation output (JSON, CSV, PNG)
   sw/
-    server.c             TCP server: two-thread interrupt-driven architecture (command thread + callback thread)
+    server.c            
+    architecture (command thread + callback thread)
     control/
       control.c          Command handler implementations (cmd_*_send / cmd_*_cb split functions)
       hw_common.c        Hardware abstraction: mmap of AXI GP0 and HP0 DMA region; UIO interrupt primitives
@@ -80,21 +81,28 @@ pcb/                     PCB design files
 
 ---
 
-## Why Would You Want This
+## Why Would You Want This?
 
-A ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. The first-order effect of this is since frequency is the rate of phase change with respect to time, the laser's frequency and by extension wavelength now also contain a random component. Practically we can think of this as a light where the color always changes ever so slightly. In most everyday applications we probably wouldn't care, but in situations where the exact wavelength or phase needs to be maintained this becomes a problem. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. An example where wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotpoe. There are a bunch of other examples but they won't be covered here.
+An ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. The first-order effect of this is since frequency is the rate of phase change with respect to time, the laser's frequency and by extension wavelength now also contain a random component. Practically we can think of this as a light where the color always changes ever so slightly. In most everyday applications we probably wouldn't care, but in situations where the exact wavelength or phase needs to be maintained this becomes a problem. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. An example where wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotpoe. There are a bunch of other examples but they won't be covered here.
+
+#### TLDR; Really clean lasers can be useful.
 
 ---
 
-## How Does It Work
+## PDH Conceptual Overview
 
-The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. This means that if we can measure the total amount of phase error at any given point in time, then we can adjust the power we ourselves supply to the laser at that particular point in time in order to cancel it out. We measure the total amount of phase error at any given point in time by the difference in wavelength from our expected value. This difference encodes the overall phase contributions from all noise sources involved in the system. The main idea here is we don't know or care what those sources are, only that we can measure their affects and cancel them out. We do this by using a frequnecy discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the target. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow, so we don't know whether to give the laser more or less power. To deal with this we can modulate the beam with an Electro-Optic Modulator (EOM), which lets us take advantage of the [Jacobi-Anger Identity](https://math.stackexchange.com/questions/3839137/proving-the-jacobi-anger-expansion) to get a signal that can be decomposed into a series of sinusoids at frequencies centered around the resonance frequency, like in the figures below:
+The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we can keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. This means that if we can measure the total amount of phase error at any given point in time, then we can adjust the power we ourselves supply to the laser at that particular point in time in order to cancel it out. We measure the total amount of phase error at any given point in time by the difference in wavelength from our expected value. This difference encodes the overall phase contributions from all noise sources involved in the system. The main idea here is we don't know or care what those sources are, only that we can measure their affects and cancel them out. We do this by using a frequnecy discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the target. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow, so we don't know whether to give the laser more or less power. To deal with this we can modulate the beam with an Electro-Optic Modulator (EOM), which lets us take advantage of the [Jacobi-Anger Identity](https://math.stackexchange.com/questions/3839137/proving-the-jacobi-anger-expansion) to get a signal that can be decomposed into a series of sinusoids at frequencies centered around the resonance frequency, like in the figures below:
 
-| J₁(β) | J₂(β) |
+| Time Domain Representation | Frequency Domain Representation |
 |:---:|:---:|
-| ![Bessel J1](figures/bessel1.jpg) | ![Bessel J2](figures/bessel2.png) |
+| <img src="figures/bessel1_gen.png" width="480"/> | <img src="figures/bessel2_gen.png" width="480"/> |
 
 
+We can think about this expansion analytically as a bunch of rotating vectors spinning around in the complex plane at the resonance frequency plus some integer multiple of the modulation frequency as per the frequency domain representation on the right (theoretically this is an infinite series but we only show the first two terms because everything after is negligible), we call the red and green modes sidebands. When this field reaches a photodiode, the energy in it is transferred from the optical domain to the electrical domain in the form of current. The end result of this is that the spectral representation of the current signal is equal to the spectral representation of the optical signal multiplied by its complex conjugate (see the math doc for more details). What this means is that we still have a bessel series but now that series is centered at 0 Hz and the spectral leakage line is modulated onto a sinusoid at the modulation frequency. In short, whenever our optical signal goes off of resonance we produce a complex vector rotating at Wm. The guarantee we exploit is that detuning by some amount in opposite directions results in vectors that are 180 degrees out of phase with each other with equal magnitudes and that the more we detune the larger the magnitudes of these vectors will become. What this means is that if we have another vector spinning at the exact same frequency, we can take the dot product between them to extract both the direction and magnitude of our deviation from the resonance wavelength. In other words, we can demodulate this signal to extract the wavelength deviation information. This will give us something we can map to an appropriate control signal in order to try and make it go away. All this forms the conceptual basis behind the Pound-Drever-Hall technique and will give us a base from which to reason about the rest of the design.
+
+
+#### TLDR; Beam->EOM->Cavity->Photodiode->Demodulator
+#### Alternative TLDR; We use the sidebands to encode our error signal, then demodulate them to extract it
 
 
 
@@ -104,7 +112,22 @@ The main thing we can take advantage of is that if we keep the wavelength fixed,
 
 ## System Overview
 
-The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. This also mirrors the level of care taken at each stage: virtually all RTL is hand-rolled (save for stylistic refactors), most of the server code was originally hand-written but it got too tedious after a while and so a lot of the new code is model-generated, and virtually all of the Python code was written by Claude (though the architecture was not). More granular implementation details are in the DESIGN.md doc, this doc will mainly focus on building up a useful mental model of the system so using it becomes intuitive. Application-wise, the system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
+There were a few things that made designing our system hard:
+* 1) We only got the Photonic IC for a few days at the very end of the project, meaning we had to develop and test on a separate fiber optic setup with really bad SNR, the details of this will be elaborated on in the calibration section. 
+
+* 2) The frequency discriminator (Fabry Perot Cavity) associated with this fiber optic setup had a really low quality factor. What this meant is that if our modulation frequency was too low (Max FPGA can provide is 62.5MHz), then the cavity would attenuate our sidebands and we would further lose SNR on our error signal. To get around this, we decided to implement a custom analog demodulation board such that we could drive the EOM at a higher frequency (350MHz) and get more error signal per Hz of detuning.
+
+* 3) Because the EOM and demodulation circuitry are in different locations, and our modulation frequency is so high, there is may be a noticeable phase shift between the demodulation target and the demodulation projection vector. Furthermore, because we use SMA cables to connect to the EOM, which are flexible and come in different lengths, the phase shift is neither predictable nor consistent, meaning we needed a way to dynamically figure out the most appropriate angle from which to demodulate with.
+
+* 4) It's very likely that the laser current is a little bit too high or low when we turn on the Laser Diode Controller (LDC), so we need an initial lock-in routine to make sure the beam is centered at resonance before we engage active control. 
+
+These challenges were major motivators behind how we designed the system the way we did. 
+
+
+
+
+
+The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. More granular implementation details are in the DESIGN.md doc, this doc will mainly focus on building up a useful mental model of the system so using it becomes intuitive. Application-wise, the system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
 
 TLDR; it's a baby Moku.
 
@@ -151,6 +174,8 @@ A standardized execution model is provided which does 3 key things:
 ### GUI
 
 The GUI is a tkinter app that works on top of the API to provide a more user-friendly interface to the system. When you run it you should see something like this: 
+
+<img src="figures/gui_ss.png" width="700"/>
 
 ---
 
