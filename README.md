@@ -1,6 +1,6 @@
 # Pound-Drever-Hall Laser Locking System
 
-A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://en.wikipedia.org/wiki/Pound%E2%80%93Drever%E2%80%93Hall_technique) (PDH) laser frequency locking system** on a Red Pitaya STEMlab 125-14 (Xilinx Zynq XC7Z010 SoC). Real-time signal processing runs on the FPGA (PL), a TCP control server runs on the ARM cores (PS), and a Python client API provides remote operation from a host machine. This document covers the basics of the system and its operation. More detailed architectural details can be found inside `DESIGN.md`. More detailed math (the optics math in particular is really cool) can be found inside `math_explainer.pdf` 
+A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://en.wikipedia.org/wiki/Pound%E2%80%93Drever%E2%80%93Hall_technique) (PDH) laser frequency locking system** on a Red Pitaya STEMlab 125-14 (Xilinx Zynq XC7Z010 SoC). Real-time signal processing runs on the FPGA (PL), a TCP control server runs on the ARM cores (PS), and a Python client API provides remote operation from a host machine. This document covers the basics of the system and its operation. More detailed architectural details can be found inside `DESIGN.md`. More detailed math can be found inside `math_explainer.pdf` 
 
 ---
 
@@ -10,16 +10,8 @@ A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://
 1.  [Why Would You Want This?](#why-would-you-want-this?)
 2.  [PDH Conceptual Overview](#pdh-conceptual-overview)
 3.  [System Overview](#system-overview)
-3.  [Client-side API and GUI]
-4.  [Server Architecture]
-5.  [Control Plane]
-6.  [Data Plane]
-7.  [PID Controller]
-8.  [Numerically Controlled Oscillator (NCO)]
-9.  [FIR Filter] 
-10. [DMA Engine]
-11. [Build and Deploy](#build-and-deploy)
-12. [Hardware Specific Considerations]
+4.  [Build and Deploy](#build-and-deploy)
+
 
 
 ---
@@ -55,9 +47,8 @@ core/
     artifacts/             Auto-indexed simulation output (JSON, CSV, PNG)
   sw/
     server.c            
-    architecture (command thread + callback thread)
     control/
-      control.c          Command handler implementations (cmd_*_send / cmd_*_cb split functions)
+      control.c          Command handler implementations
       hw_common.c        Hardware abstraction: mmap of AXI GP0 and HP0 DMA region; UIO interrupt primitives
       inc/
         server.h         cmd_ctx_t, cmd_entry_t, output_item_t definitions
@@ -83,7 +74,7 @@ pcb/                     PCB design files
 
 ## Why Would You Want This?
 
-An ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. The first-order effect of this is since frequency is the rate of phase change with respect to time, the laser's frequency and by extension wavelength now also contain a random component. Practically we can think of this as a light where the color always changes ever so slightly. In most everyday applications we probably wouldn't care, but in situations where the exact wavelength or phase needs to be maintained this becomes a problem. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. An example where wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotpoe. There are a bunch of other examples but they won't be covered here.
+An ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However, this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. This is a problem when the exact phase of the laser needs to be maintained. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. By extension of frequency being the first-order derivative of phase with respect to time and wavelength being a product of the frequency and medium, the beam's wavelength also becomes subject to random distortions. An example where specific wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotope. There are a bunch of other examples but they won't be covered here.
 
 #### TLDR; Really clean lasers can be useful.
 
@@ -91,14 +82,13 @@ An ideal laser is a light source where the emmitted field is perfectly coherent.
 
 ## PDH Conceptual Overview
 
-The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we can keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. This means that if we can measure the total amount of phase error at any given point in time, then we can adjust the power we ourselves supply to the laser at that particular point in time in order to cancel it out. We measure the total amount of phase error at any given point in time by the difference in wavelength from our expected value. This difference encodes the overall phase contributions from all noise sources involved in the system. The main idea here is we don't know or care what those sources are, only that we can measure their affects and cancel them out. We do this by using a frequnecy discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the target. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow, so we don't know whether to give the laser more or less power. To deal with this we can modulate the beam with an Electro-Optic Modulator (EOM), which lets us take advantage of the [Jacobi-Anger Identity](https://math.stackexchange.com/questions/3839137/proving-the-jacobi-anger-expansion) to get a signal that can be decomposed into a series of sinusoids at frequencies centered around the resonance frequency, like in the figures below:
+The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we can keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. We do this by using a frequency discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the from the resonance point. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow. To handle this, we use an Electro-Optic Modulator (EOM) to apply a periodic phase shift to the input beam. We then take the output beam and pass it to a photodiode to convert it to an electrical signal before multiplying it by the same sinusoidal signal driving our EOM. At this point, the multiplication product will reflect both the magnitude AND direction of our deviation from the resonance wavelength:
 
 | Time Domain Representation | Frequency Domain Representation |
 |:---:|:---:|
 | <img src="figures/bessel1_gen.png" width="480"/> | <img src="figures/bessel2_gen.png" width="480"/> |
 
-
-We can think about this expansion analytically as a bunch of rotating vectors spinning around in the complex plane at the resonance frequency plus some integer multiple of the modulation frequency as per the frequency domain representation on the right (theoretically this is an infinite series but we only show the first two terms because everything after is negligible), we call the red and green modes sidebands. When this field reaches a photodiode, the energy in it is transferred from the optical domain to the electrical domain in the form of current. The end result of this is that the spectral representation of the current signal is equal to the spectral representation of the optical signal multiplied by its complex conjugate (see the math doc for more details). What this means is that we still have a bessel series but now that series is centered at 0 Hz and the spectral leakage line is modulated onto a sinusoid at the modulation frequency. In short, whenever our optical signal goes off of resonance we produce a complex vector rotating at Wm. The guarantee we exploit is that detuning by some amount in opposite directions results in vectors that are 180 degrees out of phase with each other with equal magnitudes and that the more we detune the larger the magnitudes of these vectors will become. What this means is that if we have another vector spinning at the exact same frequency, we can take the dot product between them to extract both the direction and magnitude of our deviation from the resonance wavelength. In other words, we can demodulate this signal to extract the wavelength deviation information. This will give us something we can map to an appropriate control signal in order to try and make it go away. All this forms the conceptual basis behind the Pound-Drever-Hall technique and will give us a base from which to reason about the rest of the design.
+Above are time-domain and frequency domain representations of our modulated signal, which we can break into a series of superimposing sinusoids. The red and green tones are our sidebands, and we use them to encode the frequency offset information.
 
 
 #### TLDR; Beam->EOM->Cavity->Photodiode->Demodulator
@@ -109,89 +99,12 @@ We can think about this expansion analytically as a bunch of rotating vectors sp
 
 
 ---
-
 ## System Overview
-
-There were a few things that made designing our system hard:
-* 1) We only got the Photonic IC for a few days at the very end of the project, meaning we had to develop and test on a separate fiber optic setup with really bad SNR, the details of this will be elaborated on in the calibration section. 
-
-* 2) The frequency discriminator (Fabry Perot Cavity) associated with this fiber optic setup had a really low quality factor. What this meant is that if our modulation frequency was too low (Max FPGA can provide is 62.5MHz), then the cavity would attenuate our sidebands and we would further lose SNR on our error signal. To get around this, we decided to implement a custom analog demodulation board such that we could drive the EOM at a higher frequency (350MHz) and get more error signal per Hz of detuning.
-
-* 3) Because the EOM and demodulation circuitry are in different locations, and our modulation frequency is so high, there is may be a noticeable phase shift between the demodulation target and the demodulation projection vector. Furthermore, because we use SMA cables to connect to the EOM, which are flexible and come in different lengths, the phase shift is neither predictable nor consistent, meaning we needed a way to dynamically figure out the most appropriate angle from which to demodulate with.
-
-* 4) It's very likely that the laser current is a little bit too high or low when we turn on the Laser Diode Controller (LDC), so we need an initial lock-in routine to make sure the beam is centered at resonance before we engage active control. 
-
-These challenges were major motivators behind how we designed the system the way we did. 
-
-
-
 
 
 The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. More granular implementation details are in the DESIGN.md doc, this doc will mainly focus on building up a useful mental model of the system so using it becomes intuitive. Application-wise, the system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
 
 TLDR; it's a baby Moku.
-
----
-
-
-## Client-Side API and GUI
-
-An API is used to talk to the system from a laptop. A GUI is built on top of this API for better UX but it's not necesary and all interactions can be scripted for further reproducibility. The API uses a lightweight text-based protocol to communicate with the system. The contract structure is as follows:
-
-
-### API Contract
-
-#### Transmission
-```
-CMD:<cmd_name>
-F:<float_arg_1>,<float_arg_2>,...
-I:<int_arg_1>,<int_arg_2>,...
-U:<uint_arg_1>,<uint_arg_2>,...
-```
-
-#### Reception
-```
-status:<status_field>
-<callback_1>:<callback_1_from_system>
-<callback_2>:<callback_2_from_system>
-.
-.
-.
-```
-
-
-Transmission standardizes `command (CMD)`, `float (F)`, `int (I)`, and `uint (U)` fields. All commands require the `CMD` field to be specified. The existence of the others and the number of arguments supplied depends on the specific command being invoked. Reception fields are defined by the specific callback characteristics of the target command. The only field required is the `status` field. A `status` value of zero indicates that the command succeeded. Normally this means that the input arguments were legal and sensible and that the hardware was able to dispatch appropriately wherein the callback echoed back to the server matched what the server's dispatch logic for that command expected. A nonzero status field indicates some form of failure. Specific commands may have one or more conditions that trigger a nonzero failure mode (invalid args, hw not dispatching properly etc), the meaning of each nonzero code is specific to that command. An arbitrary number of additional callback fields can also be sent back during the response, the specifics of these fields depend on what command is being invoked.
-
-
-### API implementation
-
-A standardized execution model is provided which does 3 key things:
-* 1. Provides a lock to ensure that only one API request may be made at a time
-* 2. Unpacks the return string into a dict object as per the above contract details
-* 3. Checks for a nonzero status field and raises an error if one is present (in some cases it may be useful to suppress this)
-
-
-### GUI
-
-The GUI is a tkinter app that works on top of the API to provide a more user-friendly interface to the system. When you run it you should see something like this: 
-
-<img src="figures/gui_ss.png" width="700"/>
-
----
-
-## Server Architecture
-The server is basically just a loop that parses commands over the socket and dispatches the appropriate command to the fabric as needed, before returning a callback frame usually with data from the fabric back to the client. 
-
----
-
-
-
-
-
-
-
-
-
 
 
 
