@@ -11,6 +11,7 @@ A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://
 2.  [PDH Conceptual Overview](#pdh-conceptual-overview)
 3.  [System Overview](#system-overview)
 4.  [Build and Deploy](#build-and-deploy)
+5.  [Hardware Specifics](#hardware-specifics)
 
 
 
@@ -102,7 +103,7 @@ Above are time-domain and frequency domain representations of our modulated sign
 ## System Overview
 
 
-The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. More granular implementation details are in the DESIGN.md doc, this doc will mainly focus on building up a useful mental model of the system so using it becomes intuitive. Application-wise, the system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
+The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. The system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
 
 TLDR; it's a baby Moku.
 
@@ -190,8 +191,20 @@ ssh root@10.42.0.62 'cd /root/sw/build && ./server &'
 
 #### 5. Start the GUI from your client
 ```Python
-pyton gui.py
+python gui.py
 ```
+
+At this point, you should see something similar to the below:
+
+<img src="figures/gui_ss.png" width="700"/>
+
+
+
+
+
+
+
+
 
 ## Hardware Specifics
 
