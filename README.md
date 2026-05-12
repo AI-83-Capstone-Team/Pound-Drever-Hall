@@ -1,6 +1,6 @@
 # Pound-Drever-Hall Laser Locking System
 
-A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://en.wikipedia.org/wiki/Pound%E2%80%93Drever%E2%80%93Hall_technique) (PDH) laser frequency locking system** on a Red Pitaya STEMlab 125-14 (Xilinx Zynq XC7Z010 SoC). Real-time signal processing runs on the FPGA (PL), a TCP control server runs on the ARM cores (PS), and a Python client API provides remote operation from a host machine. This document covers the basics of the system and its operation. More detailed architectural details can be found inside `DESIGN.md`. More detailed math can be found inside `math_explainer.pdf` 
+A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://en.wikipedia.org/wiki/Pound%E2%80%93Drever%E2%80%93Hall_technique) (PDH) laser frequency locking system** on a Red Pitaya STEMlab 125-14 (Xilinx Zynq XC7Z010 SoC). Real-time signal processing runs on the FPGA (PL), a TCP control server runs on the ARM cores (PS), and a Python client API provides remote operation from a host machine. This document covers the basics of the system and its operation.
 
 ---
 
@@ -10,8 +10,11 @@ A hardware/software co-design implementation of a **[Pound-Drever-Hall](https://
 1.  [Why Would You Want This?](#why-would-you-want-this?)
 2.  [PDH Conceptual Overview](#pdh-conceptual-overview)
 3.  [System Overview](#system-overview)
-4.  [Build and Deploy](#build-and-deploy)
-5.  [Hardware Specifics](#hardware-specifics)
+4.  [Protocol Timing](#protocol-timing)
+5.  [PID Controller](#pid-controller)
+6.  [FIR Filter](#fir-filter)
+7.  [Build and Deploy](#build-and-deploy)
+8.  [Hardware Specifics](#hardware-specifics)
 
 
 
@@ -77,6 +80,12 @@ pcb/                     PCB design files
 
 An ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However, this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. This is a problem when the exact phase of the laser needs to be maintained. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. By extension of frequency being the first-order derivative of phase with respect to time and wavelength being a product of the frequency and medium, the beam's wavelength also becomes subject to random distortions. An example where specific wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotope. There are a bunch of other examples but they won't be covered here.
 
+| Good Laser | Bad Laser |
+|:---:|:---:|
+| <img src="figures/goodlaser.png" width="520"/> | <img src="figures/badlaser.png" width="520"/> |
+
+
+
 #### TLDR; Really clean lasers can be useful.
 
 ---
@@ -93,8 +102,11 @@ Above are time-domain and frequency domain representations of our modulated sign
 
 
 #### TLDR; Beam->EOM->Cavity->Photodiode->Demodulator
-#### Alternative TLDR; We use the sidebands to encode our error signal, then demodulate them to extract it
+#### Alternative TLDR; We use the sidebands to encode our error signal, then demodulate them to extract it. From there we can generate a control signal to correct our laser.
 
+
+
+<img src="figures/results.png" width="800"/>
 
 
 
@@ -105,11 +117,52 @@ Above are time-domain and frequency domain representations of our modulated sign
 
 The general idea behind the system is anything that needs to be done fast and/or deterministically and/or interact with the physical world is done on the FPGA, anything that doesnt but still needs to interact with the FPGA is done on the hard processor (ARM Cortex A9), and everything else is done client-side. The system is similar to [Linien](https://github.com/linien-org/linien), albeit much less polished and much more hackable. Hackability in this context refers to giving the user direct control over as much of the RTL as possible — you can basically wire the inputs and outputs of any two modules inside the system up to each other in any way that you wish, which makes rapid ad-hoc lab tests on the fly easy. As such, the system is not only useful as a laser spectroscopy lock, but also as a lightweight oscilloscope, spectrum analyzer, PID controller, FIR filter, and function generator all in one. 
 
+
+<img src="figures/PDH_Full.png" width="1100"/>
+
+
+
+
 TLDR; it's a baby Moku.
+
+
+---
+## Protocol Timing
+
+<img src="figures/protocol_timing.png" width="700"/>
+
+
 
 
 
 ---
+## PID Controller
+
+<img src="figures/PID_Full.png" width="1100"/>
+
+
+---
+## FIR Filter
+
+
+| Original Signal | Sampling at Decimated Rate |
+|:---:|:---:|
+| <img src="figures/cavnom.png" width="480"/> | <img src="figures/cavdec.png" width="480"/> |
+
+
+<img src="figures/fir_adder_tree.png" width="600"/>
+
+
+<img src="figures/windowed_sinc.png" width="600"/>
+
+
+
+| FIR Ideal vs RTL Freq Resp | H(w) Comparsion With Different Windowing Schemes|
+|:---:|:---:|
+| <img src="figures/fir_ideal_vs_rtl.png" width="480"/> | <img src="figures/fir_windows.png" width="480"/> |
+
+
+<img src="figures/fircap.png" width="600"/>
 
 ## Build and Deploy
 
@@ -208,4 +261,8 @@ At this point, you should see something similar to the below:
 
 ## Hardware Specifics
 
-The system is currently meant to be run on a [STEMLab 125-14](https://redpitaya.com/stemlab-125-14/?srsltid=AfmBOopgVo9Tuy0RZu55bZxuKTTzMArpQeF5WWGbn-Z-MORJmZ4-cLcS) (both generations should work but it has been tested on Gen1). If porting to another system, ensure that the ADC and DAC coding schemes are adjusted accordingly.
+The system is currently meant to be run on a [STEMLab 125-14](https://redpitaya.com/stemlab-125-14/?srsltid=AfmBOopgVo9Tuy0RZu55bZxuKTTzMArpQeF5WWGbn-Z-MORJmZ4-cLcS) (both generations should work but it has been tested on Gen1). If porting to another system, ensure that the ADC and DAC coding schemes are adjusted accordingly. 
+
+The AD9767 only has one input port connected on the r125-14. Therefore the system configures it to run in interleaved mode coherent with the timing diagram below.
+
+<img src="figures/ad9767_dac_clocking.png" width="500"/>
