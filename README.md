@@ -106,7 +106,7 @@ Above are time-domain and frequency domain representations of our modulated sign
 
 
 
-<img src="figures/results.png" width="800"/>
+
 
 
 
@@ -120,6 +120,7 @@ The general idea behind the system is anything that needs to be done fast and/or
 
 <img src="figures/PDH_Full.png" width="1100"/>
 
+In the diagram above, dotted lines indicate control/callback signals routed to/from submodules by the PDH core. Dashed lines indicate data taps that can be selected to feed the DMA engine. 
 
 
 
