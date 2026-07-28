@@ -78,7 +78,7 @@ pcb/                     PCB design files
 
 ## Why Would You Want This?
 
-An ideal laser is a light source where the emmitted field is perfectly coherent. In other words, if you were to sample the field at any two points at one time or any two times at one point, there would be a deterministic phase relationship between those two points. However, this doesn't actually happen in practice. This is because various noise sources can introduce photons out of phase with the main field, leading to part of the field's information being essentially random as it encodes the phase-trajectory relationship of all photons present, including the ones that were introduced randomly. At this point, the deterministic relationship breaks down and the beam is no longer coherent. This is a problem when the exact phase of the laser needs to be maintained. An example is in gravitational wave detection, where the phase difference between two laser beams is used to encode spatial distortion due to gravitational waves or in optical communication schemes employing Phase-Shift Keying (PSK) to encode symbols through the relative phase of the laser. By extension of frequency being the first-order derivative of phase with respect to time and wavelength being a product of the frequency and medium, the beam's wavelength also becomes subject to random distortions. An example where specific wavelength matters is in laser isotope separation where the wavelength needs to be locked to the absorbtion line of the target isotope. There are a bunch of other examples but they won't be covered here.
+An ideal laser is a light source where the emitted field is perfectly coherent. In other words, if you sample the field at any two points in space or any two points in time, there's a deterministic phase relationship between them. This doesn't actually happen in practice. Various noise sources can introduce photons that are out of phase with the main field, and once those mix in, the aggregate phase of the beam starts doing something partially random. At that point the deterministic relationship breaks down and the beam is no longer coherent. This is a problem when the exact phase or frequency of the laser needs to be maintained. One example is gravitational wave detection, where the phase difference between two laser beams encodes spatial distortion from a passing wave. Another is optical communication using Phase-Shift Keying (PSK), where information is encoded in the relative phase of the carrier. And since frequency is just the first derivative of phase and wavelength follows from frequency, random phase noise also translates to wavelength jitter — which matters in applications like laser isotope separation, where the wavelength needs to sit on the absorption line of a specific isotope. There are a bunch of other examples but they won't be covered here.
 
 | Good Laser | Bad Laser |
 |:---:|:---:|
@@ -92,7 +92,7 @@ An ideal laser is a light source where the emmitted field is perfectly coherent.
 
 ## PDH Conceptual Overview
 
-The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we can keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. We do this by using a frequency discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the from the resonance point. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow. To handle this, we use an Electro-Optic Modulator (EOM) to apply a periodic phase shift to the input beam. We then take the output beam and pass it to a photodiode to convert it to an electrical signal before multiplying it by the same sinusoidal signal driving our EOM. At this point, the multiplication product will reflect both the magnitude AND direction of our deviation from the resonance wavelength:
+The main thing we can take advantage of is that if we keep the wavelength fixed, then by extension we can keep the phase fixed. We also know that we can adjust the wavelength by adjusting the amount of power we supply to the laser. We do this by using a frequency discriminator, which is a special optical component (generally either a Fabry Perot Cavity or a Ring Resonator) that emits a signal whenever the wavelength of the beam deviates from the resonance point. This is not good enough though because it doesn't tell us whether the wavelength is too wide or too narrow. To handle this, we use an Electro-Optic Modulator (EOM) to apply a periodic phase shift to the input beam. We then take the output beam and pass it to a photodiode to convert it to an electrical signal before multiplying it by the same sinusoidal signal driving our EOM. At this point, the multiplication product will reflect both the magnitude AND direction of our deviation from the resonance wavelength:
 
 | Time Domain Representation | Frequency Domain Representation |
 |:---:|:---:|
@@ -132,7 +132,15 @@ TLDR; it's a baby Moku.
 
 <img src="figures/protocol_timing.png" width="700"/>
 
+The command word is 32 bits: [31]=reset, [30]=strobe, [29:26]=command code, [25:0]=payload. Every transaction consists of the PS writing the word twice — strobe low, then strobe high. The FPGA passes the raw GPIO input through a 3-stage flip-flop synchronizer before decoding it, which handles the clock domain crossing between the PS AXI bus and the 125 MHz fabric clock. A posedge detector on the synchronized strobe fires when that edge comes through, latching the command word and executing it on that same clock cycle. The callback register is combinatorial off the current state, so it's valid at that same point. A 1-cycle GIC interrupt fires coincident with the strobe edge detection — the C server is blocked on a `read()` of `/dev/uio/pdh_uio`, which unblocks when the interrupt fires, and then the callback register gets sampled.
 
+`CMD_GET_FRAME` is different — no interrupt fires on the strobe. The DMA state machine runs through its sequence (BRAM fill at the decimated rate, then an AXI4 burst to DDR over HP0), and the interrupt fires when the transfer is done. The server side waits on `select()` with a timeout computed from the decimation depth rather than blocking indefinitely.
+
+`CMD_IDLE` generates no interrupt at all. It just resets the DMA state machine back to armed so the next `CMD_GET_FRAME` starts clean.
+
+The reset bit is completely separate from the strobe path and goes straight to the synchronous reset chain regardless of anything else in the word.
+
+#### TLDR; PS writes command word twice (strobe 0→1), FPGA latches on the synchronized rising edge, callback is valid on that same clock cycle, interrupt tells the PS it's ready.
 
 
 
@@ -141,27 +149,45 @@ TLDR; it's a baby Moku.
 
 <img src="figures/PID_Full.png" width="1100"/>
 
+The block diagram shows the structure. The input signal has the setpoint subtracted, passes through the input gain stage (`egain`), and then splits into three paths — Kp directly, Kd via the EMA block, and Ki through the running integrator (`sum_r`). The three products are summed and then scaled by the output gain before the bias is added.
+
+The derivative path is worth explaining since it's not a standard differentiator. The core keeps a running exponential moving average of the error (`yk_r` in the diagram). The alpha and (1-alpha) scaling blocks feed into that register's update loop, and Kd multiplies the difference between the current error and `yk_r`. That difference is the deviation of the error from its recent mean, which is a reasonable approximation of the derivative without being as noise-sensitive as a true differentiator. The alpha parameter sets the EMA time constant.
+
+The integrator has saturation at ±2^`satwidth` and freezes in whichever direction would push it further when the output is already railed — standard anti-windup. Without it the integrator winds up to full scale any time the system is outside the lock pull-in range and then takes forever to recover once it gets back in.
+
+The output is 14-bit unsigned offset-binary (DAC code), with 0 V mapped to code 8191. The decimation parameter slows the PID update rate independently of everything else — the NCO, ADC, and DMA all still run at full rate, the PID output just holds between updates.
+
+#### TLDR; Standard PID with EMA derivative and integrator anti-windup. Kp/Ki/Kd are Q15 fractions, input and output gain stages let you scale without touching the individual terms.
+
 
 ---
 ## FIR Filter
 
+The two spectra below are frequency-domain captures of a cavity sweep.
 
 | Original Signal | Sampling at Decimated Rate |
 |:---:|:---:|
 | <img src="figures/cavnom.png" width="480"/> | <img src="figures/cavdec.png" width="480"/> |
 
+At full rate the resonance tones sit cleanly on a noise floor around -40 dB. At 2x and 4x decimation without any anti-aliasing, the upper half of the spectrum folds back in around the new Nyquist and the noise floor comes up significantly. The FIR is what prevents that — it knocks out everything above the decimated Nyquist before the downsampling happens.
+
+The structure is a 32-tap direct-form filter with a registered saturating adder tree reducing all the tap outputs down to one. The diagram below shows it: the input clocks through a shift register along the top, each stage multiplies by its stored coefficient, the products register, and then get summed pairwise down to the output. Saturation is applied at every add level so there's no way for overflow to propagate up the tree. 32 taps means 5 levels of pairwise adds plus the one tap-level register, so 6 cycles of total pipeline latency.
 
 <img src="figures/fir_adder_tree.png" width="600"/>
 
+The coefficients are a windowed sinc — the ideal lowpass impulse response truncated to 32 samples and multiplied by a window. The diagram below shows how that relates to the input samples: at each output time the stored coefficients are just the windowed sinc evaluated at the sample offsets around that point.
 
 <img src="figures/windowed_sinc.png" width="600"/>
 
+Coefficients are loaded by writing them one at a time into a staging memory, then atomically committing the whole set to the active tap registers in one shot. This means the filter never runs with a partially-updated coefficient set during a live load.
 
-
-| FIR Ideal vs RTL Freq Resp | H(w) Comparsion With Different Windowing Schemes|
+| FIR Ideal vs RTL Freq Resp | H(w) Comparison With Different Windowing Schemes|
 |:---:|:---:|
 | <img src="figures/fir_ideal_vs_rtl.png" width="480"/> | <img src="figures/fir_windows.png" width="480"/> |
 
+The frequency response plot on the left is for a Hann-windowed design at fc=5 MHz with N=32. The RTL simulation (measured in Verilator) tracks the ideal floating-point response closely down to about -80 dB, which is roughly where Q15 quantization noise lifts the stopband floor. The right figure shows the tradeoff between windowing schemes — rectangular has the sharpest transition band but terrible sidelobe rejection (the first stopband lobe barely makes it to -20 dB), while Blackman gets to -75 dB or better at the cost of a wider transition. For a PDH lock where the EOM modulation frequency is well separated from the cavity linewidth, Blackman or Hann is the right call.
+
+The capture below is from hardware — fir_in is the raw wideband signal going into the filter, fir_out is the 100 kHz lowpass output.
 
 <img src="figures/fircap.png" width="600"/>
 
