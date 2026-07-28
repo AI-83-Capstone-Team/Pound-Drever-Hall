@@ -132,9 +132,9 @@ TLDR; it's a baby Moku.
 
 <img src="figures/protocol_timing.png" width="700"/>
 
-The command word is 32 bits: [31]=reset, [30]=strobe, [29:26]=command code, [25:0]=payload. Every transaction consists of the PS writing the word twice — strobe low, then strobe high. The FPGA passes the raw GPIO input through a 3-stage flip-flop synchronizer before decoding it, which handles the clock domain crossing between the PS AXI bus and the 125 MHz fabric clock. A posedge detector on the synchronized strobe fires when that edge comes through, latching the command word and executing it on that same clock cycle. The callback register is combinatorial off the current state, so it's valid at that same point. A 1-cycle GIC interrupt fires coincident with the strobe edge detection — the C server is blocked on a `read()` of `/dev/uio/pdh_uio`, which unblocks when the interrupt fires, and then the callback register gets sampled.
+The command word is 32 bits: [31]=reset, [30]=strobe, [29:26]=command code, [25:0]=payload. Every transaction consists of the PS writing the word twice, first with strobe low and then with strobe high. The FPGA passes the raw GPIO input through a 3-stage flip-flop synchronizer before decoding it, which handles the clock domain crossing between the PS AXI bus and the 125 MHz fabric clock. A posedge detector on the synchronized strobe fires when that edge comes through, latching the command word and executing it on that same clock cycle. The callback register is combinatorial off the current state, so it's valid at that same point. A 1-cycle GIC interrupt fires coincident with the strobe edge detection. The C server is blocked on a `read()` of `/dev/uio/pdh_uio`, which unblocks when the interrupt fires, and the callback register gets sampled.
 
-`CMD_GET_FRAME` is different — no interrupt fires on the strobe. The DMA state machine runs through its sequence (BRAM fill at the decimated rate, then an AXI4 burst to DDR over HP0), and the interrupt fires when the transfer is done. The server side waits on `select()` with a timeout computed from the decimation depth rather than blocking indefinitely.
+`CMD_GET_FRAME` is different. No interrupt fires on the strobe. The DMA state machine runs through its sequence (BRAM fill at the decimated rate, then an AXI4 burst to DDR over HP0), and the interrupt fires when the transfer is done. The server side waits on `select()` with a timeout computed from the decimation depth rather than blocking indefinitely.
 
 `CMD_IDLE` generates no interrupt at all. It just resets the DMA state machine back to armed so the next `CMD_GET_FRAME` starts clean.
 
@@ -149,11 +149,11 @@ The reset bit is completely separate from the strobe path and goes straight to t
 
 <img src="figures/PID_Full.png" width="1100"/>
 
-The block diagram shows the structure. The input signal has the setpoint subtracted, passes through the input gain stage (`egain`), and then splits into three paths — Kp directly, Kd via the EMA block, and Ki through the running integrator (`sum_r`). The three products are summed and then scaled by the output gain before the bias is added.
+The block diagram shows the structure. The input signal has the setpoint subtracted, passes through the input gain stage (`egain`), and then splits into three paths: Kp directly, Kd via the EMA block, and Ki through the running integrator (`sum_r`). The three products are summed and then scaled by the output gain before the bias is added.
 
 The derivative path is worth explaining since it's not a standard differentiator. The core keeps a running exponential moving average of the error (`yk_r` in the diagram). The alpha and (1-alpha) scaling blocks feed into that register's update loop, and Kd multiplies the difference between the current error and `yk_r`. That difference is the deviation of the error from its recent mean, which is a reasonable approximation of the derivative without being as noise-sensitive as a true differentiator. The alpha parameter sets the EMA time constant.
 
-The integrator has saturation at ±2^`satwidth` and freezes in whichever direction would push it further when the output is already railed — standard anti-windup. Without it the integrator winds up to full scale any time the system is outside the lock pull-in range and then takes forever to recover once it gets back in.
+The integrator has saturation at ±2^`satwidth` and freezes in whichever direction would push it further when the output is already railed. Standard anti-windup. Without it the integrator winds up to full scale any time the system is outside the lock pull-in range and then takes forever to recover once it gets back in.
 
 The output is 14-bit unsigned offset-binary (DAC code), with 0 V mapped to code 8191. The decimation parameter slows the PID update rate independently of everything else — the NCO, ADC, and DMA all still run at full rate, the PID output just holds between updates.
 
@@ -163,19 +163,15 @@ The output is 14-bit unsigned offset-binary (DAC code), with 0 V mapped to code 
 ---
 ## FIR Filter
 
-The two spectra below are frequency-domain captures of a cavity sweep.
-
 | Original Signal | Sampling at Decimated Rate |
 |:---:|:---:|
 | <img src="figures/cavnom.png" width="480"/> | <img src="figures/cavdec.png" width="480"/> |
 
-At full rate the resonance tones sit cleanly on a noise floor around -40 dB. At 2x and 4x decimation without any anti-aliasing, the upper half of the spectrum folds back in around the new Nyquist and the noise floor comes up significantly. The FIR is what prevents that — it knocks out everything above the decimated Nyquist before the downsampling happens.
-
-The structure is a 32-tap direct-form filter with a registered saturating adder tree reducing all the tap outputs down to one. The diagram below shows it: the input clocks through a shift register along the top, each stage multiplies by its stored coefficient, the products register, and then get summed pairwise down to the output. Saturation is applied at every add level so there's no way for overflow to propagate up the tree. 32 taps means 5 levels of pairwise adds plus the one tap-level register, so 6 cycles of total pipeline latency.
+The FIR is there to anti-alias before the PID's decimation stage. The structure is a 32-tap direct-form filter with a registered saturating adder tree reducing all the tap outputs down to one. The diagram below shows it: the input clocks through a shift register along the top, each stage multiplies by its stored coefficient, the products register, and get summed pairwise down to the output. Saturation is applied at every add level so overflow can't propagate up the tree. 32 taps means 5 levels of pairwise adds plus the one tap-level register, so 6 cycles of total pipeline latency.
 
 <img src="figures/fir_adder_tree.png" width="600"/>
 
-The coefficients are a windowed sinc — the ideal lowpass impulse response truncated to 32 samples and multiplied by a window. The diagram below shows how that relates to the input samples: at each output time the stored coefficients are just the windowed sinc evaluated at the sample offsets around that point.
+The coefficients are a windowed sinc, the ideal lowpass impulse response truncated to 32 samples and multiplied by a window. The diagram below shows how that maps onto the input samples.
 
 <img src="figures/windowed_sinc.png" width="600"/>
 
@@ -185,9 +181,9 @@ Coefficients are loaded by writing them one at a time into a staging memory, the
 |:---:|:---:|
 | <img src="figures/fir_ideal_vs_rtl.png" width="480"/> | <img src="figures/fir_windows.png" width="480"/> |
 
-The frequency response plot on the left is for a Hann-windowed design at fc=5 MHz with N=32. The RTL simulation (measured in Verilator) tracks the ideal floating-point response closely down to about -80 dB, which is roughly where Q15 quantization noise lifts the stopband floor. The right figure shows the tradeoff between windowing schemes — rectangular has the sharpest transition band but terrible sidelobe rejection (the first stopband lobe barely makes it to -20 dB), while Blackman gets to -75 dB or better at the cost of a wider transition. For a PDH lock where the EOM modulation frequency is well separated from the cavity linewidth, Blackman or Hann is the right call.
+The frequency response plot on the left is for a Hann-windowed design at fc=5 MHz with N=32. The RTL simulation tracks the ideal floating-point response closely down to about -80 dB, which is roughly where Q15 quantization noise lifts the stopband floor. The right figure shows the tradeoff between windowing schemes. Rectangular has the sharpest transition band but terrible sidelobe rejection. Blackman gets to -75 dB or better at the cost of a wider transition. For a PDH lock where the EOM modulation frequency is well separated from the cavity linewidth, Blackman or Hann is the right call.
 
-The capture below is from hardware — fir_in is the raw wideband signal going into the filter, fir_out is the 100 kHz lowpass output.
+The capture below is from hardware. fir_in is the raw wideband signal going into the filter, fir_out is the 100 kHz lowpass output.
 
 <img src="figures/fircap.png" width="600"/>
 
